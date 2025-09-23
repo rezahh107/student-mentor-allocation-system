@@ -45,12 +45,23 @@ _PERSIAN_TO_ASCII_DIGITS: Final[dict[int, str]] = {
 _MOBILE_DIGIT_PATTERN: Final[re.Pattern[str]] = re.compile(r"\d")
 
 _NID_HASH_SALT_DEFAULT: Final[str] = "core.normalization"
+_TEST_ENVIRONMENTS: Final[frozenset[str]] = frozenset({"dev", "test"})
 
 
 def _current_salt() -> str:
     """Return the configured salt for hashing national identifiers."""
 
-    return os.getenv("NID_HASH_SALT", _NID_HASH_SALT_DEFAULT)
+    app_env = os.getenv("APP_ENV", "").strip().lower()
+    base_salt = (
+        os.getenv("PII_HASH_SALT")
+        or os.getenv("NID_HASH_SALT")
+        or _NID_HASH_SALT_DEFAULT
+    )
+    if app_env in _TEST_ENVIRONMENTS:
+        override = os.getenv("TEST_HASH_SALT")
+        if override:
+            return override
+    return base_salt
 
 
 def _normalize_mobile_digits(digits: str) -> str:
@@ -68,16 +79,19 @@ def _normalize_mobile_digits(digits: str) -> str:
 
 
 def _mask_mobile(value: str) -> str:
-    """Mask an Iranian mobile number while preserving start/end digits."""
+    """Mask an Iranian mobile number while preserving the trailing digits."""
 
-    normalized = unicodedata.normalize("NFKC", value).translate(_PERSIAN_TO_ASCII_DIGITS)
+    normalized = unicodedata.normalize("NFKC", value).translate(
+        _PERSIAN_TO_ASCII_DIGITS
+    )
     digits = re.sub(r"\D", "", normalized)
     digits = _normalize_mobile_digits(digits)
-    if len(digits) >= 11 and digits.startswith("09"):
-        return f"09*******{digits[-2:]}"
-    if len(digits) >= 7:
-        return f"{digits[0]}******{digits[-1]}"
-    return "***"
+    tail = digits[-2:]
+    if len(tail) == 1:
+        tail = f"X{tail}"
+    elif not tail:
+        tail = "XX"
+    return f"09*******{tail}"
 
 
 def _hash_value(value: object) -> str:
@@ -133,9 +147,6 @@ def log_norm_error(field: str, old: object, reason: str, code: str) -> None:
     """
 
     payload: dict[str, Any] = {
-        "event": "normalization_failure",
-        "field": field,
-        "reason": reason,
         "code": code,
         "sample": _sanitize_value(field, old),
         "mobile_mask": _derive_mobile_mask(field, old),

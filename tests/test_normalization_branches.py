@@ -49,8 +49,13 @@ def _payloads(caplog: pytest.LogCaptureFixture) -> List[dict[str, object]]:
             payload = json.loads(record.message)
         except json.JSONDecodeError:
             continue
+        assert set(payload) == {"code", "sample", "mobile_mask", "nid_hash"}
         decoded.append(payload)
     return decoded
+
+
+def _codes(caplog: pytest.LogCaptureFixture) -> List[str]:
+    return [payload["code"] for payload in _payloads(caplog)]
 
 
 def _mobile_digit_variant(char: str) -> st.SearchStrategy[str]:
@@ -79,22 +84,24 @@ def mobile_inputs(draw) -> str:
 
 
 @pytest.mark.parametrize(
-    ("func", "value", "message"),
+    ("func", "value", "message", "code"),
     [
-        (normalize_gender, True, GENDER_ERROR),
-        (normalize_reg_status, False, REG_STATUS_ERROR),
-        (normalize_reg_center, True, REG_CENTER_ERROR),
-        (normalize_mobile, False, MOBILE_ERROR),
-        (normalize_school_code, True, SCHOOL_CODE_ERROR),
-        (normalize_national_id, False, NATIONAL_ID_ERROR),
+        (normalize_gender, True, GENDER_ERROR, "gender.bool"),
+        (normalize_reg_status, False, REG_STATUS_ERROR, "reg_status.bool"),
+        (normalize_reg_center, True, REG_CENTER_ERROR, "reg_center.bool"),
+        (normalize_mobile, False, MOBILE_ERROR, "mobile.bool"),
+        (normalize_school_code, True, SCHOOL_CODE_ERROR, "school_code.bool"),
+        (normalize_national_id, False, NATIONAL_ID_ERROR, "national_id.bool"),
     ],
 )
-def test_boolean_inputs_rejected(func, value, message, caplog: pytest.LogCaptureFixture) -> None:
+def test_boolean_inputs_rejected(
+    func, value, message, code, caplog: pytest.LogCaptureFixture
+) -> None:
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError) as exc:
             func(value)
     assert str(exc.value) == message
-    assert "normalization_failure" in caplog.text
+    assert code in _codes(caplog)
 
 
 @pytest.mark.parametrize(
@@ -164,6 +171,7 @@ def test_normalize_name_rtl_rules(caplog: pytest.LogCaptureFixture) -> None:
     payloads = _payloads(caplog)
     cleaned = [payload for payload in payloads if payload["code"] == "name.cleaned"]
     assert cleaned
+    assert any(payload["code"] == "name.arabic_letters" for payload in payloads)
     sample = cleaned[0]["sample"].strip()
     assert sample.startswith("كاظم") or sample.startswith("کاظم")
     assert normalize_name(None) is None
@@ -175,7 +183,7 @@ def test_normalize_int_sequence_invalid_item_logs(caplog: pytest.LogCaptureFixtu
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError):
             normalize_int_sequence([101, True])
-    assert "normalization_failure" in caplog.text
+    assert "mentor_special_schools.item_bool" in _codes(caplog)
 
 
 def test_normalize_school_code_examples() -> None:
@@ -201,7 +209,7 @@ def test_derive_student_type_with_provider_and_logging(caplog: pytest.LogCapture
     with caplog.at_level(logging.WARNING):
         result = derive_student_type(202, [], roster_year=1402, provider=provider)
     assert result == 1
-    assert "student_type.provider_invalid" in caplog.text
+    assert "student_type.provider_invalid" in _codes(caplog)
 
 
 def test_derive_student_type_without_match() -> None:
@@ -228,9 +236,9 @@ def test_to_student_normalized_aliases_and_mismatch(caplog: pytest.LogCaptureFix
     assert model.reg_center == 2
     assert model.student_type == 1
     payloads = _payloads(caplog)
-    mismatch_logs = [payload for payload in payloads if payload["code"] == "student_type.mismatch"]
-    assert mismatch_logs
-    assert mismatch_logs[0]["sample"] == "*"
+    ignored_logs = [payload for payload in payloads if payload["code"] == "student_type.ignored_input"]
+    assert ignored_logs
+    assert ignored_logs[0]["sample"] == "*"
 
 
 def test_to_student_normalized_with_provider(caplog: pytest.LogCaptureFixture) -> None:
@@ -251,7 +259,7 @@ def test_to_student_normalized_with_provider(caplog: pytest.LogCaptureFixture) -
     with caplog.at_level(logging.WARNING):
         model = to_student_normalized(raw, roster_year=1401, special_school_provider=provider)
     assert model.student_type == 1
-    assert "normalization_failure" not in caplog.text
+    assert _payloads(caplog) == []
 
 
 def test_student_type_invalid_input_logged(caplog: pytest.LogCaptureFixture) -> None:
@@ -269,8 +277,7 @@ def test_student_type_invalid_input_logged(caplog: pytest.LogCaptureFixture) -> 
     with caplog.at_level(logging.WARNING):
         model = to_student_normalized(raw)
     assert model.student_type == 1
-    payloads = _payloads(caplog)
-    assert any(payload["code"] == "student_type.invalid_input" for payload in payloads)
+    assert "student_type.ignored_input" in _codes(caplog)
 
 
 def test_student_type_bool_input_raises_in_validator() -> None:
@@ -306,14 +313,14 @@ def test_student_type_respects_aliased_data_and_roster(caplog: pytest.LogCapture
         model = to_student_normalized(raw, roster_year=1400, special_school_provider=provider)
     assert model.student_type == 1
     assert model.reg_status == 0
-    assert "normalization_failure" not in caplog.text
+    assert _payloads(caplog) == []
 
 
 def test_normalize_int_sequence_type_errors(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError):
             normalize_int_sequence("101,102")
-    assert "mentor_special_schools.type" in caplog.text
+    assert "mentor_special_schools.type" in _codes(caplog)
 
 
 def test_name_warning_for_non_empty_null(caplog: pytest.LogCaptureFixture) -> None:
@@ -329,51 +336,70 @@ def test_name_warning_for_non_empty_null(caplog: pytest.LogCaptureFixture) -> No
 
     with caplog.at_level(logging.WARNING):
         to_student_normalized(raw)
-    payloads = _payloads(caplog)
-    assert any(payload["code"] == "name.empty_after_clean" for payload in payloads)
-    assert any(record.message == "name_normalization" for record in caplog.records)
+    assert "name.empty_after_clean" in _codes(caplog)
+
+
+def test_to_student_normalized_emits_name_mismatch_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw = {
+        "gender": "زن",
+        "reg_status": 1,
+        "reg_center": 0,
+        "mobile": "09123456789",
+        "national_id": "1332073689",
+        "school_code": None,
+        "mentor_special_schools": [],
+        "name": "  كاظم‌ ي    زهرا  ",
+    }
+
+    with caplog.at_level(logging.WARNING):
+        to_student_normalized(raw)
+    codes = _codes(caplog)
+    assert "name.cleaned" in codes
+    assert "name.arabic_letters" in codes
 
 
 def test_normalize_school_code_bool_rejected(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError):
             normalize_school_code(True)
-    assert "school_code.bool" in caplog.text
+    assert "school_code.bool" in _codes(caplog)
 
 
 def test_normalize_reg_center_none(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError):
             normalize_reg_center(None)
-    assert "reg_center.none" in caplog.text
+    assert "reg_center.none" in _codes(caplog)
 
 
 def test_normalize_mobile_none(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError):
             normalize_mobile(None)
-    assert "mobile.none" in caplog.text
+    assert "mobile.none" in _codes(caplog)
 
 
 def test_normalize_int_sequence_root_bool(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError):
             normalize_int_sequence(True)
-    assert "mentor_special_schools.bool" in caplog.text
+    assert "mentor_special_schools.bool" in _codes(caplog)
 
 
 def test_normalize_int_sequence_non_iterable(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError):
             normalize_int_sequence(5)
-    assert "mentor_special_schools.iterable" in caplog.text
+    assert "mentor_special_schools.iterable" in _codes(caplog)
 
 
 def test_normalize_national_id_none(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError):
             normalize_national_id(None)
-    assert "national_id.none" in caplog.text
+    assert "national_id.none" in _codes(caplog)
 
 
 def test_student_remaining_capacity() -> None:
@@ -394,7 +420,7 @@ def test_normalize_student_type_value_paths(caplog: pytest.LogCaptureFixture) ->
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError):
             _normalize_student_type_value(5)
-    assert "student_type.out_of_range" in caplog.text
+    assert "student_type.out_of_range" in _codes(caplog)
     assert _normalize_student_type_value(" 1 ") == 1
 
 

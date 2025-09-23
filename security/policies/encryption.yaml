@@ -1,0 +1,7 @@
+columns:
+  - table: "دانش_آموزان"
+    fields: ["کد_ملی", "شماره_تلفن"]
+  - table: "تخصیص_ها"
+    fields: []
+at_rest: aes256
+in_transit: tls1.2+

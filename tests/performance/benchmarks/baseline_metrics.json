@@ -1,0 +1,10 @@
+{
+  "target": {
+    "alloc_10k_sec": 300,
+    "qps_min": 1000
+  },
+  "baseline": {
+    "alloc_10k_sec": 180,
+    "qps": 3200
+  }
+}

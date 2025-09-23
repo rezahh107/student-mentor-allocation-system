@@ -1,0 +1,7 @@
+roles:
+  - name: admin
+    permissions: [alloc:run, report:read, config:edit]
+  - name: operator
+    permissions: [alloc:run, report:read]
+  - name: auditor
+    permissions: [report:read]

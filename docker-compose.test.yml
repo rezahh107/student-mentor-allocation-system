@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - .:/app
+      - test-results:/app/test-results
+    environment:
+      - TEST_MODE=standard
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: >
+      sh -c "pytest -xvs --cov=src --cov-report=xml:/app/test-results/coverage.xml
+      --junitxml=/app/test-results/junit.xml"
+
+  deep-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - .:/app
+      - test-results:/app/test-results
+    environment:
+      - TEST_MODE=deep
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: >
+      sh -c "python -m scripts.adaptive_testing --mode=deep"
+
+  security-scan:
+    build:
+      context: .
+      dockerfile: Dockerfile.security
+    volumes:
+      - .:/app
+      - test-results:/app/test-results
+    environment:
+      - PYTHONPATH=/app
+    command: >
+      sh -c "bandit -r src/ -f json -o /app/test-results/security.json &&
+             safety check --json > /app/test-results/dependencies.json"
+
+volumes:
+  test-results:

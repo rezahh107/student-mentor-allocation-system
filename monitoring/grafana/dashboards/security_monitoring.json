@@ -1,0 +1,7 @@
+{
+  "title": "Security Monitoring",
+  "panels": [
+    {"type": "graph", "title": "Rate Limit Rejections", "targets": [{"expr": "rate(http_requests_total{status=\"429\"}[5m])"}]},
+    {"type": "graph", "title": "Auth Failures", "targets": [{"expr": "rate(auth_failures_total[5m])"}]}
+  ]
+}

@@ -1,0 +1,45 @@
+﻿name: Continuous Testing
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python scripts/run_tests.py --scope auto
+
+      - name: Generate report
+        run: python scripts/generate_report.py
+
+      - name: Run Codex Fixes
+        run: codex-cli run --prompt-file=.codex/auto_fix_prompt.md --input codex_summary.json
+
+      - name: Monitor regressions
+        run: codex-cli run --prompt-file=.codex/regression_prompt.md --input codex_summary.json
+
+      - name: Upload QA artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: qa-artifacts
+          path: |
+            codex_summary.json
+            gates.json
+            reports/

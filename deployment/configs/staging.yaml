@@ -1,0 +1,13 @@
+database:
+  url: ${DATABASE_URL}
+redis:
+  url: ${REDIS_URL}
+performance:
+  workers: 6
+  batch_size: 1000
+security:
+  jwt_required: true
+  rate_limit_per_min: 200
+monitoring:
+  metrics: true
+  log_level: INFO

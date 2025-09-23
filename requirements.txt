@@ -1,0 +1,36 @@
+# Core application stack
+aiohttp>=3.8.0
+pydantic>=1.10.0
+python-dateutil>=2.8.0
+PyQt5>=5.15.0
+qasync>=0.23.0
+aiofiles>=0.8.0
+openpyxl>=3.1.0
+jdatetime>=4.1.0
+matplotlib>=3.7.0
+psutil>=5.9.0
+pyqtgraph>=0.13.0
+seaborn>=0.12.0
+reportlab>=4.0.0
+pandas>=2.0.0
+websockets>=10.0
+arabic-reshaper>=3.0.0
+python-bidi>=0.4.2
+
+# Developer experience & tooling
+GitPython>=3.1.30
+factory_boy>=3.3.0
+faker>=19.0.0
+
+# Core testing (required)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0
+coverage>=7.0.0
+pytest-qt>=4.2.0
+pytest-json-report>=1.5.0
+pytest-watch>=4.2.0
+pytest-xdist>=3.3.1
+
+# Dashboard & automation
+streamlit>=1.29.0

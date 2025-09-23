@@ -1,0 +1,10 @@
+{
+  "title": "Business Metrics",
+  "panels": [
+    {"type": "stat", "title": "Alloc Success Rate", "targets": [{"expr": "alloc_success_rate"}]},
+    {"type": "graph", "title": "Alloc Success/Fail", "targets": [
+      {"expr": "rate(allocation_success_total[5m])"},
+      {"expr": "rate(allocation_failed_total[5m])"}
+    ]}
+  ]
+}

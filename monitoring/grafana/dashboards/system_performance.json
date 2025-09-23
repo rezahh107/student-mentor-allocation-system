@@ -1,0 +1,7 @@
+{
+  "title": "System Performance",
+  "panels": [
+    {"type": "graph", "title": "Allocation Duration P95", "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(allocation_duration_seconds_bucket[5m])))"}]},
+    {"type": "graph", "title": "DB Query Duration P95", "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(db_query_duration_seconds_bucket[5m])))"}]}
+  ]
+}

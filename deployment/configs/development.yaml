@@ -1,0 +1,13 @@
+database:
+  url: postgresql+psycopg2://alloc:alloc@localhost:5432/alloc
+redis:
+  url: redis://localhost:6379/0
+performance:
+  workers: 4
+  batch_size: 1000
+security:
+  jwt_required: false
+  rate_limit_per_min: 100
+monitoring:
+  metrics: true
+  log_level: DEBUG

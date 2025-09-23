@@ -1,0 +1,5 @@
+groups:
+  - name: allocation_rules
+    rules:
+      - record: alloc_success_rate
+        expr: sum(rate(allocation_success_total[5m])) / (sum(rate(allocation_success_total[5m])) + sum(rate(allocation_failed_total[5m])))

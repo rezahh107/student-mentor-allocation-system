@@ -1,448 +1,410 @@
+#!/usr/bin/env python3
 """CLI tool to migrate GitHub Actions artifact steps from v3 to v4.
 
 Usage examples::
 
     python tools/migrate_artifacts_v3_to_v4.py --dry-run
     python tools/migrate_artifacts_v3_to_v4.py --write
-"""
+
+The tool scans ``.github/workflows`` for YAML workflow definitions and upgrades
+any ``actions/upload-artifact@v3`` or ``actions/download-artifact@v3`` steps to
+``@v4`` while preserving behaviour as much as possible."""
+
 from __future__ import annotations
 
 import argparse
 import difflib
 import os
-import re
-from collections import OrderedDict, defaultdict
-from dataclasses import dataclass
+import shutil
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple
+from typing import List, Sequence
 
 import yaml
-from yaml.representer import SafeRepresenter
+from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
-
-yaml.add_representer(OrderedDict, SafeRepresenter.represent_dict)
-yaml.SafeDumper.add_representer(OrderedDict, SafeRepresenter.represent_dict)
-
-
-COMMENT_TEXT = "# NOTE: v4 download behavior may differ wrt root folder structure."
+NOTE_COMMENT_TEXT = (
+    "# NOTE: GitHub Actions artifact v4 may alter folder structure compared to v3."
+)
 HELPER_STEP_NAME = "Inspect downloaded files (v4 migration helper)"
-HELPER_STEP_IF = "always()"
 
 
 @dataclass
-class StepStats:
-    uploads_updated: int = 0
-    downloads_updated: int = 0
-    names_added: int = 0
-    helper_steps_added: int = 0
-    comment_targets: set[Tuple[str, int]] | None = None
+class StepChange:
+    """Information about a migrated step."""
 
-    def __post_init__(self) -> None:
-        if self.comment_targets is None:
-            self.comment_targets = set()
+    was_upload: bool = False
+    was_download: bool = False
+    added_helper_step: bool = False
+    ensured_name: bool = False
 
-    def merge(self, other: "StepStats") -> None:
-        self.uploads_updated += other.uploads_updated
-        self.downloads_updated += other.downloads_updated
-        self.names_added += other.names_added
-        self.helper_steps_added += other.helper_steps_added
-        if self.comment_targets is None:
-            self.comment_targets = set()
-        if other.comment_targets:
-            self.comment_targets.update(other.comment_targets)
+
+@dataclass
+class FileMigrationResult:
+    """Summary of per-file migration processing."""
+
+    path: Path
+    original_text: str
+    new_text: str
+    step_changes: List[StepChange] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
-        return any(
-            [
-                self.uploads_updated,
-                self.downloads_updated,
-                self.names_added,
-                self.helper_steps_added,
-                bool(self.comment_targets),
-            ]
-        )
+        return self.original_text != self.new_text
 
 
-def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Upgrade actions/upload-artifact and actions/download-artifact from v3 to v4."
-    )
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--dry-run", action="store_true", help="Print diffs without modifying files.")
-    group.add_argument("--write", action="store_true", help="Apply changes in place (creates .bak backups).")
-    parser.add_argument(
-        "--root",
-        type=Path,
-        default=Path.cwd(),
-        help="Repository root containing .github/workflows/",
-    )
-    return parser.parse_args(argv)
+class TextEditor:
+    """Accumulates textual replacements to apply to YAML content."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self._changes: List[tuple[int, int, str]] = []
+
+    @property
+    def text(self) -> str:
+        return self._text
+
+    def replace_segment(self, start: int, end: int, new_text: str) -> None:
+        """Replace the text between ``start`` and ``end`` with ``new_text``."""
+
+        if start == end and not new_text:
+            return
+        self._changes.append((start, end, new_text))
+
+    def insert(self, index: int, new_text: str) -> None:
+        self.replace_segment(index, index, new_text)
+
+    def apply(self) -> str:
+        text = self._text
+        for start, end, new_text in sorted(self._changes, key=lambda item: item[0], reverse=True):
+            text = text[:start] + new_text + text[end:]
+        return text
 
 
-def find_workflow_files(root: Path) -> List[Path]:
-    workflow_dir = root / ".github" / "workflows"
-    if not workflow_dir.exists():
+def find_workflow_files(base_dir: Path) -> List[Path]:
+    """Return a sorted list of workflow files under ``.github/workflows``."""
+
+    workflows_dir = base_dir / ".github" / "workflows"
+    if not workflows_dir.exists():
         return []
-    return sorted(
-        [
-            *workflow_dir.rglob("*.yml"),
-            *workflow_dir.rglob("*.yaml"),
-        ],
-        key=lambda p: str(p),
-    )
+    files: List[Path] = []
+    for pattern in ("*.yml", "*.yaml"):
+        files.extend(workflows_dir.rglob(pattern))
+    return sorted({path for path in files if path.is_file()})
 
 
-def load_yaml_documents(text: str) -> List[object]:
-    return list(yaml.safe_load_all(text))
+def derive_name_from_path(path_value: object) -> str | None:
+    """Derive a deterministic artifact name from a ``path`` value."""
 
-
-def dump_yaml_documents(documents: Sequence[object]) -> str:
-    dumped = yaml.safe_dump_all(documents, sort_keys=False)
-    if not dumped.endswith("\n"):
-        dumped += "\n"
-    return dumped
-
-
-def ensure_ordered_mapping(mapping: MutableMapping[str, object]) -> OrderedDict[str, object]:
-    if isinstance(mapping, OrderedDict):
-        return mapping
-    ordered = OrderedDict()
-    for key, value in mapping.items():
-        ordered[key] = value
-    return ordered
-
-
-def ensure_with_mapping(step: MutableMapping[str, object]) -> OrderedDict[str, object]:
-    current = step.get("with")
-    if isinstance(current, MutableMapping):
-        ordered = ensure_ordered_mapping(current)  # type: ignore[arg-type]
-    else:
-        ordered = OrderedDict()
-    step["with"] = ordered
-    return ordered
-
-
-def normalize_path_entries(path_value: object) -> List[str]:
-    def _extract(value: object) -> Iterable[str]:
-        if isinstance(value, str):
-            parts = [line.strip() for line in value.splitlines() if line.strip()]
-            if parts:
-                return parts
-            return [value.strip()]
-        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-            result: List[str] = []
-            for item in value:
-                result.extend(_extract(item))
-            return result
-        return []
-
-    entries = list(_extract(path_value))
-    return [entry for entry in entries if entry]
-
-
-def derive_artifact_name(path_value: object) -> Optional[str]:
-    paths = normalize_path_entries(path_value)
-    if not paths:
+    candidate: str | None = None
+    if isinstance(path_value, str):
+        candidate = path_value
+    elif isinstance(path_value, list):
+        for item in path_value:
+            if isinstance(item, str) and item:
+                candidate = item
+                break
+    if not candidate:
         return None
-
-    def sanitize(component: str) -> str:
-        cleaned = component.rstrip("/\\")
-        if not cleaned:
-            cleaned = component
-        base = os.path.basename(cleaned) if cleaned else component
-        if base in {"", ".", "*"}:
-            parent = os.path.dirname(cleaned)
-            if parent:
-                base = os.path.basename(parent)
-        base = base.strip()
-        if not base:
-            base = cleaned.strip()
-        safe = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "-" for ch in base)
-        safe = safe.strip("-_")
-        return safe or "artifact"
-
-    sanitized = [sanitize(path) for path in paths]
-    joined = "-".join(sanitized)
-    return joined or None
+    candidate = candidate.rstrip("/")
+    base = os.path.basename(candidate) if candidate else ""
+    if not base or base in {".", ""}:
+        base = "artifact"
+    sanitized = base.replace(" ", "-") or "artifact"
+    return sanitized
 
 
-def upgrade_step(
-    job_name: str,
-    step_index: int,
-    step: MutableMapping[str, object],
-) -> StepStats:
-    stats = StepStats()
-    uses_value = step.get("uses")
-    if not isinstance(uses_value, str):
-        return stats
+def node_to_basic(node: Node | None) -> object:
+    """Convert a YAML node to basic Python structures."""
 
-    is_upload = uses_value.startswith("actions/upload-artifact@v3")
-    is_download = uses_value.startswith("actions/download-artifact@v3")
-
-    if not (is_upload or is_download):
-        return stats
-
-    if is_upload:
-        step["uses"] = "actions/upload-artifact@v4"
-        stats.uploads_updated += 1
-    if is_download:
-        step["uses"] = "actions/download-artifact@v4"
-        stats.downloads_updated += 1
-        if stats.comment_targets is None:
-            stats.comment_targets = set()
-        stats.comment_targets.add((job_name, step_index))
-
-    with_block = ensure_with_mapping(step)
-
-    name_value = with_block.get("name")
-    if not name_value:
-        derived = derive_artifact_name(with_block.get("path"))
-        if derived:
-            new_with = OrderedDict()
-            inserted = False
-            for key, value in with_block.items():
-                new_with[key] = value
-                if key == "path":
-                    new_with["name"] = derived
-                    inserted = True
-            if not inserted:
-                new_with["name"] = derived
-            step["with"] = new_with
-            stats.names_added += 1
-        else:
-            step["with"] = with_block
-
-    return stats
+    if node is None:
+        return None
+    if isinstance(node, ScalarNode):
+        return node.value
+    if isinstance(node, SequenceNode):
+        return [node_to_basic(child) for child in node.value]
+    if isinstance(node, MappingNode):
+        result = {}
+        for key_node, value_node in node.value:
+            key = node_to_basic(key_node)
+            result[key] = node_to_basic(value_node)
+        return result
+    return None
 
 
-def process_steps(job_name: str, steps: List[MutableMapping[str, object]]) -> StepStats:
-    stats = StepStats()
-    index = 0
-    while index < len(steps):
-        step = steps[index]
-        if not isinstance(step, MutableMapping):
-            index += 1
-            continue
-        step_stats = upgrade_step(job_name, index, step)
-        helper_added = False
-        if step_stats.downloads_updated:
-            if not has_helper_step(steps, index):
-                helper_step = build_helper_step(step)
-                steps.insert(index + 1, helper_step)
-                step_stats.helper_steps_added += 1
-                helper_added = True
-        stats.merge(step_stats)
-        index += 1
-        if helper_added:
-            index += 1
-    return stats
+def find_mapping_entry(mapping: MappingNode, key: str) -> tuple[ScalarNode, Node] | None:
+    """Return the (key_node, value_node) pair for ``key`` within ``mapping``."""
+
+    for key_node, value_node in mapping.value:
+        if isinstance(key_node, ScalarNode) and key_node.value == key:
+            return key_node, value_node
+    return None
 
 
-def select_helper_path(step: MutableMapping[str, object]) -> str:
-    with_block = step.get("with")
-    if isinstance(with_block, MutableMapping):
-        path_value = with_block.get("path")
-        paths = normalize_path_entries(path_value)
-        if paths:
-            return paths[0]
-    return "."
+def node_contains(node: Node, needle: str) -> bool:
+    """Recursively determine whether ``needle`` appears in a node's scalar values."""
 
-
-def build_helper_step(step: MutableMapping[str, object]) -> OrderedDict[str, object]:
-    helper = OrderedDict()
-    helper["name"] = HELPER_STEP_NAME
-    helper["if"] = HELPER_STEP_IF
-    helper["run"] = f"ls -R {select_helper_path(step)} || true"
-    return helper
-
-
-def has_helper_step(steps: Sequence[object], index: int) -> bool:
-    next_index = index + 1
-    if next_index >= len(steps):
-        return False
-    next_step = steps[next_index]
-    if isinstance(next_step, MutableMapping):
-        return next_step.get("name") == HELPER_STEP_NAME
+    if isinstance(node, ScalarNode):
+        return needle in node.value
+    if isinstance(node, SequenceNode):
+        return any(node_contains(child, needle) for child in node.value)
+    if isinstance(node, MappingNode):
+        return any(node_contains(child, needle) for _, child in node.value)
     return False
 
 
-def process_document(doc: object) -> StepStats:
-    stats = StepStats()
-    if not isinstance(doc, MutableMapping):
-        return stats
-    jobs = doc.get("jobs")
-    if not isinstance(jobs, MutableMapping):
-        return stats
+def step_has_name(step_node: MappingNode, name: str) -> bool:
+    entry = find_mapping_entry(step_node, "name")
+    return bool(
+        entry
+        and isinstance(entry[1], ScalarNode)
+        and entry[1].value == name
+    )
 
-    for job_name, job_config in jobs.items():
-        if not isinstance(job_config, MutableMapping):
+
+def line_start_index(text: str, index: int) -> int:
+    prev_newline = text.rfind("\n", 0, index)
+    return prev_newline + 1 if prev_newline != -1 else 0
+
+
+def has_preceding_comment(text: str, index: int) -> bool:
+    cursor = index
+    while cursor > 0:
+        prev_newline = text.rfind("\n", 0, cursor - 1)
+        line_start = prev_newline + 1 if prev_newline != -1 else 0
+        line = text[line_start:cursor].strip()
+        if not line:
+            cursor = prev_newline
+            if cursor == -1:
+                break
             continue
-        steps = job_config.get("steps")
-        if isinstance(steps, list):
-            job_stats = process_steps(job_name=str(job_name), steps=steps)
-            stats.merge(job_stats)
-    return stats
+        return line == NOTE_COMMENT_TEXT
+    return False
 
 
-def apply_comment_annotations(text: str, stats: StepStats) -> str:
-    if not stats.comment_targets:
-        return text
-
-    targets_by_job: Dict[str, set[int]] = defaultdict(set)
-    for (job_name, step_index) in stats.comment_targets:
-        targets_by_job[job_name].add(step_index)
-
-    lines = text.splitlines()
-    output: List[str] = []
-    jobs_indent = None
-    current_job: Optional[str] = None
-    job_indent = None
-    steps_indent = None
-    step_counters: Dict[str, int] = defaultdict(int)
-
-    for line in lines:
-        stripped = line.strip()
-        indent = len(line) - len(line.lstrip(" "))
-
-        if stripped == "jobs:":
-            jobs_indent = indent
-            current_job = None
-            job_indent = None
-            steps_indent = None
-
-        if (
-            jobs_indent is not None
-            and indent == jobs_indent + 2
-            and stripped.endswith(":")
-            and not stripped.startswith("- ")
-        ):
-            current_job = stripped[:-1].strip()
-            job_indent = indent
-            steps_indent = None
-            step_counters[current_job] = 0
-
-        if (
-            current_job is not None
-            and job_indent is not None
-            and indent == job_indent + 2
-            and stripped == "steps:"
-        ):
-            steps_indent = indent
-            step_counters[current_job] = 0
-
-        if (
-            current_job is not None
-            and steps_indent is not None
-            and indent <= job_indent
-            and stripped
-            and not stripped.startswith("#")
-        ):
-            steps_indent = None
-
-        if steps_indent is not None and stripped.startswith("- "):
-            step_index = step_counters[current_job]
-            step_counters[current_job] += 1
-            if current_job in targets_by_job and step_index in targets_by_job[current_job]:
-                comment_line = " " * indent + COMMENT_TEXT
-                if not output or output[-1].strip() != COMMENT_TEXT:
-                    output.append(comment_line)
-
-        output.append(line)
-
-    return "\n".join(output) + ("\n" if text.endswith("\n") else "")
+def replace_uses(editor: TextEditor, text: str, node: ScalarNode, old: str, new: str) -> None:
+    start = node.start_mark.index
+    end = node.end_mark.index
+    segment = text[start:end]
+    updated = segment.replace(old, new)
+    if segment != updated:
+        editor.replace_segment(start, end, updated)
 
 
-def migrate_text(text: str) -> Tuple[str, StepStats]:
-    documents = load_yaml_documents(text)
-    aggregate_stats = StepStats()
+def ensure_name_in_with(
+    editor: TextEditor,
+    text: str,
+    with_key: ScalarNode,
+    with_node: MappingNode,
+    derived_name: str,
+) -> None:
+    if not derived_name:
+        return
+    if find_mapping_entry(with_node, "name"):
+        return
 
-    for doc in documents:
-        doc_stats = process_document(doc)
-        aggregate_stats.merge(doc_stats)
+    path_entry = find_mapping_entry(with_node, "path")
+    base_indent = with_key.start_mark.column + 2
+    indent_column = path_entry[0].start_mark.column if path_entry else base_indent
+    indent = " " * indent_column
 
-    dumped = dump_yaml_documents(documents)
-    final_text = apply_comment_annotations(dumped, aggregate_stats)
-    return final_text, aggregate_stats
+    if getattr(with_node, "flow_style", None):
+        indent_column = base_indent
+        insert_lines: list[str] = []
+        name_inserted = False
+        for key_node, value_node in with_node.value:
+            key_text = text[key_node.start_mark.index:key_node.end_mark.index]
+            value_text = text[value_node.start_mark.index:value_node.end_mark.index]
+            insert_lines.append(f"{indent}{key_text}: {value_text}")
+            if key_node.value == "path":
+                insert_lines.append(f"{indent}name: {derived_name}")
+                name_inserted = True
+        if not name_inserted:
+            insert_lines.append(f"{indent}name: {derived_name}")
+        replacement = "\n" + "\n".join(insert_lines)
+        editor.replace_segment(with_node.start_mark.index, with_node.end_mark.index, replacement)
+        return
 
-
-def migrate_file(path: Path) -> Tuple[str, StepStats]:
-    original_text = path.read_text()
-    new_text, stats = migrate_text(original_text)
-    return new_text, stats
-
-
-def write_file_with_backup(path: Path, content: str) -> None:
-    backup_path = Path(f"{path}.bak")
-    backup_path.write_text(path.read_text())
-    path.write_text(content)
-
-
-def summarize(path: Path, stats: StepStats) -> str:
-    parts = []
-    if stats.uploads_updated:
-        parts.append(f"upload:{stats.uploads_updated}")
-    if stats.downloads_updated:
-        parts.append(f"download:{stats.downloads_updated}")
-    if stats.names_added:
-        parts.append(f"names:{stats.names_added}")
-    if stats.helper_steps_added:
-        parts.append(f"helpers:{stats.helper_steps_added}")
-    summary = ", ".join(parts) if parts else "no changes"
-    return f"{path}: {summary}"
-
-
-def contains_artifact_v3(text: str) -> bool:
-    return bool(re.search(r"actions/(upload|download)-artifact@v3", text))
+    insert_index = (
+        path_entry[1].end_mark.index if path_entry else with_node.end_mark.index
+    )
+    editor.insert(insert_index, f"\n{indent}name: {derived_name}")
 
 
-def run_migration(args: argparse.Namespace) -> int:
-    files = find_workflow_files(args.root)
-    if not files:
-        print("No workflow files found.")
-        return 0
+def insert_comment(editor: TextEditor, text: str, step_node: MappingNode) -> None:
+    step_start = step_node.start_mark.index
+    line_start = line_start_index(text, step_start)
+    if has_preceding_comment(text, line_start):
+        return
+    indent = " " * step_node.start_mark.column
+    editor.insert(line_start, f"{indent}{NOTE_COMMENT_TEXT}\n")
 
-    exit_code = 0
-    for path in files:
-        original = path.read_text()
-        new_content, stats = migrate_text(original)
-        if not stats.changed:
-            print(f"{path}: no changes needed")
+
+def insert_helper_step(
+    editor: TextEditor,
+    text: str,
+    steps_node: SequenceNode,
+    step_index: int,
+    step_node: MappingNode,
+    normalized_path: str,
+) -> bool:
+    helper_exists = any(
+        isinstance(node, MappingNode) and step_has_name(node, HELPER_STEP_NAME)
+        for node in steps_node.value[step_index + 1 :]
+    )
+    if helper_exists:
+        return False
+    token = normalized_path.rstrip("/") + "/"
+    has_reference = any(
+        isinstance(node, MappingNode) and node_contains(node, token)
+        for node in steps_node.value[step_index + 1 :]
+    )
+    if not has_reference:
+        return False
+    indent = " " * step_node.start_mark.column
+    helper_lines = [
+        f"{indent}- name: {HELPER_STEP_NAME}",
+        f"{indent}  if: always()",
+        f"{indent}  run: ls -R {normalized_path} || true",
+    ]
+    insertion = "\n".join(helper_lines)
+    if not insertion.endswith("\n"):
+        insertion += "\n"
+    editor.insert(step_node.end_mark.index, insertion)
+    return True
+
+
+def process_steps(
+    steps_node: SequenceNode,
+    editor: TextEditor,
+    text: str,
+) -> List[StepChange]:
+    changes: List[StepChange] = []
+    for idx, step in enumerate(steps_node.value):
+        if not isinstance(step, MappingNode):
             continue
-        if args.dry_run:
-            diff = "".join(
-                difflib.unified_diff(
-                    original.splitlines(keepends=True),
-                    new_content.splitlines(keepends=True),
-                    fromfile=str(path),
-                    tofile=str(path),
-                )
-            )
-            if diff:
-                print(diff)
-            print(summarize(path, stats))
+        uses_entry = find_mapping_entry(step, "uses")
+        if not uses_entry or not isinstance(uses_entry[1], ScalarNode):
+            continue
+        uses_value = uses_entry[1].value
+        change = StepChange()
+        if "actions/upload-artifact@v3" in uses_value:
+            replace_uses(editor, text, uses_entry[1], "actions/upload-artifact@v3", "actions/upload-artifact@v4")
+            change.was_upload = True
+        elif "actions/download-artifact@v3" in uses_value:
+            replace_uses(editor, text, uses_entry[1], "actions/download-artifact@v3", "actions/download-artifact@v4")
+            change.was_download = True
+            insert_comment(editor, text, step)
         else:
-            write_file_with_backup(path, new_content)
-            print(summarize(path, stats))
+            continue
 
-    if args.write:
-        remaining_v3 = []
-        for path in files:
-            if contains_artifact_v3(path.read_text()):
-                remaining_v3.append(path)
-        if remaining_v3:
-            print("Remaining @v3 references detected:")
-            for path in remaining_v3:
-                print(f"  {path}")
+        with_entry = find_mapping_entry(step, "with")
+        if with_entry and isinstance(with_entry[1], MappingNode):
+            path_entry = find_mapping_entry(with_entry[1], "path")
+            path_value = node_to_basic(path_entry[1]) if path_entry else None
+            derived_name = derive_name_from_path(path_value)
+            ensure_name_in_with(editor, text, with_entry[0], with_entry[1], derived_name or "")
+            if derived_name and not find_mapping_entry(with_entry[1], "name"):
+                change.ensured_name = True
+            if change.was_download and isinstance(path_value, str) and path_value.strip():
+                normalized = path_value.rstrip("/") or path_value
+                if insert_helper_step(editor, text, steps_node, idx, step, normalized):
+                    change.added_helper_step = True
+        changes.append(change)
+    return changes
+
+
+def walk_nodes(node: Node, editor: TextEditor, text: str) -> List[StepChange]:
+    changes: List[StepChange] = []
+    if isinstance(node, MappingNode):
+        for key_node, value_node in node.value:
+            if isinstance(key_node, ScalarNode) and key_node.value == "steps" and isinstance(value_node, SequenceNode):
+                changes.extend(process_steps(value_node, editor, text))
+            else:
+                changes.extend(walk_nodes(value_node, editor, text))
+    elif isinstance(node, SequenceNode):
+        for child in node.value:
+            changes.extend(walk_nodes(child, editor, text))
+    return changes
+
+
+def migrate_file(path: Path) -> FileMigrationResult:
+    original_text = path.read_text(encoding="utf-8")
+    editor = TextEditor(original_text)
+    documents = [doc for doc in yaml.compose_all(original_text) if doc is not None]
+    step_changes: List[StepChange] = []
+    for document in documents:
+        step_changes.extend(walk_nodes(document, editor, original_text))
+    new_text = editor.apply()
+    if original_text.endswith("\n") and not new_text.endswith("\n"):
+        new_text += "\n"
+    return FileMigrationResult(path=path, original_text=original_text, new_text=new_text, step_changes=step_changes)
+
+
+def apply_migrations(results: Sequence[FileMigrationResult], write: bool) -> int:
+    exit_code = 0
+    for result in results:
+        if not result.changed:
+            print(f"{result.path}: no changes needed")
+            continue
+        diff = "".join(
+            difflib.unified_diff(
+                result.original_text.splitlines(keepends=True),
+                result.new_text.splitlines(keepends=True),
+                fromfile=str(result.path),
+                tofile=f"{result.path} (migrated)",
+            )
+        )
+        if write:
+            backup_path = result.path.with_suffix(result.path.suffix + ".bak")
+            shutil.copy2(result.path, backup_path)
+            result.path.write_text(result.new_text, encoding="utf-8")
+            print(f"{result.path}: migrated (backup at {backup_path.name})")
+        else:
+            print(f"{result.path}: would migrate")
+            print(diff)
+    if write:
+        remaining = [
+            r
+            for r in results
+            if (
+                "actions/upload-artifact@v3" in r.new_text
+                or "actions/download-artifact@v3" in r.new_text
+            )
+        ]
+        if remaining:
             exit_code = 2
-
     return exit_code
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = parse_args(argv)
-    return run_migration(args)
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true", help="show diff without writing")
+    mode.add_argument("--write", action="store_true", help="apply changes in place")
+    parser.add_argument(
+        "--base-dir",
+        default=Path.cwd(),
+        type=Path,
+        help="repository root containing .github/workflows",
+    )
+    args = parser.parse_args(argv)
+
+    base_dir: Path = args.base_dir
+    workflow_files = find_workflow_files(base_dir)
+    if not workflow_files:
+        print("No workflow files found; nothing to do.")
+        return 0
+
+    results = [migrate_file(path) for path in workflow_files]
+    any_changes = any(result.changed for result in results)
+    if args.dry_run and not any_changes:
+        print("All workflows already migrated.")
+        return 0
+    exit_code = apply_migrations(results, write=args.write)
+    return exit_code
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

@@ -273,9 +273,17 @@ def normalize_name(value: object | None) -> str | None:
 
     text = normalize_digits(str(value))
     text = unicodedata.normalize("NFKC", text)
-    text = text.replace("ك", "ک").replace("ي", "ی")
-    text = _ZERO_WIDTH_PATTERN.sub("", text)
-    stripped = text.strip()
+    replacements = (("ك", "ک"), ("ي", "ی"))
+    adjusted_text = text
+    adjusted = False
+    for src, dest in replacements:
+        if src in adjusted_text:
+            adjusted = True
+            adjusted_text = adjusted_text.replace(src, dest)
+    if adjusted:
+        log_norm_error("name", value, "تبدیل حروف عربی به فارسی", "name.arabic_letters")
+    adjusted_text = _ZERO_WIDTH_PATTERN.sub("", adjusted_text)
+    stripped = adjusted_text.strip()
     collapsed = " ".join(stripped.split())
     if not collapsed:
         log_norm_error("name", value, "نام پس از پاکسازی تهی شد", "name.empty_after_clean")

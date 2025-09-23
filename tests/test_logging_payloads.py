@@ -31,16 +31,7 @@ def _single_payload(caplog: pytest.LogCaptureFixture) -> dict[str, object]:
     assert len(caplog.records) == 1
     record = caplog.records[0]
     payload = json.loads(record.message)
-    assert set(payload) == {
-        "event",
-        "field",
-        "reason",
-        "code",
-        "sample",
-        "mobile_mask",
-        "nid_hash",
-    }
-    assert payload["event"] == "normalization_failure"
+    assert set(payload) == {"code", "sample", "mobile_mask", "nid_hash"}
     return payload
 
 
@@ -50,7 +41,6 @@ def test_log_norm_error_masks_mobile(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         log_norm_error("mobile", "+98 912 345 6712", "نمونه", "mobile.test")
     payload = _single_payload(caplog)
-    assert payload["field"] == "mobile"
     assert payload["code"] == "mobile.test"
     assert payload["sample"] == "09*******12"
     assert payload["mobile_mask"] == "09*******12"
@@ -64,7 +54,6 @@ def test_log_norm_error_from_normalizer(caplog: pytest.LogCaptureFixture) -> Non
         with pytest.raises(ValueError):
             normalize_reg_center(True)
     payload = _single_payload(caplog)
-    assert payload["field"] == "reg_center"
     assert payload["code"] == "reg_center.bool"
     assert payload["sample"] == "True"
     assert payload["mobile_mask"] is None
@@ -78,7 +67,6 @@ def test_log_norm_error_hashes_national_id(caplog: pytest.LogCaptureFixture) -> 
         with pytest.raises(ValueError):
             normalize_national_id("0045595418")
     payload = _single_payload(caplog)
-    assert payload["field"] == "national_id"
     assert payload["code"] == "national_id.checksum"
     assert isinstance(payload["sample"], str)
     assert set(payload["sample"]) == {"*"}
@@ -93,10 +81,62 @@ def test_nid_hash_respects_salt(
 ) -> None:
     """Changing the salt should affect the emitted hash."""
 
-    monkeypatch.setenv("NID_HASH_SALT", "custom_salt")
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.delenv("TEST_HASH_SALT", raising=False)
+    monkeypatch.setenv("PII_HASH_SALT", "custom_salt")
     with caplog.at_level(logging.WARNING):
         log_norm_error("national_id", "0045595419", "نمونه", "national_id.test")
     payload = _single_payload(caplog)
     expected = hashlib.sha256("custom_salt::0045595419".encode("utf-8")).hexdigest()[:12]
     assert payload["nid_hash"] == expected
     assert payload["sample"] == "**********"
+
+
+def test_test_hash_salt_override(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When APP_ENV is dev/test the TEST_HASH_SALT override must apply."""
+
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("PII_HASH_SALT", "base_salt")
+    monkeypatch.setenv("TEST_HASH_SALT", "override_salt")
+    with caplog.at_level(logging.WARNING):
+        log_norm_error("national_id", "1234567890", "نمونه", "national_id.dev")
+    payload = _single_payload(caplog)
+    expected = hashlib.sha256("override_salt::1234567890".encode("utf-8")).hexdigest()[:12]
+    assert payload["nid_hash"] == expected
+
+
+def test_test_hash_salt_ignored_in_prod(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prod environments must ignore the TEST_HASH_SALT override."""
+
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("PII_HASH_SALT", "prod_salt")
+    monkeypatch.setenv("TEST_HASH_SALT", "test_only")
+    with caplog.at_level(logging.WARNING):
+        log_norm_error("national_id", "1234567890", "نمونه", "national_id.prod")
+    payload = _single_payload(caplog)
+    expected = hashlib.sha256("prod_salt::1234567890".encode("utf-8")).hexdigest()[:12]
+    assert payload["nid_hash"] == expected
+
+
+def test_log_payload_avoids_raw_pii(caplog: pytest.LogCaptureFixture) -> None:
+    """Structured payloads must not include raw identifiers."""
+
+    raw_mobile = "00989123456789"
+    with caplog.at_level(logging.WARNING):
+        log_norm_error("mobile", raw_mobile, "", "mobile.pii_check")
+    payload = _single_payload(caplog)
+    assert raw_mobile not in caplog.text
+    assert "9123456789" not in caplog.text
+    assert payload["sample"].startswith("09*******")
+
+
+def test_log_norm_error_handles_arabic_digits(caplog: pytest.LogCaptureFixture) -> None:
+    """Arabic-Indic digits must normalize before masking."""
+
+    with caplog.at_level(logging.WARNING):
+        log_norm_error("mobile", "٠٠٩٨٩١٢٣٤٥٦٧٨٩", "", "mobile.arabic_digits")
+    payload = _single_payload(caplog)
+    assert payload["mobile_mask"] == "09*******89"
+    assert payload["sample"] == "09*******89"

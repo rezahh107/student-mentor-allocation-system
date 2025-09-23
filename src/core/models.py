@@ -14,7 +14,7 @@ from typing import Any, Dict, Literal, Mapping, Sequence, cast
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from .logging_utils import LOGGER, log_norm_error
+from .logging_utils import log_norm_error
 from .normalize import (
     NAME_ERROR,
     SpecialSchoolsProvider,
@@ -211,23 +211,12 @@ def to_student_normalized(
     )
 
     if incoming_student_type is not None:
-        try:
-            incoming_normalized = _normalize_student_type_value(incoming_student_type)
-        except ValueError:
-            log_norm_error(
-                "student_type",
-                incoming_student_type,
-                "مقدار ورودی نامعتبر",
-                "student_type.invalid_input",
-            )
-        else:
-            if incoming_normalized != derived_student_type:
-                log_norm_error(
-                    "student_type",
-                    incoming_student_type,
-                    "ناسازگاری با مقدار محاسبه‌شده",
-                    "student_type.mismatch",
-                )
+        log_norm_error(
+            "student_type",
+            incoming_student_type,
+            "مقدار ورودی نادیده گرفته شد",
+            "student_type.ignored_input",
+        )
 
     payload: Dict[str, Any] = {
         "gender": gender_raw,
@@ -243,19 +232,9 @@ def to_student_normalized(
 
     if name_raw is not None:
         try:
-            normalized_name = normalize_name(name_raw)
+            normalize_name(name_raw)
         except ValueError:
             log_norm_error("name", name_raw, NAME_ERROR, "name.invalid")
-        else:
-            if normalized_name is None and name_raw not in (None, "", " "):
-                LOGGER.warning(
-                    "name_normalization",
-                    extra={
-                        "event": "name_normalization",
-                        "field": "name",
-                        "original": "***",
-                    },
-                )
     return model
 
 

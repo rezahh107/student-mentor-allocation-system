@@ -1,0 +1,51 @@
+# -*- coding: utf-8 -*-
+"""Input validation routines for the counter service."""
+from __future__ import annotations
+
+import re
+import unicodedata
+from typing import Tuple
+
+from .errors import counter_exhausted, invalid_gender, invalid_national_id, invalid_year_code
+from .types import GenderLiteral
+
+NATIONAL_ID_PATTERN = re.compile(r"^\d{10}$")
+YEAR_CODE_PATTERN = re.compile(r"^\d{2}$")
+COUNTER_PATTERN = re.compile(r"^\d{2}(357|373)\d{4}$")
+COUNTER_PREFIX = {0: "373", 1: "357"}
+COUNTER_MAX_SEQ = 9999
+PERSIAN_DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
+
+
+def normalize(text: str) -> str:
+    normalized = unicodedata.normalize('NFKC', text or '').translate(PERSIAN_DIGITS)
+    return normalized.strip()
+
+
+def ensure_valid_inputs(national_id: str, gender: GenderLiteral, year_code: str) -> Tuple[str, str]:
+    normalized_nid = normalize(national_id)
+    normalized_year = normalize(year_code)
+
+    if not normalized_nid or not NATIONAL_ID_PATTERN.fullmatch(normalized_nid):
+        raise invalid_national_id("کد ملی باید دقیقا ۱۰ رقم باشد.")
+
+    if gender not in COUNTER_PREFIX:
+        raise invalid_gender("جنسیت باید ۰ (زن) یا ۱ (مرد) باشد.")
+
+    if not normalized_year or not YEAR_CODE_PATTERN.fullmatch(normalized_year):
+        raise invalid_year_code("کد سال باید دقیقا دو رقم باشد.")
+
+    return normalized_nid, normalized_year
+
+
+def ensure_counter_format(counter: str) -> str:
+    value = normalize(counter)
+    if not COUNTER_PATTERN.fullmatch(value):
+        raise counter_exhausted("فرمت شمارنده معتبر نیست یا ظرفیت پایان یافته است.")
+    return value
+
+
+def ensure_sequence_bounds(seq: int) -> int:
+    if not (1 <= seq <= COUNTER_MAX_SEQ):
+        raise counter_exhausted("محدوده شماره شمارنده به پایان رسیده است.")
+    return seq

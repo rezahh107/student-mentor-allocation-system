@@ -1,0 +1,119 @@
+# -*- coding: utf-8 -*-
+"""Command line interface for the counter service."""
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import asdict
+from importlib import import_module
+import sys
+import time
+from pathlib import Path
+from typing import Optional, Sequence
+
+from . import assign_counter, get_config, get_service
+from .backfill import run_backfill
+from .observability import MetricsServer
+from .types import BackfillObserver
+
+
+try:  # pragma: no branch - import guard for coverage stability
+    import_module("scripts.post_migration_checks")
+except ModuleNotFoundError:  # pragma: no cover - optional in prod builds
+    pass
+
+
+class StdoutObserver(BackfillObserver):
+    """Prints progress for each processed chunk."""
+
+    def on_chunk(self, chunk_index: int, applied: int, reused: int, skipped: int) -> None:
+        payload = {
+            "chunk": chunk_index,
+            "applied": applied,
+            "reused": reused,
+            "skipped": skipped,
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+
+
+def _run_assign(args: argparse.Namespace) -> int:
+    try:
+        counter = assign_counter(args.national_id, args.gender, args.year_code)
+    except Exception as exc:  # noqa: BLE001 - CLI boundary
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(counter)
+    return 0
+
+
+def _run_backfill(args: argparse.Namespace) -> int:
+    service = get_service()
+    observer: Optional[BackfillObserver] = StdoutObserver() if args.verbose else None
+    stats = run_backfill(
+        service,
+        Path(args.csv_path),
+        chunk_size=args.chunk_size,
+        apply=args.apply,
+        observer=observer,
+    )
+    print(json.dumps(asdict(stats), ensure_ascii=False))
+    return 0
+
+
+def _run_metrics(args: argparse.Namespace) -> int:
+    config = get_config()
+    port = args.port or config.metrics_port
+    server = MetricsServer()
+    server.start(port)
+    if args.oneshot:
+        server.stop()
+        return 0
+    duration = args.duration
+    try:
+        if duration is not None:
+            time.sleep(duration)
+        else:
+            while True:
+                time.sleep(1)
+    except KeyboardInterrupt:  # pragma: no cover - manual interrupt
+        pass
+    finally:
+        server.stop()
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Phase 2 counter service CLI")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    assign_cmd = sub.add_parser("assign-counter", help="Assign a counter for a single student")
+    assign_cmd.add_argument("national_id", help="کد ملی ۱۰ رقمی")
+    assign_cmd.add_argument("gender", type=int, choices=(0, 1), help="جنسیت از منبع اصلی داده")
+    assign_cmd.add_argument("year_code", help="کد سال دو رقمی")
+    assign_cmd.set_defaults(func=_run_assign)
+
+    backfill_cmd = sub.add_parser("backfill", help="Stream CSV backfill")
+    backfill_cmd.add_argument("csv_path", help="مسیر فایل CSV ورودی")
+    backfill_cmd.add_argument("--chunk-size", type=int, default=500, help="اندازه دسته‌ها")
+    backfill_cmd.add_argument("--apply", action="store_true", help="اجرای واقعی به جای dry-run")
+    backfill_cmd.add_argument("--verbose", action="store_true", help="چاپ پیشرفت دسته‌ای")
+    backfill_cmd.set_defaults(func=_run_backfill)
+
+    metrics_cmd = sub.add_parser("serve-metrics", help="اجرای اکسپورتر پرومتئوس")
+    metrics_cmd.add_argument("--port", type=int, help="پورت سرویس")
+    metrics_cmd.add_argument("--oneshot", action="store_true", help="فقط مقداردهی اولیه و خروج")
+    metrics_cmd.add_argument("--duration", type=float, help="خروج خودکار بعد از این مدت (ثانیه)")
+    metrics_cmd.set_defaults(func=_run_metrics)
+
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    result = args.func(args)
+    return int(result)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())

@@ -27,6 +27,7 @@ from src.ui.core.theme import PersianTheme
 from src.ui.presenters.main_presenter import MainPresenter
 from src.ui.utils.error_handler import ErrorHandler
 from src.ui.widgets.loading_overlay import LoadingOverlay
+from src.ui._safety import swallow_ui_error
 
 
 LOGGER = logging.getLogger(__name__)
@@ -263,10 +264,10 @@ class MainWindow(QMainWindow):
             self._status_last_update.setText(f"آخرین بروزرسانی: {ts}")
         # Placeholder به‌روزرسانی متن صفحات
         # اگر صفحه دانش‌آموزان لیبل نیست، از بروزرسانی مستقیم متن صرف‌نظر می‌کنیم
-        try:
-            self._page_students.setText(f"لیست دانش‌آموزان (تعداد: {len(state.students)})")  # type: ignore[call-arg]
-        except Exception:
-            pass
+        with swallow_ui_error("به‌روزرسانی صفحه دانش‌آموزان"):
+            self._page_students.setText(
+                f"لیست دانش‌آموزان (تعداد: {len(state.students)})"
+            )  # type: ignore[call-arg]
         self._page_mentors.setText(f"لیست منتورها (تعداد: {len(state.mentors)})")
         if state.stats:
             self._page_dashboard.setText(

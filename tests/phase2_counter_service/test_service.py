@@ -55,6 +55,19 @@ def test_conflict_metric_emitted(service, meters, session, fault_injector):
     assert _metric_value(meters._conflicts, type="counter") == 1
 
 
+def test_conflict_records_failure(service, meters, session, fault_injector, caplog):
+    fault_injector.duplicate_counter = service.repository._max_retries
+    seed_student(session, national_id="5555555555", gender=1)
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(CounterServiceError) as exc:
+            service.assign_counter("5555555555", 1, "25")
+
+    assert exc.value.detail.code == "E_DB_CONFLICT"
+    assert _metric_value(meters._failures, reason="E_DB_CONFLICT") == 1
+    assert any("E_DB_CONFLICT" in record.getMessage() for record in caplog.records)
+
+
 def test_prefix_mismatch_logged(service, meters, session, caplog):
     mismatched_counter = "253571234"
     seed_student(session, national_id="1234567894", gender=0, counter=mismatched_counter)

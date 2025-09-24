@@ -81,3 +81,10 @@ def test_metrics_server_graceful_shutdown_http(isolated_meters: CounterMeters):
     assert server.port is None
     assert _gauge_value(isolated_meters.exporter_gauge) == 0.0
     assert _gauge_value(isolated_meters.http_gauge) == 0.0
+
+
+def test_metrics_server_stop_without_start(isolated_meters: CounterMeters):
+    server = MetricsServer(isolated_meters)
+    server.stop()
+    assert _gauge_value(isolated_meters.exporter_gauge) == 0.0
+    assert _gauge_value(isolated_meters.http_gauge) == 0.0

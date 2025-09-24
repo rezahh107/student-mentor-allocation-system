@@ -49,3 +49,4 @@ def test_unknown_conflict_branch(service, meters, session, caplog):
     assert COUNTER_PATTERN.fullmatch(counter)
     assert _metric_value(meters._conflicts, type="unknown") == 1
     assert any("conflict_resolved" in record.message for record in caplog.records)
+    assert any("E_DB_CONFLICT" in record.message for record in caplog.records)

@@ -24,6 +24,13 @@ def test_cli_assign_counter(monkeypatch, capsys):
     assert captured["args"] == ("1234567890", 0, "25")
 
 
+def test_stdout_observer_emits_json(capsys):
+    observer = cli.StdoutObserver()
+    observer.on_chunk(3, 7, 2, 1)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"chunk": 3, "applied": 7, "reused": 2, "skipped": 1}
+
+
 def test_cli_backfill(monkeypatch, capsys, tmp_path):
     stats = BackfillStats(
         total_rows=10,
@@ -83,6 +90,33 @@ def test_cli_metrics_duration(monkeypatch):
     assert exit_code == 0
     assert events[0] == ("start", 9200)
     assert events[-1] == "stop"
+
+
+def test_cli_metrics_indefinite_loop(monkeypatch):
+    events = []
+
+    class FakeServer:
+        def start(self, port: int) -> None:
+            events.append(("start", port))
+
+        def stop(self) -> None:
+            events.append("stop")
+
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "MetricsServer", FakeServer)
+    monkeypatch.setattr(cli, "get_config", lambda: SimpleNamespace(metrics_port=9300))
+    monkeypatch.setattr(cli.time, "sleep", fake_sleep)
+
+    exit_code = cli.main(["serve-metrics"])
+
+    assert exit_code == 0
+    assert events == [("start", 9300), "stop"]
+    assert sleeps == [1]
 
 
 def test_cli_assign_counter_error(monkeypatch, capsys):

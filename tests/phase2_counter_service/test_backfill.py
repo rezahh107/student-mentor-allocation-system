@@ -4,10 +4,13 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import pytest
+
 from sqlalchemy import select
 
 from src.infrastructure.persistence.models import StudentModel
-from src.phase2_counter_service.backfill import run_backfill
+from src.phase2_counter_service.backfill import BackfillRow, run_backfill
+from src.phase2_counter_service.errors import CounterServiceError
 
 from .conftest import seed_student
 
@@ -18,6 +21,14 @@ def _write_csv(path: Path, rows):
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+class RecordingObserver:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, int, int, int]] = []
+
+    def on_chunk(self, chunk_index: int, applied: int, reused: int, skipped: int) -> None:
+        self.calls.append((chunk_index, applied, reused, skipped))
 
 
 def test_backfill_dry_run_and_apply(tmp_path, service, session):
@@ -89,3 +100,47 @@ def test_backfill_reports_prefix_mismatch(tmp_path, service, session, caplog):
 
     assert stats.prefix_mismatches == 1
     assert any("backfill_prefix_mismatch" in record.message for record in caplog.records)
+
+
+def test_backfill_invalid_gender(tmp_path, service, session):
+    seed_student(session, national_id="9999999999", gender=0)
+    csv_path = tmp_path / "invalid.csv"
+    _write_csv(
+        csv_path,
+        [
+            {"national_id": "9999999999", "gender": "زن", "year_code": "25"},
+        ],
+    )
+
+    with pytest.raises(CounterServiceError) as exc:
+        run_backfill(service, csv_path, chunk_size=1, apply=True)
+
+    assert exc.value.detail.code == "E_INVALID_GENDER"
+
+
+def test_backfill_observer_streams(tmp_path, service, session, monkeypatch):
+    rows = [
+        BackfillRow("1234567801", 0, "25"),
+        BackfillRow("1234567802", 1, "25"),
+        BackfillRow("1234567803", 0, "25"),
+    ]
+
+    def fake_parse(path: Path):  # noqa: ARG001 - deterministic stream
+        yield from rows
+
+    monkeypatch.setattr("src.phase2_counter_service.backfill._parse_rows", fake_parse)
+
+    seed_student(
+        session,
+        national_id=rows[0].national_id,
+        gender=rows[0].gender,
+        counter="253731111",
+    )
+    for row in rows[1:]:
+        seed_student(session, national_id=row.national_id, gender=row.gender)
+
+    observer = RecordingObserver()
+    stats = run_backfill(service, Path("ignored.csv"), chunk_size=2, apply=False, observer=observer)
+
+    assert stats.total_rows == 3
+    assert observer.calls == [(1, 0, 1, 1), (2, 0, 0, 1)]

@@ -89,3 +89,44 @@ def test_excel_safe_writer_quote_minimal() -> None:
     value = buffer.getvalue().strip()
     assert value.split(",")[0] == "کد"
     assert value.split(",")[1] == "'=VALUE"
+
+
+@pytest.mark.parametrize(
+    "bom,crlf,quote_all",
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+        (True, True, False),
+        (True, False, True),
+        (False, True, True),
+        (True, True, True),
+    ],
+)
+def test_excel_safe_writer_large_streaming(bom: bool, crlf: bool, quote_all: bool) -> None:
+    buffer = io.StringIO()
+    writer = make_excel_safe_writer(
+        buffer,
+        bom=bom,
+        guard_formulas=True,
+        quote_all=quote_all,
+        crlf=crlf,
+    )
+    count = 0
+
+    def iterator() -> Iterator[tuple[str, str]]:
+        nonlocal count
+        for index in range(100_000):
+            count += 1
+            yield (f"ردیف-{index}", f"=SUM({index})")
+
+    writer.writerows(iterator())
+    assert count == 100_000
+    payload = buffer.getvalue()
+    if bom:
+        assert payload.startswith(BOM_UTF8)
+    terminator = "\r\n" if crlf else "\n"
+    assert payload.endswith(terminator)
+    assert "'=SUM(0)" in payload
+    assert "ردیف-99999" in payload

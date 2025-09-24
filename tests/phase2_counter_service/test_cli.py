@@ -90,8 +90,118 @@ def test_cli_backfill_writes_excel_safe_csv(monkeypatch, tmp_path, capsys):
     content = content_bytes.decode("utf-8")
     lines = [line for line in content.splitlines() if line]
     assert '"total_rows","5"' in lines
-    assert '"dry_run","True"' in lines
+    assert '"dry_run","بله"' in lines
     assert all(not line.startswith('"\'') for line in lines[1:])
+
+
+def test_cli_stats_csv_localization_and_digits(monkeypatch, tmp_path, capsys):
+    stats = BackfillStats(
+        total_rows=12,
+        applied=7,
+        reused=4,
+        skipped=1,
+        dry_run=False,
+        prefix_mismatches=3,
+    )
+
+    def fake_run(service, path, **kwargs):  # noqa: ARG001
+        return stats
+
+    csv_path = tmp_path / "localized.csv"
+    monkeypatch.setattr(cli, "get_service", lambda: None)
+    monkeypatch.setattr(cli, "run_backfill", fake_run)
+    exit_code = cli.main([
+        "backfill",
+        str(tmp_path / "input.csv"),
+        "--stats-csv",
+        str(csv_path),
+    ])
+    assert exit_code == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out)["dry_run"] is False
+    payload = csv_path.read_text(encoding="utf-8")
+    assert "خیر" in payload
+    assert "۷" not in payload
+
+
+def test_cli_stats_csv_overwrite_guard(monkeypatch, tmp_path, capsys):
+    stats = BackfillStats(
+        total_rows=1,
+        applied=1,
+        reused=0,
+        skipped=0,
+        dry_run=True,
+        prefix_mismatches=0,
+    )
+
+    def fake_run(service, path, **kwargs):  # noqa: ARG001
+        return stats
+
+    target = tmp_path / "existing.csv"
+    target.write_text("legacy", encoding="utf-8")
+    monkeypatch.setattr(cli, "get_service", lambda: None)
+    monkeypatch.setattr(cli, "run_backfill", fake_run)
+    args = [
+        "backfill",
+        str(tmp_path / "input.csv"),
+        "--stats-csv",
+        str(target),
+    ]
+    exit_code = cli.main(args)
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "بازنویسی" in captured.err
+    assert json.loads(captured.out)["applied"] == 1
+    assert target.read_text(encoding="utf-8") == "legacy"
+
+    capsys.readouterr()
+    exit_code = cli.main(args + ["--overwrite"])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "بله" in target.read_text(encoding="utf-8")
+    assert json.loads(captured.out)["dry_run"] is True
+
+
+def test_cli_stats_csv_directory_suffix(monkeypatch, tmp_path, capsys):
+    stats = BackfillStats(
+        total_rows=8,
+        applied=4,
+        reused=4,
+        skipped=0,
+        dry_run=True,
+        prefix_mismatches=0,
+    )
+
+    def fake_run(service, path, **kwargs):  # noqa: ARG001
+        return stats
+
+    target_dir = tmp_path / "stats"
+    target_dir.mkdir()
+    monkeypatch.setattr(cli, "get_service", lambda: None)
+    monkeypatch.setattr(cli, "run_backfill", fake_run)
+    monkeypatch.setattr(cli, "_timestamp_suffix", lambda: "20230101T120000")
+
+    class _UUID:
+        hex = "cafebabedeadbeef"
+
+    monkeypatch.setattr(cli.uuid, "uuid4", lambda: _UUID())
+
+    exit_code = cli.main([
+        "backfill",
+        str(tmp_path / "input.csv"),
+        "--stats-csv",
+        str(target_dir),
+        "--excel-safe",
+    ])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    created = list(target_dir.glob("*.csv"))
+    assert len(created) == 1
+    expected_name = "backfill_stats_20230101T120000_cafeba.csv"
+    assert created[0].name == expected_name
+    payload = created[0].read_text(encoding="utf-8")
+    assert "بله" in payload
+    assert json.loads(captured.out)["dry_run"] is True
 
 
 def test_cli_metrics(monkeypatch):

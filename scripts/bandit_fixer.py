@@ -8,6 +8,29 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List
 
+INSECURE_HASH_FUNCS = {"md5", "sha1"}
+NON_CRYPTO_HINTS = {
+    "checksum",
+    "etag",
+    "filename",
+    "cache",
+    "digest",
+    "noncrypto",
+    "non-sec",
+    "nonsec",
+    "path",
+}
+SENSITIVE_HINTS = {
+    "password",
+    "token",
+    "secret",
+    "auth",
+    "signature",
+    "sign",
+    "otp",
+    "jwt",
+}
+
 TARGET_ROOTS: tuple[str, ...] = ("src", "scripts")
 B110_PATTERN = re.compile(
     r"(?P<indent>^[ \t]*)except\s+Exception(?P<alias>\s+as\s+\w+)?\s*:\s*pass\b",
@@ -154,6 +177,75 @@ def _fix_shell_usage(text: str) -> tuple[str, bool]:
     return new_text, modified
 
 
+def _append_nosec(line: str, codes: str, reason: str) -> str:
+    if "# nosec" in line:
+        return line
+    newline = ""
+    if line.endswith("\n"):
+        newline = "\n"
+        line = line[:-1]
+    return f"{line}  # nosec {codes}: {reason}{newline}"
+
+
+def _fix_insecure_hashes(text: str) -> tuple[str, bool]:
+    lines = text.splitlines(keepends=True)
+    modified = False
+
+    def _line_has_hint(raw: str, hints: set[str]) -> bool:
+        lowered = raw.lower()
+        return any(hint in lowered for hint in hints)
+
+    for idx, original in enumerate(lines):
+        lower = original.lower()
+        for func in INSECURE_HASH_FUNCS:
+            needle = f"hashlib.{func}"
+            if needle in lower:
+                is_sensitive = _line_has_hint(lower, SENSITIVE_HINTS)
+                is_non_crypto = _line_has_hint(lower, NON_CRYPTO_HINTS)
+                if is_sensitive or not is_non_crypto:
+                    replacement = re.sub(rf"hashlib\.{func}\b", "hashlib.sha256", original)
+                    if replacement != original:
+                        lines[idx] = replacement
+                        modified = True
+                else:
+                    annotated = _append_nosec(
+                        original,
+                        "B303",
+                        "استفاده صرفاً برای چک‌سام یا نام فایل",
+                    )
+                    if annotated != original:
+                        lines[idx] = annotated
+                        modified = True
+                break
+        else:
+            match = re.search(r"hashlib\.new\((['\"])(md5|sha1)\1", original, flags=re.IGNORECASE)
+            if match:
+                algo = match.group(2).lower()
+                is_sensitive = _line_has_hint(lower, SENSITIVE_HINTS)
+                is_non_crypto = _line_has_hint(lower, NON_CRYPTO_HINTS)
+                if is_sensitive or not is_non_crypto:
+                    replacement = re.sub(
+                        rf"hashlib\.new\((['\"])({algo})(['\"])",
+                        r"hashlib.new(\1sha256\3)",
+                        original,
+                        flags=re.IGNORECASE,
+                    )
+                    if replacement != original:
+                        lines[idx] = replacement
+                        modified = True
+                else:
+                    annotated = _append_nosec(
+                        original,
+                        "B303,B324",
+                        "الگوی غیررمزنگارانه؛ صرفاً برای چک‌سام",
+                    )
+                    if annotated != original:
+                        lines[idx] = annotated
+                        modified = True
+
+    return "".join(lines), modified
+
+
 def _apply_fixes(path: Path) -> tuple[bool, list[str]]:
     is_ui = path.as_posix().startswith("src/ui/")
     text = _load_text(path)
@@ -168,6 +260,11 @@ def _apply_fixes(path: Path) -> tuple[bool, list[str]]:
     if changed:
         text = new_text
         transformations.append("B602/B603")
+
+    new_text, changed = _fix_insecure_hashes(text)
+    if changed:
+        text = new_text
+        transformations.append("B303/B324")
 
     new_text, changed = _fix_b110(text, is_ui=is_ui)
     if changed:

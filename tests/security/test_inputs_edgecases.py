@@ -14,6 +14,8 @@ from src.phase2_counter_service.validation import ensure_valid_inputs, normalize
         ("0", "0"),
         ("۰", "0"),
         (" ۰۱۲۳۴۵۶۷۸۹ ", "0123456789"),
+        ("۰۱۲۳۴۵۶۷۸۹\u200b", "0123456789"),
+        (" " + "۰۱۲۳۴۵۶۷۸۹" * 5 + " ", "0123456789" * 5),
     ],
 )
 def test_normalize_preserves_expected_ascii(raw: object, expected: str) -> None:
@@ -24,7 +26,15 @@ def test_normalize_preserves_expected_ascii(raw: object, expected: str) -> None:
 
 @pytest.mark.parametrize(
     "national_id",
-    [None, "", "0", "۰", "۰۱۲۳۴۵۶۷۸۹\u200c"],
+    [
+        None,
+        "",
+        "0",
+        "۰",
+        "۰۱۲۳۴۵۶۷۸۹\u200c",
+        "۰" * 100,
+        "0123456789" * 20,
+    ],
 )
 def test_invalid_national_id_edges_raise(national_id: object) -> None:
     """تمام مقادیر ناسازگار باید با پیام فارسی رد شوند."""
@@ -38,7 +48,15 @@ def test_invalid_national_id_edges_raise(national_id: object) -> None:
 
 @pytest.mark.parametrize(
     "year_code",
-    [None, "", "0", "۰", "۰۱\u200c"],
+    [
+        None,
+        "",
+        "0",
+        "۰",
+        "۰۱\u200c",
+        "۰" * 50,
+        "01" * 10,
+    ],
 )
 def test_invalid_year_code_edges_raise(year_code: object) -> None:
     """کد سال باید همیشه دو رقم ASCII پس از نرمال‌سازی باشد."""

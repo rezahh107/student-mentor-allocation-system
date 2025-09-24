@@ -1,7 +1,17 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
+import warnings
+
 import pytest
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """رفتار اخطارهای فرسودگی را در محیط محلی ملایم می‌کند."""
+
+    if os.getenv("PYTEST_CI") == "1":
+        return
+    warnings.filterwarnings("default", category=DeprecationWarning)
 
 
 @pytest.fixture(autouse=True)

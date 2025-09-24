@@ -1,4 +1,4 @@
-"""Golden regression tests with byte-level equality checks for exporter artifacts."""
+"""تست‌های طلایی با مقایسهٔ بایت‌به‌بایت و حساس به CRLF/BOM."""
 from __future__ import annotations
 
 import os
@@ -6,30 +6,31 @@ from pathlib import Path
 
 import pytest
 
-GOLDEN_ROOT = Path(__file__).parent / "golden_cases"
+GOLDEN_ROOT = Path(__file__).parent / "golden"
 FAILURE_TOKEN = "failing"
 EMPTY_MESSAGE = "دایرکتوری طلایی خالی است؛ ابتدا نمونه بسازید."
 
 
-def _truthy(value: str | None) -> bool:
-    """Interpret environment variables for boolean intent."""
+def _is_enabled(flag: str | None) -> bool:
+    """Determine if an environment flag should be considered enabled."""
 
-    if value is None:
+    if flag is None:
         return False
-    lowered = value.strip().lower()
-    return lowered not in {"", "0", "false", "no", "n"}
+    lowered = flag.strip().lower()
+    return lowered not in {"", "0", "false", "no"}
 
 
-def _discover_pairs(include_failures: bool) -> list[pytest.ParameterSet]:
-    """Return pytest parameters for available golden cases."""
+def _collect_cases(include_failures: bool) -> list[pytest.ParameterSet]:
+    """Return parametrized cases for available golden directories."""
 
-    params: list[pytest.ParameterSet] = []
     if not GOLDEN_ROOT.exists():
         pytest.xfail(EMPTY_MESSAGE)
-    available_dirs = [path for path in sorted(GOLDEN_ROOT.iterdir()) if path.is_dir()]
-    if not available_dirs:
+    case_dirs = [path for path in sorted(GOLDEN_ROOT.iterdir()) if path.is_dir()]
+    if not case_dirs:
         pytest.xfail(EMPTY_MESSAGE)
-    for case_dir in available_dirs:
+
+    params: list[pytest.ParameterSet] = []
+    for case_dir in case_dirs:
         expected = case_dir / "expected.csv"
         produced = case_dir / "produced.csv"
         if not expected.exists() or not produced.exists():
@@ -47,24 +48,22 @@ def _discover_pairs(include_failures: bool) -> list[pytest.ParameterSet]:
                 )
             continue
         params.append(pytest.param(expected, produced, id=case_id))
+
     if not params:
         pytest.xfail(EMPTY_MESSAGE)
     return params
 
 
-INCLUDE_FAILING = _truthy(os.environ.get("RUN_FAILING_GOLDEN"))
-PARAMETERS = _discover_pairs(INCLUDE_FAILING)
+INCLUDE_FAILING = _is_enabled(os.getenv("RUN_FAILING_GOLDEN"))
+PARAMETERS = _collect_cases(INCLUDE_FAILING)
 
 
 @pytest.mark.golden
 @pytest.mark.parametrize("expected_path, produced_path", PARAMETERS)
 def test_golden_bytes(expected_path: Path, produced_path: Path) -> None:
-    """Ensure that golden files match byte-for-byte, including newlines."""
+    """Ensure exporter outputs remain byte-for-byte identical."""
 
-    # Spec compliance: golden equality must remain بایت‌محور و حساس به CRLF/BOM.
     expected_bytes = expected_path.read_bytes()
     produced_bytes = produced_path.read_bytes()
     if expected_bytes != produced_bytes:
-        pytest.fail(
-            "مقایسهٔ طلایی شکست خورد؛ محتوای تولیدی با نسخهٔ مرجع برابر نیست."
-        )
+        pytest.fail("مقایسهٔ طلایی شکست خورد؛ محتوای تولیدی با نسخهٔ مرجع برابر نیست.")

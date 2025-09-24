@@ -1,11 +1,32 @@
 name: Hardened CI
 
 on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'application/**'
+      - 'tools/**'
+      - '.github/workflows/**'
+      - 'requirements*.txt'
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'application/**'
+      - 'tools/**'
+      - '.github/workflows/**'
+      - 'requirements*.txt'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pr-core:
@@ -13,6 +34,10 @@ jobs:
     # Spec compliance: PR gates اجراهای core+golden+coverage را تضمین می‌کند.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      LC_ALL: C.UTF-8
+      PYTHONUTF8: '1'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,25 +45,45 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       - name: Install dependencies
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt -r requirements-dev.txt
       - name: Core suite with coverage gate
         env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
           COVERAGE_MIN: ${{ vars.COVERAGE_MIN }}
-        run: python tools/run_tests.py --core
+        run: |
+          pytest -p pytest_cov --cov=src --cov-report=xml --cov-fail-under=${{ env.COVERAGE_MIN || 80 }}
       - name: Golden determinism
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
-        run: python tools/run_tests.py --golden
+        run: |
+          pytest -m golden tests/test_exporter_golden.py
+      - name: Upload coverage and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts
+          if-no-files-found: ignore
+          path: |
+            coverage.xml
+            tests/golden/**
+            reports/**
 
   main-smoke:
     # alias قبلی: ci-smoke
     # Spec compliance: روی main فقط دود و e2e اجرا می‌شود.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      LC_ALL: C.UTF-8
+      PYTHONUTF8: '1'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -46,11 +91,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       - name: Install dependencies
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt -r requirements-dev.txt
       - name: Smoke and e2e suite
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
-        run: python tools/run_tests.py --smoke
+        run: |
+          pytest -m "smoke and e2e" -q

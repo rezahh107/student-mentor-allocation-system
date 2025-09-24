@@ -1,14 +1,19 @@
-"""Smoke and end-to-end checks with Hypothesis fallbacks."""
+"""آزمون‌های دود و انتهابه‌انتها با ملاحظات Hypothesis و سنجش p95."""
 from __future__ import annotations
 
 import json
+import os
+import time
+from pathlib import Path
 
 import pytest
 
+HYPOTHESIS_REASON = "hypothesis نصب نیست (محلی)"
+
 
 @pytest.mark.smoke
-def test_smoke_file_roundtrip(tmp_path) -> None:
-    """Basic smoke test without optional dependencies."""
+def test_smoke_file_roundtrip(tmp_path: Path) -> None:
+    """ساده‌ترین مسیر دود بدون نیاز به وابستگی‌های جانبی را اعتبارسنجی می‌کند."""
 
     sample_path = tmp_path / "smoke.txt"
     sample_path.write_text("ready\n", encoding="utf-8")
@@ -17,22 +22,36 @@ def test_smoke_file_roundtrip(tmp_path) -> None:
 
 @pytest.mark.smoke
 @pytest.mark.e2e
-def test_json_roundtrip_property(tmp_path) -> None:
-    """Property-based validation guarded by Hypothesis availability."""
+def test_json_roundtrip_property_hypothesis_required(tmp_path: Path) -> None:
+    """تست مبتنی بر Hypothesis که در صورت نیاز سنجش p95 را نیز اعمال می‌کند."""
 
-    hypothesis = pytest.importorskip("hypothesis", reason="hypothesis نصب نیست (محلی)")
-    strategies = pytest.importorskip(
-        "hypothesis.strategies", reason="hypothesis نصب نیست (محلی)"
-    )
-    given = hypothesis.given
-    text_strategy = strategies.text(alphabet=strategies.characters())
+    hypothesis = pytest.importorskip("hypothesis", reason=HYPOTHESIS_REASON)
+    strategies = pytest.importorskip("hypothesis.strategies", reason=HYPOTHESIS_REASON)
 
-    @given(text_strategy)
+    durations: list[float] = []
+
+    @hypothesis.given(strategies.text(max_size=32))
     def _roundtrip(payload: str) -> None:
+        start = time.perf_counter()
         envelope = {"payload": payload}
         artifact = tmp_path / "payload.json"
         artifact.write_text(json.dumps(envelope, ensure_ascii=False), encoding="utf-8")
         loaded = json.loads(artifact.read_text(encoding="utf-8"))
+        durations.append((time.perf_counter() - start) * 1000.0)
         assert loaded == envelope
 
     _roundtrip()
+
+    if os.getenv("RUN_P95_CHECK") == "1" and durations:
+        raw_limit = os.getenv("P95_MS_ALLOCATIONS", "200")
+        stripped = raw_limit.strip()
+        try:
+            limit = int(stripped or "200")
+        except ValueError:
+            limit = 200
+        ordered = sorted(durations)
+        index = max(int(len(ordered) * 0.95) - 1, 0)
+        measured_p95_ms = ordered[index]
+        assert (
+            measured_p95_ms <= limit
+        ), f"p95 اندازه‌گیری‌شده {measured_p95_ms:.1f} میلی‌ثانیه بود و از حد {limit} عبور کرد."

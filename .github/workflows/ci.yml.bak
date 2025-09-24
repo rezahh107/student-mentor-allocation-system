@@ -1,0 +1,56 @@
+name: Hardened CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+
+jobs:
+  pr-core:
+    # alias قبلی: ci
+    # Spec compliance: PR gates اجراهای core+golden+coverage را تضمین می‌کند.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Core suite with coverage gate
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+          COVERAGE_MIN: ${{ vars.COVERAGE_MIN }}
+        run: python tools/run_tests.py --core
+      - name: Golden determinism
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+        run: python tools/run_tests.py --golden
+
+  main-smoke:
+    # alias قبلی: ci-smoke
+    # Spec compliance: روی main فقط دود و e2e اجرا می‌شود.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Smoke and e2e suite
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+        run: python tools/run_tests.py --smoke

@@ -1,13 +1,7 @@
-"""Configure hardened CI assets.
-
-This module writes deterministic configuration files for the hardened CI
-pipeline described in the engineering spec. All log messages are emitted in
-Persian to align with local developer expectations.
-"""
+"""تهیهٔ فایل‌های CI با رعایت نسخهٔ vC+ و پیام‌های فارسی."""
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -22,25 +16,154 @@ REQUIRED_MINIMUMS = {
     "hypothesis": "hypothesis>=6.100",
 }
 
+README_BODY = """# راهنمای اجرای پایپ‌لاین CI
+
+این مخزن برای اطمینان از یکسان بودن نتایج در CI و اجراهای محلی سخت‌گیر شده است. برای آماده‌سازی وابستگی‌ها از دستور واحد زیر استفاده کنید تا وابستگی‌های اصلی و توسعه به‌طور همزمان نصب شوند:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
+## اجرای محلی
+
+اسکریپت `tools/run_tests.py` سه گیت اصلی را مشابه CI اجرا می‌کند اما در صورت نبود افزونه‌های اختیاری (مانند `pytest-cov` یا `hypothesis`) با پیام فارسی و حالت جایگزین ادامه می‌دهد:
+
+```bash
+python tools/run_tests.py --core
+python tools/run_tests.py --golden
+python tools/run_tests.py --smoke
+```
+
+گزینهٔ `--all` هر سه گیت را پشت سر هم اجرا می‌کند. برای اندازه‌گیری اختیاری p95، متغیرهای محیطی `RUN_P95_CHECK=1` و در صورت نیاز `P95_MS_ALLOCATIONS` را تنظیم کنید.
+
+## اجرای CI
+
+Workflow موجود در `.github/workflows/ci.yml` همان گیت‌ها را با سخت‌گیری کامل اجرا می‌کند:
+
+- پوشش خطی با حداقل تعیین‌شده توسط `COVERAGE_MIN` (یا مقدار پیش‌فرض ۸۰) بررسی می‌شود.
+- آزمون‌های طلایی با مقایسهٔ بایت‌به‌بایت اجرا می‌گردند.
+- روی شاخهٔ `main` تنها مسیرهای دود و انتهابه‌انتها با دستور `pytest -m "smoke and e2e" -q` اجرا می‌شوند.
+
+تمام پیام‌های خطا و خروجی‌ها به‌صورت فارسی و قطعی هستند تا تجربهٔ توسعه‌دهندگان یکسان بماند.
+"""
+
+WORKFLOW_BODY = """name: Hardened CI
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'application/**'
+      - 'tools/**'
+      - '.github/workflows/**'
+      - 'requirements*.txt'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'application/**'
+      - 'tools/**'
+      - '.github/workflows/**'
+      - 'requirements*.txt'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-core:
+    # alias قبلی: ci
+    # Spec compliance: PR gates اجراهای core+golden+coverage را تضمین می‌کند.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      LC_ALL: C.UTF-8
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Core suite with coverage gate
+        env:
+          COVERAGE_MIN: ${{ vars.COVERAGE_MIN }}
+        run: |
+          pytest -p pytest_cov --cov=src --cov-report=xml --cov-fail-under=${{ env.COVERAGE_MIN || 80 }}
+      - name: Golden determinism
+        run: |
+          pytest -m golden tests/test_exporter_golden.py
+      - name: Upload coverage and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts
+          if-no-files-found: ignore
+          path: |
+            coverage.xml
+            tests/golden/**
+            reports/**
+
+  main-smoke:
+    # alias قبلی: ci-smoke
+    # Spec compliance: روی main فقط دود و e2e اجرا می‌شود.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      LC_ALL: C.UTF-8
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Smoke and e2e suite
+        run: |
+          pytest -m "smoke and e2e" -q
+"""
+
 
 def _normalize_requirement(line: str) -> str:
-    """Return the package key for a requirement line.
+    """Return the package identifier for comparison with required minimums."""
 
-    Parameters
-    ----------
-    line:
-        Raw requirement specification.
-
-    Returns
-    -------
-    str
-        Normalized package key for matching against required minimums.
-    """
-
-    tokens = line.strip().split()
-    if not tokens:
+    token = line.strip().split()
+    if not token:
         return ""
-    candidate = tokens[0]
+    candidate = token[0]
     for index, char in enumerate(candidate):
         if char in "<>=!":
             return candidate[:index].lower()
@@ -48,7 +171,7 @@ def _normalize_requirement(line: str) -> str:
 
 
 def _merge_requirements(existing: Iterable[str]) -> list[str]:
-    """Merge required minimum versions with existing requirement lines."""
+    """Combine existing requirements with enforced minimum versions."""
 
     seen: set[str] = set()
     merged: list[str] = []
@@ -71,122 +194,56 @@ def _merge_requirements(existing: Iterable[str]) -> list[str]:
 
 
 def _write_with_backup(path: Path, content: str) -> bool:
-    """Write *content* to *path* creating a ``.bak`` backup if needed."""
+    """Write content to path creating a .bak backup when changes occur."""
 
-    encoded = content.rstrip("\n") + "\n"
+    normalized = content.rstrip("\n") + "\n"
     if path.exists():
         current = path.read_text(encoding="utf-8")
-        if current == encoded:
+        if current == normalized:
             print(f"ℹ️  هیچ تغییری برای {path.name} لازم نبود.")
             return False
         backup = path.with_name(f"{path.name}.bak")
         backup.write_text(current, encoding="utf-8")
         print(f"💾 نسخهٔ پشتیبان در {backup.name} ذخیره شد.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(encoded, encoding="utf-8")
+    path.write_text(normalized, encoding="utf-8")
     print(f"✅ فایل {path.name} با موفقیت نوشته شد.")
     return True
 
 
 def ensure_requirements() -> None:
-    """Guarantee that ``requirements-dev.txt`` contains the hardened minimums."""
+    """Ensure that requirements-dev.txt contains enforced minimums."""
 
     existing: list[str] = []
     if REQUIREMENTS_DEV_PATH.exists():
         existing = REQUIREMENTS_DEV_PATH.read_text(encoding="utf-8").splitlines()
     merged = _merge_requirements(existing)
-    content = "\n".join(merged)
-    if _write_with_backup(REQUIREMENTS_DEV_PATH, content):
+    if _write_with_backup(REQUIREMENTS_DEV_PATH, "\n".join(merged)):
         print("✅ وابستگی‌های توسعه به‌روزرسانی شدند.")
     else:
         print("ℹ️  وابستگی‌های توسعه پیش‌تر منطبق بودند.")
 
 
 def ensure_readme() -> None:
-    """Ensure the Persian CI readme is available for contributors."""
+    """Write the CI guide in Persian with deterministic content."""
 
-    readme_body = (
-        "# راهنمای اجرای پایپ‌لاین CI\n\n"
-        "این مخزن برای اطمینان از یکسان بودن نتایج در CI و اجراهای محلی سخت‌گیر شده است."
-        " برای آماده‌سازی وابستگی‌ها از دستورهای زیر استفاده کنید:\n\n"
-        "```bash\n"
-        "pip install -r requirements.txt -r requirements-dev.txt\n"
-        "```\n\n"
-        "پس از نصب وابستگی‌ها می‌توانید اسکریپت‌های درون `tools/` را اجرا کنید تا"
-        " گیت‌های پوشش کد، آزمون‌های طلایی و دود را مشابه CI بررسی کنید.\n"
-    )
-    _write_with_backup(README_PATH, readme_body)
+    _write_with_backup(README_PATH, README_BODY)
 
 
 def ensure_workflow() -> None:
-    """Write the hardened GitHub Actions workflow with deterministic content."""
+    """Write the hardened GitHub Actions workflow."""
 
-    workflow = (
-        "name: Hardened CI\n\n"
-        "on:\n"
-        "  pull_request:\n"
-        "    types: [opened, synchronize, reopened, ready_for_review]\n"
-        "  push:\n"
-        "    branches:\n"
-        "      - main\n\n"
-        "jobs:\n"
-        "  pr-core:\n"
-        "    # alias قبلی: ci\n"
-        "    # Spec compliance: PR gates اجراهای core+golden+coverage را تضمین می‌کند.\n"
-        "    if: github.event_name == 'pull_request'\n"
-        "    runs-on: ubuntu-latest\n"
-        "    steps:\n"
-        "      - name: Checkout repository\n"
-        "        uses: actions/checkout@v4\n"
-        "      - name: Set up Python\n"
-        "        uses: actions/setup-python@v5\n"
-        "        with:\n"
-        "          python-version: '3.11'\n"
-        "      - name: Install dependencies\n"
-        "        run: |\n"
-        "          python -m pip install -U pip\n"
-        "          pip install -r requirements.txt -r requirements-dev.txt\n"
-        "      - name: Core suite with coverage gate\n"
-        "        env:\n"
-        "          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'\n"
-        "          COVERAGE_MIN: ${{ vars.COVERAGE_MIN }}\n"
-        "        run: python tools/run_tests.py --core\n"
-        "      - name: Golden determinism\n"
-        "        env:\n"
-        "          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'\n"
-        "        run: python tools/run_tests.py --golden\n\n"
-        "  main-smoke:\n"
-        "    # alias قبلی: ci-smoke\n"
-        "    # Spec compliance: روی main فقط دود و e2e اجرا می‌شود.\n"
-        "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n"
-        "    runs-on: ubuntu-latest\n"
-        "    steps:\n"
-        "      - name: Checkout repository\n"
-        "        uses: actions/checkout@v4\n"
-        "      - name: Set up Python\n"
-        "        uses: actions/setup-python@v5\n"
-        "        with:\n"
-        "          python-version: '3.11'\n"
-        "      - name: Install dependencies\n"
-        "        run: |\n"
-        "          python -m pip install -U pip\n"
-        "          pip install -r requirements.txt -r requirements-dev.txt\n"
-        "      - name: Smoke and e2e suite\n"
-        "        env:\n"
-        "          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'\n"
-        "        run: python tools/run_tests.py --smoke\n"
-    )
-    _write_with_backup(WORKFLOW_PATH, workflow)
+    _write_with_backup(WORKFLOW_PATH, WORKFLOW_BODY)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for the CI bootstrapper."""
+    """Entry point for updating CI assets."""
 
-    parser = argparse.ArgumentParser(description="راه‌اندازی تنظیمات CI")
+    parser = argparse.ArgumentParser(description="به‌روزرسانی فایل‌های CI")
     parser.add_argument(
         "--only",
         choices=("requirements", "readme", "workflow"),
-        help="در صورت نیاز فقط یکی از بخش‌ها را به‌روزرسانی کنید.",
+        help="در صورت نیاز فقط یک بخش را بازنویسی کنید.",
     )
     args = parser.parse_args(argv)
     target = args.only
@@ -202,4 +259,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+import logging
 
 from PyQt5.QtWidgets import (
     QComboBox,
@@ -46,8 +47,8 @@ class StudentDialog(QDialog):
         self.birth_date_edit.setDisplayFormat("yyyy/MM/dd")
         try:
             self.birth_date_edit.setLocale(QLocale(QLocale.Persian))
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("تنظیم تقویم فارسی در دیالوگ دانش‌آموز ناموفق بود", exc_info=exc)
         self.gender_combo = QComboBox()
         self.gender_combo.addItems(["زن", "مرد"])  # 0,1
         self.center_combo = QComboBox()

@@ -1,4 +1,6 @@
-.PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard         ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke
+.PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard \
+        ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke \
+        security-fix
 
 PYTHON ?= python3
 PROJECT_ROOT := $(CURDIR)
@@ -40,15 +42,23 @@ fault-tests:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_faults.py -q
 
 static-checks:
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_excel_safe.py -q
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_cli.py -q
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_operator_panel_logging.py -q
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest \
+			tests/phase2_counter_service/test_excel_safe.py \
+			tests/phase2_counter_service/test_cli.py \
+			tests/phase2_counter_service/test_operator_panel_logging.py \
+			tests/security/test_bandit_gate.py -q
 	$(MAKE) gui-smoke
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
-	bandit -r src/phase2_counter_service
+	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.run_bandit_gate
+	if [ "$$CI" = "true" ]; then \
+		echo "آرتیفکت Bandit برای دانلود: reports/bandit-report.json"; \
+	fi
 
 gui-smoke:
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_gui_smoke.py -q
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_gui_smoke.py -q
+
+security-fix:
+	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.bandit_fixer
 
 post-migration-checks:
 	$(PYTHON) -m scripts.post_migration_checks

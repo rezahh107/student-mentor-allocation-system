@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Awaitable, Dict, List, Optional
 
+import logging
 import time
 
 from PySide6.QtCore import Qt, Signal
@@ -339,8 +340,8 @@ class AllocationPage(BasePage):
     def closeEvent(self, event):  # noqa: D401, ANN001
         try:
             self.performance_monitor.stop_monitoring()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("توقف مانیتورینگ تخصیص با خطا روبه‌رو شد", exc_info=exc)
         super().closeEvent(event)
 
     # ------------------------------------------------------------------

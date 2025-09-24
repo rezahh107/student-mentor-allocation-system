@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -175,7 +176,8 @@ class MainWindow(QMainWindow):
             toolbar.addAction(action)
 
     def _create_pages(self) -> None:
-        assert self._central_stack is not None
+        if self._central_stack is None:
+            raise RuntimeError("پشته مرکزی UI مقداردهی نشده است")
         # صفحات placeholder
         from src.ui.pages.dashboard_page import DashboardPage
         from src.ui.pages.dashboard_presenter import DashboardPresenter
@@ -257,8 +259,8 @@ class MainWindow(QMainWindow):
         # اگر صفحه دانش‌آموزان لیبل نیست، از بروزرسانی مستقیم متن صرف‌نظر می‌کنیم
         try:
             self._page_students.setText(f"لیست دانش‌آموزان (تعداد: {len(state.students)})")  # type: ignore[call-arg]
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("به‌روزرسانی نمای دانش‌آموزان ناموفق بود", exc_info=exc)
         self._page_mentors.setText(f"لیست منتورها (تعداد: {len(state.mentors)})")
         if state.stats:
             self._page_dashboard.setText(
@@ -296,17 +298,20 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(text, 5000)
 
     def show_dashboard(self) -> None:
-        assert self._central_stack is not None
+        if self._central_stack is None:
+            raise RuntimeError("پشته صفحات برای نمایش داشبورد آماده نیست")
         self._central_stack.setCurrentWidget(self._page_dashboard)
         self.presenter.state.current_page = "dashboard"
 
     def show_students(self) -> None:
-        assert self._central_stack is not None
+        if self._central_stack is None:
+            raise RuntimeError("پشته صفحات برای نمایش دانش‌آموزان آماده نیست")
         self._central_stack.setCurrentWidget(self._page_students)
         self.presenter.state.current_page = "students"
 
     def show_mentors(self) -> None:
-        assert self._central_stack is not None
+        if self._central_stack is None:
+            raise RuntimeError("پشته صفحات برای نمایش منتورها آماده نیست")
         self._central_stack.setCurrentWidget(self._page_mentors)
         self.presenter.state.current_page = "mentors"
 

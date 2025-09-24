@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Dict, List, Optional
 from datetime import datetime
 
@@ -592,8 +593,8 @@ class StudentsPage(QWidget):
 
         try:
             await svc.export_students(students, path, progress_callback=progress)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("خروجی اکسل دانش‌آموزان شکست خورد", exc_info=exc)
         dlg.close()
 
     async def download_template(self) -> None:

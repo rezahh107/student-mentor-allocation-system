@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from typing import Dict, List, Any
+import logging
 
 import jdatetime
 import matplotlib.pyplot as plt
@@ -25,7 +26,8 @@ class DashboardReportGenerator:
         try:
             pdfmetrics.registerFont(TTFont("Vazir", "assets/fonts/Vazir.ttf"))
             self.font_name = "Vazir"
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("فونت Vazir در دسترس نبود؛ Helvetica استفاده شد", exc_info=exc)
             self.font_name = "Helvetica"
         self.dpi = 300
 
@@ -139,8 +141,8 @@ class DashboardReportGenerator:
         if custom_logo_path and os.path.exists(custom_logo_path):
             try:
                 story.append(Image(custom_logo_path, width=120, height=50))
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning("بارگذاری لوگوی سفارشی در گزارش ناموفق بود", exc_info=exc)
         story.append(Paragraph("گزارش داشبورد مدیریتی دانش‌آموزان", persian))
         story.append(Paragraph(jdatetime.datetime.now().strftime("%Y/%m/%d - %H:%M"), persian))
 

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse, Response
 
@@ -66,8 +68,8 @@ def create_app() -> FastAPI:
         try:
             if not limiter.allow(key):
                 return JSONResponse(status_code=429, content={"error": "RATE_LIMIT", "message": "Too Many Requests"})
-        except Exception:
-            pass  # fail open on limiter errors
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("خطای محدودکننده درخواست‌ها نادیده گرفته شد", exc_info=exc)
         return await call_next(request)
 
     @app.get("/metrics")

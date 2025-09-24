@@ -16,9 +16,11 @@ class Counter:
 
     @staticmethod
     def build(year_two_digits: str, gender: Gender, seq: int) -> "Counter":
-        assert len(year_two_digits) == 2 and year_two_digits.isdigit()
+        if len(year_two_digits) != 2 or not year_two_digits.isdigit():
+            raise ValueError("سال دو رقمی نامعتبر است")
         code = gender.counter_code
-        assert 0 <= seq <= 9999
+        if not 0 <= seq <= 9999:
+            raise ValueError("توالی شماره دانش‌آموز باید بین ۰ و ۹۹۹۹ باشد")
         tail = f"{seq:04d}"
         val = f"{year_two_digits}{code}{tail}"
         if len(val) != Counter._len:

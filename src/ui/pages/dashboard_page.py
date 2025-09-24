@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from pathlib import Path
+import logging
 import os
 from typing import Dict
 
@@ -235,8 +236,8 @@ class DashboardPage(QWidget):
             # Enable realtime updates (optional, default URL)
             try:
                 self.presenter.enable_realtime_updates()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning("فعال‌سازی به‌روزرسانی لحظه‌ای ناموفق بود", exc_info=exc)
 
     def _selected_date_range(self) -> tuple[datetime, datetime]:
         txt = self.date_range_combo.currentText()

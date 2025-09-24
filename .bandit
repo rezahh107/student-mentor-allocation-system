@@ -1,0 +1,3 @@
+[bandit]
+exclude = /tests/,/venv/,/.venv/,/__pycache__/
+# اگر UI_MINIMAL=1 تنظیم شود می‌توان src/ui/** را از اسکن با پرچم -x حذف کرد.

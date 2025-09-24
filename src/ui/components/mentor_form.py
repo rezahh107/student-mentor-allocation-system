@@ -163,7 +163,8 @@ class MentorFormDialog(QDialog):
     # Data helpers
     # ------------------------------------------------------------------
     def _load_mentor(self) -> None:
-        assert self.mentor is not None
+        if self.mentor is None:
+            raise RuntimeError("داده منتور برای بارگذاری فرم موجود نیست")
         self.name_input.setText(self.mentor.get("name", ""))
         self.gender_combo.setCurrentIndex(self.mentor.get("gender", 0))
         self.type_combo.setCurrentIndex(1 if self.mentor.get("is_school") else 0)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import logging
 from time import perf_counter
 from typing import Iterator
 
@@ -30,8 +31,8 @@ def make_engine(dsn: str):
             cursor = dbapi_connection.cursor()
             cursor.execute("SET statement_timeout TO 2000")
             cursor.close()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("اعمال statement_timeout روی اتصال پایگاه داده ناموفق بود", exc_info=exc)
 
     @event.listens_for(engine, "before_cursor_execute")
     def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):  # pragma: no cover - timing

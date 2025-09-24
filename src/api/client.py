@@ -311,7 +311,8 @@ class APIClient:
         expect_json: bool = True,
     ) -> Any:
         await self._ensure_session()
-        assert self._session is not None
+        if self._session is None:
+            raise RuntimeError("جلسه HTTP مقداردهی نشده است")
 
         attempt = 0
         delay = self.config.retry_delay

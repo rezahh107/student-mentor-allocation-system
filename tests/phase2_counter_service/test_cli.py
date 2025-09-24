@@ -2,11 +2,16 @@
 from __future__ import annotations
 
 import json
+import os
 from types import SimpleNamespace
 
 
 from src.phase2_counter_service import cli
 from src.phase2_counter_service.backfill import BackfillStats
+
+
+def _non_empty_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line.strip()]
 
 
 def test_cli_assign_counter(monkeypatch, capsys):
@@ -82,7 +87,10 @@ def test_cli_backfill_writes_excel_safe_csv(monkeypatch, tmp_path, capsys):
     ]
     exit_code = cli.main(args)
     assert exit_code == 0
-    payload = json.loads(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    lines = _non_empty_lines(captured.out)
+    assert lines[0] == f"گزارش آمار در «{csv_path}» ذخیره شد."
+    payload = json.loads(lines[-1])
     assert payload["dry_run"] is True
     content_bytes = csv_path.read_bytes()
     assert content_bytes.startswith(b"\xef\xbb\xbf")
@@ -118,7 +126,9 @@ def test_cli_stats_csv_localization_and_digits(monkeypatch, tmp_path, capsys):
     ])
     assert exit_code == 0
     output = capsys.readouterr()
-    assert json.loads(output.out)["dry_run"] is False
+    lines = _non_empty_lines(output.out)
+    assert lines[0] == f"گزارش آمار در «{csv_path}» ذخیره شد."
+    assert json.loads(lines[-1])["dry_run"] is False
     payload = csv_path.read_text(encoding="utf-8")
     assert "خیر" in payload
     assert "۷" not in payload
@@ -159,7 +169,9 @@ def test_cli_stats_csv_overwrite_guard(monkeypatch, tmp_path, capsys):
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "بله" in target.read_text(encoding="utf-8")
-    assert json.loads(captured.out)["dry_run"] is True
+    lines = _non_empty_lines(captured.out)
+    assert lines[0] == f"گزارش آمار در «{target}» ذخیره شد."
+    assert json.loads(lines[-1])["dry_run"] is True
 
 
 def test_cli_stats_csv_directory_suffix(monkeypatch, tmp_path, capsys):
@@ -193,15 +205,101 @@ def test_cli_stats_csv_directory_suffix(monkeypatch, tmp_path, capsys):
         str(target_dir),
         "--excel-safe",
     ])
-    captured = capsys.readouterr()
     assert exit_code == 0
+    captured = capsys.readouterr()
     created = list(target_dir.glob("*.csv"))
     assert len(created) == 1
     expected_name = "backfill_stats_20230101T120000_cafeba.csv"
     assert created[0].name == expected_name
     payload = created[0].read_text(encoding="utf-8")
     assert "بله" in payload
-    assert json.loads(captured.out)["dry_run"] is True
+    lines = _non_empty_lines(captured.out)
+    expected_path = target_dir / expected_name
+    assert lines[0] == f"گزارش آمار در «{expected_path}» ذخیره شد."
+    assert json.loads(lines[-1])["dry_run"] is True
+
+
+def test_cli_stats_csv_creates_missing_directory(monkeypatch, tmp_path, capsys):
+    stats = BackfillStats(
+        total_rows=9,
+        applied=3,
+        reused=6,
+        skipped=0,
+        dry_run=True,
+        prefix_mismatches=0,
+    )
+
+    def fake_run(service, path, **kwargs):  # noqa: ARG001
+        return stats
+
+    target_dir = tmp_path / "reports"
+    assert not target_dir.exists()
+    monkeypatch.setattr(cli, "get_service", lambda: None)
+    monkeypatch.setattr(cli, "run_backfill", fake_run)
+    monkeypatch.setattr(cli, "_timestamp_suffix", lambda: "20240229T010203")
+
+    class _UUID:
+        hex = "feedfacecafefeed"
+
+    monkeypatch.setattr(cli.uuid, "uuid4", lambda: _UUID())
+
+    exit_code = cli.main([
+        "backfill",
+        str(tmp_path / "input.csv"),
+        "--stats-csv",
+        str(target_dir) + os.sep,
+        "--excel-safe",
+    ])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    expected_path = target_dir / "backfill_stats_20240229T010203_feedfa.csv"
+    assert expected_path.exists()
+    assert target_dir.is_dir()
+    lines = _non_empty_lines(captured.out)
+    assert lines[0] == f"گزارش آمار در «{expected_path}» ذخیره شد."
+    assert json.loads(lines[-1])["dry_run"] is True
+
+
+def test_cli_stats_csv_path_without_suffix_treated_as_directory(monkeypatch, tmp_path, capsys):
+    stats = BackfillStats(
+        total_rows=5,
+        applied=5,
+        reused=0,
+        skipped=0,
+        dry_run=False,
+        prefix_mismatches=0,
+    )
+
+    def fake_run(service, path, **kwargs):  # noqa: ARG001
+        return stats
+
+    root_dir = tmp_path / "reports"
+    target = root_dir / "monthly"
+    monkeypatch.setattr(cli, "get_service", lambda: None)
+    monkeypatch.setattr(cli, "run_backfill", fake_run)
+    monkeypatch.setattr(cli, "_timestamp_suffix", lambda: "20240301T101112")
+
+    class _UUID:
+        hex = "0011223344556677"
+
+    monkeypatch.setattr(cli.uuid, "uuid4", lambda: _UUID())
+
+    exit_code = cli.main([
+        "backfill",
+        str(tmp_path / "input.csv"),
+        "--stats-csv",
+        str(target),
+    ])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    expected_dir = target
+    expected_path = expected_dir / "backfill_stats_20240301T101112_001122.csv"
+    assert expected_dir.is_dir()
+    assert expected_path.exists()
+    lines = _non_empty_lines(captured.out)
+    assert lines[0] == f"گزارش آمار در «{expected_path}» ذخیره شد."
+    payload = json.loads(lines[-1])
+    assert payload["dry_run"] is False
 
 
 def test_cli_metrics(monkeypatch):

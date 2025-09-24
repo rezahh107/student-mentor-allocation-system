@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import uuid
@@ -37,7 +38,7 @@ def _timestamp_suffix() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
 
 
-def _ensure_unique_path(path: Path, *, overwrite: bool) -> Path:
+def _ensure_unique_path(path: Path, *, overwrite: bool, original: Optional[str] = None) -> Path:
     """Resolve a concrete file path for stats CSV output.
 
     Parameters
@@ -47,6 +48,9 @@ def _ensure_unique_path(path: Path, *, overwrite: bool) -> Path:
     overwrite:
         When ``True`` existing files are replaced; otherwise the function raises
         :class:`FileExistsError` with a localized explanation.
+    original:
+        Raw string supplied by the operator. Used to infer directory intent when
+        the :class:`~pathlib.Path` instance loses trailing separators.
 
     Returns
     -------
@@ -54,22 +58,35 @@ def _ensure_unique_path(path: Path, *, overwrite: bool) -> Path:
         Final path that should be opened for writing.
     """
 
-    if path.is_dir():
-        path.mkdir(parents=True, exist_ok=True)
+    candidate = path.expanduser()
+    hint = original or str(path)
+    looks_like_directory = False
+
+    if candidate.exists():
+        looks_like_directory = candidate.is_dir()
+    else:
+        trailing_sep = hint.endswith((os.sep, "/", "\\"))
+        looks_like_directory = trailing_sep or not candidate.suffix
+
+    if looks_like_directory:
+        candidate.mkdir(parents=True, exist_ok=True)
         while True:
             suffix = f"{_timestamp_suffix()}_{uuid.uuid4().hex[:6]}"
-            candidate = path / f"backfill_stats_{suffix}.csv"
-            if not candidate.exists():
-                return candidate
-    parent = path.parent
+            resolved = candidate / f"backfill_stats_{suffix}.csv"
+            if not resolved.exists():
+                return resolved
+
+    parent = candidate.parent
     if parent and not parent.exists():
         parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
+    if candidate.exists():
         if overwrite:
-            return path
-        message = f"فایل خروجی «{path}» از قبل وجود دارد؛ برای بازنویسی از --overwrite استفاده کنید."
+            return candidate
+        message = (
+            f"فایل خروجی «{candidate}» از قبل وجود دارد؛ برای بازنویسی از --overwrite استفاده کنید."
+        )
         raise FileExistsError(message)
-    return path
+    return candidate
 
 
 def _localized_rows(stats: BackfillStats) -> Iterable[tuple[str, object]]:
@@ -132,6 +149,7 @@ def _run_backfill(args: argparse.Namespace) -> int:
                 crlf=args.crlf,
                 quote_all=args.quote_all,
                 overwrite=args.overwrite,
+                original=args.stats_csv,
             )
         except OSError as exc:
             print(f"خطا در نوشتن CSV: {exc}", file=sys.stderr)
@@ -150,8 +168,9 @@ def _write_stats_csv(
     crlf: bool,
     quote_all: bool,
     overwrite: bool,
+    original: Optional[str] = None,
 ) -> None:
-    resolved = _ensure_unique_path(path, overwrite=overwrite)
+    resolved = _ensure_unique_path(path, overwrite=overwrite, original=original)
     with resolved.open("w", encoding="utf-8", newline="") as handle:
         writer = make_excel_safe_writer(
             handle,
@@ -162,6 +181,7 @@ def _write_stats_csv(
         )
         writer.writerow(["شاخص", "مقدار"])
         writer.writerows(_localized_rows(stats))
+    print(f"گزارش آمار در «{resolved}» ذخیره شد.")
 
 
 def _run_metrics(args: argparse.Namespace) -> int:

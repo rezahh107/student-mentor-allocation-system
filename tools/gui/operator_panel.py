@@ -7,6 +7,7 @@ import os
 import queue
 import sys
 from dataclasses import dataclass, field
+from itertools import count
 from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 from src.phase2_counter_service.types import BackfillObserver
@@ -21,6 +22,9 @@ except Exception:  # pragma: no cover - Tk not available
 
 EventPayload = Dict[str, Any]
 EventTuple = Tuple[str, EventPayload]
+
+
+_HANDLER_LEASE_COUNTER = count(1)
 
 
 class QueueBackfillObserver(BackfillObserver):
@@ -83,9 +87,10 @@ class EventSink:
 class ObserverLogHandler(logging.Handler):
     """Parse structured log records and forward warnings/conflicts to the GUI."""
 
-    def __init__(self, observer: QueueBackfillObserver) -> None:
+    def __init__(self, observer: QueueBackfillObserver, lease_id: int) -> None:
         super().__init__(level=logging.WARNING)
         self._observer = observer
+        self.lease_id = lease_id
         self.is_operator_panel_handler = True
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -111,6 +116,7 @@ class OperatorPanel:
     _observer: QueueBackfillObserver = field(init=False, repr=False)
     _logger: logging.Logger = field(init=False, repr=False)
     _log_handler: ObserverLogHandler = field(init=False, repr=False)
+    _lease_id: int = field(init=False, repr=False)
     _handler_attached: bool = field(init=False, repr=False, default=False)
     _running: bool = field(init=False, repr=False, default=False)
     _applied_total: int = field(init=False, repr=False, default=0)
@@ -124,7 +130,8 @@ class OperatorPanel:
     def __post_init__(self) -> None:
         self._observer = QueueBackfillObserver(self.sink)
         self._logger = self.logger or logging.getLogger("counter-service")
-        self._log_handler = ObserverLogHandler(self._observer)
+        self._lease_id = next(_HANDLER_LEASE_COUNTER)
+        self._log_handler = ObserverLogHandler(self._observer, self._lease_id)
         self._handler_attached = False
         self._attach_handler()
         self._build_ui()
@@ -136,10 +143,8 @@ class OperatorPanel:
         self._skipped_total = 0
 
     def _attach_handler(self) -> None:
-        for handler in list(self._logger.handlers):
-            if getattr(handler, "is_operator_panel_handler", False):
-                self._logger.removeHandler(handler)
-                handler.close()
+        if self._handler_attached:
+            return
         self._logger.addHandler(self._log_handler)
         self._handler_attached = True
 
@@ -205,10 +210,10 @@ class OperatorPanel:
         self._warnings.see(tk.END)
 
     def shutdown(self) -> None:
+        self._detach_handler()
         if not self._running:
             return
         self._running = False
-        self._detach_handler()
         try:
             self.root.quit()
         except Exception:  # pragma: no cover - Tk teardown edge

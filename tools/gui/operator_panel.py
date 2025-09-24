@@ -86,6 +86,7 @@ class ObserverLogHandler(logging.Handler):
     def __init__(self, observer: QueueBackfillObserver) -> None:
         super().__init__(level=logging.WARNING)
         self._observer = observer
+        self.is_operator_panel_handler = True
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -107,12 +108,25 @@ class OperatorPanel:
     root: "tk.Tk"
     sink: EventSink = field(default_factory=EventSink)
     logger: Optional[logging.Logger] = None
+    _observer: QueueBackfillObserver = field(init=False, repr=False)
+    _logger: logging.Logger = field(init=False, repr=False)
+    _log_handler: ObserverLogHandler = field(init=False, repr=False)
+    _handler_attached: bool = field(init=False, repr=False, default=False)
+    _running: bool = field(init=False, repr=False, default=False)
+    _applied_total: int = field(init=False, repr=False, default=0)
+    _reused_total: int = field(init=False, repr=False, default=0)
+    _skipped_total: int = field(init=False, repr=False, default=0)
+    _progress_var: Any = field(init=False, repr=False)
+    _progress: Any = field(init=False, repr=False)
+    _status_var: Any = field(init=False, repr=False)
+    _warnings: Any = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._observer = QueueBackfillObserver(self.sink)
         self._logger = self.logger or logging.getLogger("counter-service")
         self._log_handler = ObserverLogHandler(self._observer)
-        self._logger.addHandler(self._log_handler)
+        self._handler_attached = False
+        self._attach_handler()
         self._build_ui()
         self._running = True
         self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
@@ -120,6 +134,14 @@ class OperatorPanel:
         self._applied_total = 0
         self._reused_total = 0
         self._skipped_total = 0
+
+    def _attach_handler(self) -> None:
+        for handler in list(self._logger.handlers):
+            if getattr(handler, "is_operator_panel_handler", False):
+                self._logger.removeHandler(handler)
+                handler.close()
+        self._logger.addHandler(self._log_handler)
+        self._handler_attached = True
 
     def _build_ui(self) -> None:
         self.root.title("پنل پایش سرویس شمارنده")
@@ -186,8 +208,7 @@ class OperatorPanel:
         if not self._running:
             return
         self._running = False
-        self._logger.removeHandler(self._log_handler)
-        self._log_handler.close()
+        self._detach_handler()
         try:
             self.root.quit()
         except Exception:  # pragma: no cover - Tk teardown edge
@@ -196,6 +217,12 @@ class OperatorPanel:
             self.root.destroy()
         except Exception:  # pragma: no cover - Tk teardown edge
             pass
+
+    def _detach_handler(self) -> None:
+        if self._handler_attached:
+            self._logger.removeHandler(self._log_handler)
+            self._handler_attached = False
+        self._log_handler.close()
 
     def run(self) -> None:
         self.root.mainloop()

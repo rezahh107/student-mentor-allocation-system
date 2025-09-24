@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict
-from importlib import import_module
 import sys
 import time
+import uuid
+from dataclasses import asdict
+from datetime import datetime, timezone
+from importlib import import_module
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Iterable, Optional, Sequence
 
 from src.infrastructure.export.excel_safe import make_excel_safe_writer
 
@@ -23,6 +25,64 @@ try:  # pragma: no branch - import guard for coverage stability
     import_module("scripts.post_migration_checks")
 except ModuleNotFoundError:  # pragma: no cover - optional in prod builds
     pass
+
+
+PERSIAN_BOOLEAN = {True: "بله", False: "خیر"}
+"""Mapping used to localize boolean values for CSV serialization."""
+
+
+def _timestamp_suffix() -> str:
+    """Return an ISO-like timestamp suitable for file names."""
+
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+
+
+def _ensure_unique_path(path: Path, *, overwrite: bool) -> Path:
+    """Resolve a concrete file path for stats CSV output.
+
+    Parameters
+    ----------
+    path:
+        User-supplied path that may point to a file or a directory.
+    overwrite:
+        When ``True`` existing files are replaced; otherwise the function raises
+        :class:`FileExistsError` with a localized explanation.
+
+    Returns
+    -------
+    Path
+        Final path that should be opened for writing.
+    """
+
+    if path.is_dir():
+        path.mkdir(parents=True, exist_ok=True)
+        while True:
+            suffix = f"{_timestamp_suffix()}_{uuid.uuid4().hex[:6]}"
+            candidate = path / f"backfill_stats_{suffix}.csv"
+            if not candidate.exists():
+                return candidate
+    parent = path.parent
+    if parent and not parent.exists():
+        parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        if overwrite:
+            return path
+        message = f"فایل خروجی «{path}» از قبل وجود دارد؛ برای بازنویسی از --overwrite استفاده کنید."
+        raise FileExistsError(message)
+    return path
+
+
+def _localized_rows(stats: BackfillStats) -> Iterable[tuple[str, object]]:
+    """Yield the localized key/value pairs for stats CSV serialization."""
+
+    return (
+        ("total_rows", stats.total_rows),
+        ("applied", stats.applied),
+        ("reused", stats.reused),
+        ("skipped", stats.skipped),
+        ("dry_run", PERSIAN_BOOLEAN[stats.dry_run]),
+        ("prefix_mismatches", stats.prefix_mismatches),
+    )
 
 
 class StdoutObserver(BackfillObserver):
@@ -71,6 +131,7 @@ def _run_backfill(args: argparse.Namespace) -> int:
                 bom=args.bom,
                 crlf=args.crlf,
                 quote_all=args.quote_all,
+                overwrite=args.overwrite,
             )
         except OSError as exc:
             print(f"خطا در نوشتن CSV: {exc}", file=sys.stderr)
@@ -88,16 +149,10 @@ def _write_stats_csv(
     bom: bool,
     crlf: bool,
     quote_all: bool,
+    overwrite: bool,
 ) -> None:
-    rows = [
-        ("total_rows", stats.total_rows),
-        ("applied", stats.applied),
-        ("reused", stats.reused),
-        ("skipped", stats.skipped),
-        ("dry_run", "True" if stats.dry_run else "False"),
-        ("prefix_mismatches", stats.prefix_mismatches),
-    ]
-    with path.open("w", encoding="utf-8", newline="") as handle:
+    resolved = _ensure_unique_path(path, overwrite=overwrite)
+    with resolved.open("w", encoding="utf-8", newline="") as handle:
         writer = make_excel_safe_writer(
             handle,
             bom=bom,
@@ -106,7 +161,7 @@ def _write_stats_csv(
             crlf=crlf,
         )
         writer.writerow(["شاخص", "مقدار"])
-        writer.writerows(rows)
+        writer.writerows(_localized_rows(stats))
 
 
 def _run_metrics(args: argparse.Namespace) -> int:
@@ -151,6 +206,11 @@ def build_parser() -> argparse.ArgumentParser:
     backfill_cmd.add_argument("--bom", action="store_true", help="افزودن BOM UTF-8 به خروجی")
     backfill_cmd.add_argument("--crlf", action="store_true", help="استفاده از CRLF برای سطرهای CSV")
     backfill_cmd.add_argument("--quote-all", action="store_true", help="قرار دادن کوت برای همهٔ ستون‌ها")
+    backfill_cmd.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="بازنویسی فایل خروجی در صورت وجود",
+    )
     backfill_cmd.set_defaults(func=_run_backfill)
 
     metrics_cmd = sub.add_parser("serve-metrics", help="اجرای اکسپورتر پرومتئوس")

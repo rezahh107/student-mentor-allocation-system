@@ -1,9 +1,17 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+import pytest
+
+from tests.ui import _headless
+
+_headless.require_ui()
+
+pytestmark = [pytest.mark.ui]
+if _headless.PYTEST_SKIP_MARK is not None:
+    pytestmark.append(_headless.PYTEST_SKIP_MARK)
 
 from pathlib import Path
 import os
 
-import pytest
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QFileDialog
@@ -53,6 +61,5 @@ async def test_dashboard_load_and_pdf_export(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(pdf_path), "PDF Files (*.pdf)"))
     await page._export_pdf()
     assert pdf_path.exists() and pdf_path.stat().st_size > 0
-
 
 

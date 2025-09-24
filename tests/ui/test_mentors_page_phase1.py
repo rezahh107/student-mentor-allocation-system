@@ -1,10 +1,21 @@
-﻿"""Phase 1 tests for MentorsPage UI."""
+"""Phase 1 tests for MentorsPage UI."""
+
 from __future__ import annotations
+import pytest
+
+from tests.ui import _headless
+
+_headless.require_ui()
+
+pytestmark = [pytest.mark.ui]
+if _headless.PYTEST_SKIP_MARK is not None:
+    pytestmark.append(_headless.PYTEST_SKIP_MARK)
 
 import logging
 from typing import Dict
 
-import pytest
+
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QMessageBox
 
@@ -62,7 +73,8 @@ class TestMentorTableModel:
 
 class TestMentorFormDialog:
     @pytest.fixture
-    def dialog(self, qtbot):
+    def dialog(self, qtbot, offscreen_qapp):
+        _ = offscreen_qapp
         dlg = MentorFormDialog()
         qtbot.addWidget(dlg)
         return dlg
@@ -117,7 +129,10 @@ class TestMentorsPage:
         return MockMentorService()
 
     @pytest.fixture
-    def mentors_page(self, qtbot, mock_service: MockMentorService) -> MentorsPage:
+    def mentors_page(
+        self, qtbot, offscreen_qapp, mock_service: MockMentorService
+    ) -> MentorsPage:
+        _ = offscreen_qapp
         page = MentorsPage(backend_service=mock_service)
         qtbot.addWidget(page)
         return page
@@ -178,4 +193,3 @@ class TestMentorsPage:
         monkeypatch.setattr(QMessageBox, "warning", fake_warning)
         mentors_page.edit_mentor()
         assert called["warned"]
-

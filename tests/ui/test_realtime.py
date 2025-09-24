@@ -1,14 +1,25 @@
-﻿from __future__ import annotations
-import pytest
-import os
-pytestmark = pytest.mark.skipif(os.name == 'nt', reason='Realtime UI test requires a non-Windows headless environment')
-
+from __future__ import annotations
 
 import asyncio
+import os
 
+import pytest
 
-from src.ui.pages.dashboard_presenter import DashboardPresenter
+from tests.ui import _headless
+
+_headless.require_ui()
+
+pytestmark = [
+    pytest.mark.ui,
+    pytest.mark.skipif(
+        os.name == "nt", reason="Realtime UI test requires a non-Windows headless environment"
+    ),
+]
+if _headless.PYTEST_SKIP_MARK is not None:
+    pytestmark.append(_headless.PYTEST_SKIP_MARK)
+
 from src.services.analytics_service import DashboardData
+from src.ui.pages.dashboard_presenter import DashboardPresenter
 
 
 class DummyAnalytics:
@@ -56,4 +67,3 @@ async def test_realtime_triggers_refresh(qtbot, monkeypatch):
     pres._handle_realtime_update({"type": "student_update"})
     await asyncio.wait_for(loaded, timeout=2)
     assert loaded.done()
-

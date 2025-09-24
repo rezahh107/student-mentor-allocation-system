@@ -54,6 +54,46 @@ def test_cli_backfill(monkeypatch, capsys, tmp_path):
     assert payload["prefix_mismatches"] == 1
 
 
+def test_cli_backfill_writes_excel_safe_csv(monkeypatch, tmp_path, capsys):
+    stats = BackfillStats(
+        total_rows=5,
+        applied=2,
+        reused=1,
+        skipped=2,
+        dry_run=True,
+        prefix_mismatches=0,
+    )
+
+    def fake_run(service, path, **kwargs):  # noqa: ARG001
+        return stats
+
+    monkeypatch.setattr(cli, "get_service", lambda: None)
+    monkeypatch.setattr(cli, "run_backfill", fake_run)
+    csv_path = tmp_path / "result.csv"
+    args = [
+        "backfill",
+        str(tmp_path / "input.csv"),
+        "--stats-csv",
+        str(csv_path),
+        "--excel-safe",
+        "--bom",
+        "--crlf",
+        "--quote-all",
+    ]
+    exit_code = cli.main(args)
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["dry_run"] is True
+    content_bytes = csv_path.read_bytes()
+    assert content_bytes.startswith(b"\xef\xbb\xbf")
+    assert b"\r\n" in content_bytes
+    content = content_bytes.decode("utf-8")
+    lines = [line for line in content.splitlines() if line]
+    assert '"total_rows","5"' in lines
+    assert '"dry_run","True"' in lines
+    assert all(not line.startswith('"\'') for line in lines[1:])
+
+
 def test_cli_metrics(monkeypatch):
     events = []
 

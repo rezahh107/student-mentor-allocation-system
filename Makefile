@@ -1,4 +1,4 @@
-.PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard         ci-checks fault-tests static-checks post-migration-checks validate-artifacts
+.PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard         ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke
 
 PYTHON ?= python3
 PROJECT_ROOT := $(CURDIR)
@@ -40,8 +40,13 @@ fault-tests:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_faults.py -q
 
 static-checks:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_excel_safe.py -q
+	$(MAKE) gui-smoke
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
 	bandit -r src/phase2_counter_service
+
+gui-smoke:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_gui_smoke.py -q
 
 post-migration-checks:
 	$(PYTHON) -m scripts.post_migration_checks

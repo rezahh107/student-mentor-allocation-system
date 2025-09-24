@@ -11,8 +11,10 @@ import time
 from pathlib import Path
 from typing import Optional, Sequence
 
+from src.infrastructure.export.excel_safe import make_excel_safe_writer
+
 from . import assign_counter, get_config, get_service
-from .backfill import run_backfill
+from .backfill import BackfillStats, run_backfill
 from .observability import MetricsServer
 from .types import BackfillObserver
 
@@ -47,6 +49,9 @@ def _run_assign(args: argparse.Namespace) -> int:
 
 
 def _run_backfill(args: argparse.Namespace) -> int:
+    if args.stats_csv is None and any((args.excel_safe, args.bom, args.crlf, args.quote_all)):
+        print("برای استفاده از پرچم‌های CSV باید --stats-csv تعیین شود.", file=sys.stderr)
+        return 2
     service = get_service()
     observer: Optional[BackfillObserver] = StdoutObserver() if args.verbose else None
     stats = run_backfill(
@@ -56,8 +61,52 @@ def _run_backfill(args: argparse.Namespace) -> int:
         apply=args.apply,
         observer=observer,
     )
-    print(json.dumps(asdict(stats), ensure_ascii=False))
+    payload = json.dumps(asdict(stats), ensure_ascii=False)
+    if args.stats_csv:
+        try:
+            _write_stats_csv(
+                Path(args.stats_csv),
+                stats,
+                excel_safe=args.excel_safe,
+                bom=args.bom,
+                crlf=args.crlf,
+                quote_all=args.quote_all,
+            )
+        except OSError as exc:
+            print(f"خطا در نوشتن CSV: {exc}", file=sys.stderr)
+            print(payload)
+            return 1
+    print(payload)
     return 0
+
+
+def _write_stats_csv(
+    path: Path,
+    stats: BackfillStats,
+    *,
+    excel_safe: bool,
+    bom: bool,
+    crlf: bool,
+    quote_all: bool,
+) -> None:
+    rows = [
+        ("total_rows", stats.total_rows),
+        ("applied", stats.applied),
+        ("reused", stats.reused),
+        ("skipped", stats.skipped),
+        ("dry_run", "True" if stats.dry_run else "False"),
+        ("prefix_mismatches", stats.prefix_mismatches),
+    ]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = make_excel_safe_writer(
+            handle,
+            bom=bom,
+            guard_formulas=excel_safe,
+            quote_all=quote_all,
+            crlf=crlf,
+        )
+        writer.writerow(["شاخص", "مقدار"])
+        writer.writerows(rows)
 
 
 def _run_metrics(args: argparse.Namespace) -> int:
@@ -97,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
     backfill_cmd.add_argument("--chunk-size", type=int, default=500, help="اندازه دسته‌ها")
     backfill_cmd.add_argument("--apply", action="store_true", help="اجرای واقعی به جای dry-run")
     backfill_cmd.add_argument("--verbose", action="store_true", help="چاپ پیشرفت دسته‌ای")
+    backfill_cmd.add_argument("--stats-csv", help="ذخیره خلاصهٔ اجرا در فایل CSV")
+    backfill_cmd.add_argument("--excel-safe", action="store_true", help="محافظت خروجی CSV برای Excel")
+    backfill_cmd.add_argument("--bom", action="store_true", help="افزودن BOM UTF-8 به خروجی")
+    backfill_cmd.add_argument("--crlf", action="store_true", help="استفاده از CRLF برای سطرهای CSV")
+    backfill_cmd.add_argument("--quote-all", action="store_true", help="قرار دادن کوت برای همهٔ ستون‌ها")
     backfill_cmd.set_defaults(func=_run_backfill)
 
     metrics_cmd = sub.add_parser("serve-metrics", help="اجرای اکسپورتر پرومتئوس")

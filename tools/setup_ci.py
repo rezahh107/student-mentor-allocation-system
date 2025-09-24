@@ -87,6 +87,7 @@ jobs:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
       LC_ALL: C.UTF-8
       PYTHONUTF8: '1'
+      COVERAGE_MIN: ${{ vars.COVERAGE_MIN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -106,8 +107,6 @@ jobs:
           python -m pip install -U pip
           pip install -r requirements.txt -r requirements-dev.txt
       - name: Core suite with coverage gate
-        env:
-          COVERAGE_MIN: ${{ vars.COVERAGE_MIN }}
         run: |
           pytest -p pytest_cov --cov=src --cov-report=xml --cov-fail-under=${{ env.COVERAGE_MIN || 80 }}
       - name: Golden determinism
@@ -154,6 +153,16 @@ jobs:
       - name: Smoke and e2e suite
         run: |
           pytest -m "smoke and e2e" -q
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-artifacts
+          if-no-files-found: ignore
+          path: |
+            coverage.xml
+            tests/golden/**
+            reports/**
 """
 
 

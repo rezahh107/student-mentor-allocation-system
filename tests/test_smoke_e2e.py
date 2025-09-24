@@ -10,8 +10,16 @@ import pytest
 
 HYPOTHESIS_REASON = "hypothesis نصب نیست (محلی)"
 
+try:
+    hypothesis = pytest.importorskip("hypothesis", reason=HYPOTHESIS_REASON)
+    strategies = pytest.importorskip("hypothesis.strategies", reason=HYPOTHESIS_REASON)
+except pytest.skip.Exception:
+    hypothesis = None
+    strategies = None
+
 
 @pytest.mark.smoke
+@pytest.mark.e2e
 def test_smoke_file_roundtrip(tmp_path: Path) -> None:
     """ساده‌ترین مسیر دود بدون نیاز به وابستگی‌های جانبی را اعتبارسنجی می‌کند."""
 
@@ -25,8 +33,8 @@ def test_smoke_file_roundtrip(tmp_path: Path) -> None:
 def test_json_roundtrip_property_hypothesis_required(tmp_path: Path) -> None:
     """تست مبتنی بر Hypothesis که در صورت نیاز سنجش p95 را نیز اعمال می‌کند."""
 
-    hypothesis = pytest.importorskip("hypothesis", reason=HYPOTHESIS_REASON)
-    strategies = pytest.importorskip("hypothesis.strategies", reason=HYPOTHESIS_REASON)
+    if hypothesis is None or strategies is None:
+        pytest.skip(HYPOTHESIS_REASON)
 
     durations: list[float] = []
 

@@ -105,12 +105,13 @@ def _golden_suite() -> float:
 def _smoke_suite() -> float:
     """Run smoke و e2e با درنظر گرفتن نبود Hypothesis در محیط محلی."""
 
-    args = ["-m", "smoke or e2e", "tests/test_smoke_e2e.py"]
+    args = ["-m", "smoke and e2e", "-q"]
     if not HAS_HYPOTHESIS:
         print(
             "⚠️ کتابخانه hypothesis نصب نیست؛ موارد دارای شناسه hypothesis_required کنار گذاشته شدند."
         )
         args.extend(["-k", "not hypothesis_required"])
+    args.append("tests/test_smoke_e2e.py")
     return _run_pytest(args, "آزمایش‌های دود و انتهابه‌انتها")
 
 

@@ -20,6 +20,12 @@ def test_ensure_valid_inputs_invalid_gender():
     assert exc.value.detail.code == "E_INVALID_GENDER"
 
 
+def test_ensure_valid_inputs_invalid_year():
+    with pytest.raises(CounterServiceError) as exc:
+        validation.ensure_valid_inputs("1234567890", 0, "2x")
+    assert exc.value.detail.code == "E_YEAR_CODE_INVALID"
+
+
 def test_ensure_counter_format_enforces_regex():
     with pytest.raises(CounterServiceError) as exc:
         validation.ensure_counter_format("99374000")

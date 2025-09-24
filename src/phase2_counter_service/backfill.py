@@ -144,6 +144,11 @@ def run_backfill(
                             "پیشوند_فعلی": counter_value[:5],
                         },
                     )
+                else:
+                    seq_snapshot[seq_key] = max(
+                        seq_snapshot.get(seq_key, 0),
+                        int(counter_value[-4:]),
+                    )
                 reused += 1
                 reused_chunk += 1
                 continue

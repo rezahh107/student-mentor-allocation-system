@@ -78,6 +78,7 @@ class CounterAssignmentService:
             self.logger.warning(
                 "conflict_resolved",
                 extra={
+                    "کد": "E_DB_CONFLICT",
                     "نوع": conflict_type,
                     "شناسه": hashed_nid,
                     "counter": counter,

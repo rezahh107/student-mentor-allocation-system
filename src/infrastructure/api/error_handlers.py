@@ -9,6 +9,6 @@ from src.domain.shared.errors import AllocationError
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AllocationError)
-    async def handle_alloc_error(request: Request, exc: AllocationError):  # type: ignore[unused-ignore]
+    async def handle_alloc_error(request: Request, exc: AllocationError):
         return JSONResponse(status_code=400, content={"error": exc.error_code, "message": exc.message})
 

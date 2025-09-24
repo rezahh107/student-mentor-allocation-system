@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 from typing import Awaitable, Dict, List, Optional
-
-import time
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -26,6 +26,7 @@ from ..widgets.analytics_dashboard import AnalyticsDashboard
 from ..components.base_page import BasePage
 from ...services.config_manager import ConfigManager
 from ...services.performance_monitor import PerformanceMonitor
+from .._safety import is_minimal_mode, log_minimal_mode, swallow_ui_error
 from .allocation_presenter import AllocationPresenter
 
 
@@ -47,6 +48,7 @@ class AllocationPage(BasePage):
     allocation_started = Signal()
     allocation_finished = Signal(dict)
     allocation_progress = Signal(int)
+    LOGGER = logging.getLogger(__name__)
 
     def __init__(
         self,
@@ -67,6 +69,11 @@ class AllocationPage(BasePage):
         self.last_results: Optional[Dict[str, object]] = None
         self._last_students: List[Student] = []
         self._last_mentors: List[Mentor] = []
+
+        self._minimal_mode = is_minimal_mode()
+        if self._minimal_mode:
+            log_minimal_mode("صفحه تخصیص")
+            return
 
         self.setup_ui()
         self._apply_config_defaults()
@@ -221,12 +228,16 @@ class AllocationPage(BasePage):
         self.presenter.backend_error.connect(self._handle_backend_error)
 
     def set_presenter(self, presenter: AllocationPresenter) -> None:
-        try:
-            self.presenter.statistics_ready.disconnect(self.update_statistics_display)
-            self.presenter.allocation_completed.disconnect(self._handle_allocation_completed)
-            self.presenter.backend_error.disconnect(self._handle_backend_error)
-        except Exception:  # noqa: BLE001
-            pass
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ اتصال مجدد ارائه‌دهنده انجام نشد.")
+            self.presenter = presenter
+            return
+        previous = getattr(self, "presenter", None)
+        if previous is not None:
+            with swallow_ui_error("قطع اتصال سیگنال‌های ارائه‌دهنده تخصیص"):
+                previous.statistics_ready.disconnect(self.update_statistics_display)
+                previous.allocation_completed.disconnect(self._handle_allocation_completed)
+                previous.backend_error.disconnect(self._handle_backend_error)
         self.presenter = presenter
         self._bind_presenter()
 
@@ -234,9 +245,15 @@ class AllocationPage(BasePage):
     # Actions
     # ------------------------------------------------------------------
     def load_statistics(self) -> Optional[Awaitable]:
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ بارگذاری آمار انجام نشد.")
+            return None
         return self.run_async(self.presenter.load_statistics())
 
     async def start_allocation(self) -> None:
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ فرآیند تخصیص اجرا نشد.")
+            return
         metrics_students = 0
         metrics_success = 0
         duration = 0.0
@@ -337,10 +354,13 @@ class AllocationPage(BasePage):
                     self.analytics_dashboard.append_allocation_snapshot(history[-1])
 
     def closeEvent(self, event):  # noqa: D401, ANN001
-        try:
-            self.performance_monitor.stop_monitoring()
-        except Exception:
-            pass
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ رویداد بستن صفحه تخصیص فقط ثبت شد.")
+            super().closeEvent(event)
+            return
+        if self.performance_monitor:
+            with swallow_ui_error("توقف پایش عملکرد در زمان بستن صفحه"):
+                self.performance_monitor.stop_monitoring()
         super().closeEvent(event)
 
     # ------------------------------------------------------------------
@@ -373,6 +393,9 @@ class AllocationPage(BasePage):
     # Actions - details & export
     # ------------------------------------------------------------------
     def show_detailed_results(self) -> None:
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ نمایش جزئیات نتایج انجام نشد.")
+            return
         if not self.last_results:
             QMessageBox.information(self, "", "    ")
             return
@@ -386,6 +409,9 @@ class AllocationPage(BasePage):
         QMessageBox.information(self, " ", "\n".join(message))
 
     def show_allocation_errors(self) -> None:
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ نمایش خطاهای تخصیص انجام نشد.")
+            return
         if not self.last_results or not self.last_results.get("errors"):
             QMessageBox.information(self, "", "   ")
             return
@@ -396,9 +422,15 @@ class AllocationPage(BasePage):
         QMessageBox.information(self, " ", details)
 
     def _on_start_clicked(self) -> None:
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ رویداد شروع تخصیص نادیده گرفته شد.")
+            return
         self.run_async(self.start_allocation())
 
     def _on_export_clicked(self) -> None:
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ فرآیند خروجی اکسل اجرا نشد.")
+            return
         if not self.last_results:
             QMessageBox.information(self, "", "    ")
             return

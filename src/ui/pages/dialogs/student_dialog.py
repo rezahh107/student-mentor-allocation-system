@@ -17,6 +17,7 @@ from PyQt5.QtCore import QDate, QLocale
 from PyQt5.QtWidgets import QDateEdit, QMessageBox
 
 from src.api.models import StudentDTO, validate_iranian_phone, validate_national_code
+from src.ui._safety import is_minimal_mode, log_minimal_mode, swallow_ui_error
 
 
 class StudentDialog(QDialog):
@@ -26,6 +27,10 @@ class StudentDialog(QDialog):
         super().__init__(parent)
         self.student = student
         self.is_edit_mode = student is not None
+        self._minimal_mode = is_minimal_mode()
+        if self._minimal_mode:
+            log_minimal_mode("دیالوگ دانش‌آموز")
+            return
         self._setup_ui()
         self._populate_form()
 
@@ -44,10 +49,8 @@ class StudentDialog(QDialog):
         self.birth_date_edit = QDateEdit()
         self.birth_date_edit.setCalendarPopup(True)
         self.birth_date_edit.setDisplayFormat("yyyy/MM/dd")
-        try:
+        with swallow_ui_error("تنظیم محلی فارسی برای تاریخ تولد"):
             self.birth_date_edit.setLocale(QLocale(QLocale.Persian))
-        except Exception:
-            pass
         self.gender_combo = QComboBox()
         self.gender_combo.addItems(["زن", "مرد"])  # 0,1
         self.center_combo = QComboBox()
@@ -104,6 +107,9 @@ class StudentDialog(QDialog):
 
     def get_student_data(self) -> dict:
         """برگرداندن داده‌های فرم به‌عنوان دیکشنری."""
+        if getattr(self, "_minimal_mode", False):
+            log_minimal_mode("دریافت داده از دیالوگ دانش‌آموز")
+            return {}
         return {
             "first_name": self.first_name_input.text().strip(),
             "last_name": self.last_name_input.text().strip(),
@@ -119,6 +125,10 @@ class StudentDialog(QDialog):
         }
 
     def accept(self) -> None:  # noqa: D401
+        if getattr(self, "_minimal_mode", False):
+            log_minimal_mode("پذیرش دیالوگ دانش‌آموز در حالت مینیمال")
+            super().accept()
+            return
         data = self.get_student_data()
         if not data["first_name"] or not data["last_name"]:
             QMessageBox.warning(self, "اعتبارسنجی", "نام و نام خانوادگی الزامی است")

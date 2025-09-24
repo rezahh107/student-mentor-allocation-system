@@ -1,6 +1,7 @@
-﻿"""Rich mentor form dialog used for add/edit flows."""
+"""Rich mentor form dialog used for add/edit flows."""
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from PySide6.QtCore import Qt, Signal
@@ -21,6 +22,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QLineEdit,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class MentorFormDialog(QDialog):
@@ -163,7 +166,11 @@ class MentorFormDialog(QDialog):
     # Data helpers
     # ------------------------------------------------------------------
     def _load_mentor(self) -> None:
-        assert self.mentor is not None
+        if self.mentor is None:
+            LOGGER.error(
+                "اطلاعات پشتیبان برای بارگذاری فرم در حالت ویرایش موجود نیست."
+            )
+            return
         self.name_input.setText(self.mentor.get("name", ""))
         self.gender_combo.setCurrentIndex(self.mentor.get("gender", 0))
         self.type_combo.setCurrentIndex(1 if self.mentor.get("is_school") else 0)

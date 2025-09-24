@@ -1,4 +1,15 @@
 from __future__ import annotations
+import pytest
+
+from tests.ui import _headless
+
+_headless.require_ui()
+
+pytestmark = [pytest.mark.ui]
+if _headless.PYTEST_SKIP_MARK is not None:
+    pytestmark.append(_headless.PYTEST_SKIP_MARK)
+
+
 
 from PyQt5.QtCore import Qt
 
@@ -19,4 +30,3 @@ def test_app_is_rtl_and_persian_labels(qtbot):
 
     # Check a known Persian text appears in menubar or status
     assert "دانش‌آموزان" in [a.text() for a in w.menuBar().actions()[1].menu().actions()]
-

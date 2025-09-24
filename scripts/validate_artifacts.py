@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
-from typing import Iterable, List
-
-import yaml
+from typing import Any, Callable, Iterator, Sequence, cast
 
 from src.phase2_counter_service.validation import COUNTER_PATTERN, COUNTER_PREFIX
 
@@ -14,20 +13,34 @@ SPEC_MATRIX = REPORTS_DIR / "spec_matrix.md"
 
 
 def _load_json(path: Path) -> None:
+    """Load a JSON document from *path* to validate syntax."""
+
     json.loads(path.read_text(encoding="utf-8"))
 
 
 def _load_yaml(path: Path) -> None:
-    yaml.safe_load(path.read_text(encoding="utf-8"))
+    """Load a YAML document from *path* to validate syntax."""
+
+    module = importlib.import_module("yaml")
+    safe_load = getattr(module, "safe_load")
+    if not callable(safe_load):  # pragma: no cover - defensive guard
+        msg = "yaml.safe_load must be callable"
+        raise TypeError(msg)
+    loader = cast(Callable[[str], Any], safe_load)
+    loader(path.read_text(encoding="utf-8"))
 
 
-def _iter_paths(directory: Path, patterns: Iterable[str]) -> Iterable[Path]:
+def _iter_paths(directory: Path, patterns: Sequence[str]) -> Iterator[Path]:
+    """Yield files in *directory* matching the provided *patterns*."""
+
     for pattern in patterns:
         yield from directory.glob(pattern)
 
 
-def validate_monitoring_assets() -> List[str]:
-    errors: List[str] = []
+def validate_monitoring_assets() -> list[str]:
+    """Validate monitoring dashboards and alert definitions."""
+
+    errors: list[str] = []
     grafana_dir = ROOT / "monitoring" / "grafana" / "dashboards"
     for path in grafana_dir.glob("*.json"):
         try:
@@ -44,6 +57,8 @@ def validate_monitoring_assets() -> List[str]:
 
 
 def generate_spec_matrix() -> str:
+    """Render the spec matrix document contents."""
+
     lines = [
         "# Spec Matrix",
         "",
@@ -58,6 +73,8 @@ def generate_spec_matrix() -> str:
 
 
 def ensure_spec_matrix() -> None:
+    """Create or update the spec matrix report on disk."""
+
     REPORTS_DIR.mkdir(exist_ok=True)
     content = generate_spec_matrix()
     existing = SPEC_MATRIX.read_text(encoding="utf-8") if SPEC_MATRIX.exists() else ""
@@ -66,6 +83,8 @@ def ensure_spec_matrix() -> None:
 
 
 def main() -> int:
+    """Run artifact validation and emit a localized status message."""
+
     ensure_spec_matrix()
     errors = validate_monitoring_assets()
     if errors:

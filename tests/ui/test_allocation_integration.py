@@ -1,6 +1,14 @@
-﻿from __future__ import annotations
-
+from __future__ import annotations
 import pytest
+
+from tests.ui import _headless
+
+_headless.require_ui()
+
+pytestmark = [pytest.mark.ui]
+if _headless.PYTEST_SKIP_MARK is not None:
+    pytestmark.append(_headless.PYTEST_SKIP_MARK)
+
 from src.ui.pages.allocation_page import AllocationPage
 from src.ui.pages.allocation_presenter import AllocationPresenter
 from src.ui.services.allocation_backend import MockBackendService

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import gc
 import io
+import tracemalloc
 from typing import Iterator
 
 import pytest
@@ -130,3 +132,48 @@ def test_excel_safe_writer_large_streaming(bom: bool, crlf: bool, quote_all: boo
     assert payload.endswith(terminator)
     assert "'=SUM(0)" in payload
     assert "ردیف-99999" in payload
+
+
+@pytest.mark.parametrize(
+    "bom,crlf,quote_all",
+    [
+        (False, False, False),
+        (False, False, True),
+        (True, True, False),
+    ],
+)
+def test_excel_safe_writer_streaming_memory_budget(
+    tmp_path, bom: bool, crlf: bool, quote_all: bool
+) -> None:
+    """Ensure high-volume exports stream with bounded memory consumption."""
+
+    target = tmp_path / "stats.csv"
+    gc.collect()
+    tracemalloc.start()
+    with target.open("w", encoding="utf-8", newline="") as handle:
+        writer = make_excel_safe_writer(
+            handle,
+            bom=bom,
+            guard_formulas=True,
+            quote_all=quote_all,
+            crlf=crlf,
+        )
+
+        def iterator() -> Iterator[tuple[str, str]]:
+            for index in range(100_000):
+                yield (f"ردیف-{index}", f"=SUM({index})")
+
+        writer.writerows(iterator())
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak < 35_000_000
+
+    with target.open("r", encoding="utf-8", newline="") as handle:
+        row_count = sum(1 for _ in handle)
+    assert row_count == 100_000
+
+    payload = target.read_bytes()
+    if bom:
+        assert payload.startswith(BOM_UTF8.encode("utf-8"))
+    terminator = b"\r\n" if crlf else b"\n"
+    assert payload.endswith(terminator)

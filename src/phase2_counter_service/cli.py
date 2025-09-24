@@ -130,7 +130,11 @@ def _run_backfill(args: argparse.Namespace) -> int:
         print("برای استفاده از پرچم‌های CSV باید --stats-csv تعیین شود.", file=sys.stderr)
         return 2
     service = get_service()
-    observer: Optional[BackfillObserver] = StdoutObserver() if args.verbose else None
+    observer: Optional[BackfillObserver]
+    if args.verbose and not args.json_only:
+        observer = StdoutObserver()
+    else:
+        observer = None
     stats = run_backfill(
         service,
         Path(args.csv_path),
@@ -138,10 +142,11 @@ def _run_backfill(args: argparse.Namespace) -> int:
         apply=args.apply,
         observer=observer,
     )
-    payload = json.dumps(asdict(stats), ensure_ascii=False)
+    stats_payload = asdict(stats)
+    stats_csv_path: Optional[str] = None
     if args.stats_csv:
         try:
-            _write_stats_csv(
+            resolved = _write_stats_csv(
                 Path(args.stats_csv),
                 stats,
                 excel_safe=args.excel_safe,
@@ -150,12 +155,16 @@ def _run_backfill(args: argparse.Namespace) -> int:
                 quote_all=args.quote_all,
                 overwrite=args.overwrite,
                 original=args.stats_csv,
+                announce=not args.json_only,
             )
+            stats_csv_path = str(resolved)
         except OSError as exc:
             print(f"خطا در نوشتن CSV: {exc}", file=sys.stderr)
-            print(payload)
+            print(json.dumps(stats_payload, ensure_ascii=False))
             return 1
-    print(payload)
+    if stats_csv_path is not None:
+        stats_payload["stats_csv_path"] = stats_csv_path
+    print(json.dumps(stats_payload, ensure_ascii=False))
     return 0
 
 
@@ -169,7 +178,8 @@ def _write_stats_csv(
     quote_all: bool,
     overwrite: bool,
     original: Optional[str] = None,
-) -> None:
+    announce: bool = True,
+) -> Path:
     resolved = _ensure_unique_path(path, overwrite=overwrite, original=original)
     with resolved.open("w", encoding="utf-8", newline="") as handle:
         writer = make_excel_safe_writer(
@@ -181,7 +191,9 @@ def _write_stats_csv(
         )
         writer.writerow(["شاخص", "مقدار"])
         writer.writerows(_localized_rows(stats))
-    print(f"گزارش آمار در «{resolved}» ذخیره شد.")
+    if announce:
+        print(f"گزارش آمار در «{resolved}» ذخیره شد.")
+    return resolved
 
 
 def _run_metrics(args: argparse.Namespace) -> int:
@@ -226,6 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
     backfill_cmd.add_argument("--bom", action="store_true", help="افزودن BOM UTF-8 به خروجی")
     backfill_cmd.add_argument("--crlf", action="store_true", help="استفاده از CRLF برای سطرهای CSV")
     backfill_cmd.add_argument("--quote-all", action="store_true", help="قرار دادن کوت برای همهٔ ستون‌ها")
+    backfill_cmd.add_argument(
+        "--json-only",
+        action="store_true",
+        help="نمایش فقط JSON نهایی (بدون بنر فارسی)",
+    )
     backfill_cmd.add_argument(
         "--overwrite",
         action="store_true",

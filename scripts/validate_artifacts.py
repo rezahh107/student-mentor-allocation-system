@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Iterable, List
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from src.phase2_counter_service.validation import COUNTER_PATTERN, COUNTER_PREFIX
 

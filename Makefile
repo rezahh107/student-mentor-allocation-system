@@ -46,8 +46,16 @@ static-checks:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_no_unused_ignores.py -q
 	$(MAKE) gui-smoke
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
-	$(PYTHON) -m bandit -r src/phase2_counter_service
-
+	@if $(PYTHON) -c "import bandit" >/dev/null 2>&1; then \
+		$(PYTHON) -m bandit -r src/ scripts/; \
+	else \
+		if [ "$$CI" = "true" ] || [ "$$CI" = "1" ]; then \
+			printf 'خطا: ماژول Bandit در محیط CI در دسترس نیست؛ لطفاً pip install -r requirements-dev.txt اجرا شود.\n' >&2; \
+			exit 1; \
+		else \
+			printf 'هشدار: Bandit نصب نیست؛ در محیط لوکال از این مرحله عبور شد (برای اجرا: pip install -r requirements-dev.txt).\n'; \
+		fi; \
+	fi
 gui-smoke:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_gui_smoke.py -q
 

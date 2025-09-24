@@ -37,6 +37,7 @@
 - `make ci-checks` مجموعه کامل پوشش، Mypy(strict)، Bandit، اعتبارسنجی آرتیفکت‌ها و `post_migration_checks` را اجرا می‌کند و آستانه پوشش ۹۵٪ را enforced می‌نماید.
 - `make fault-tests` تنها تست‌های تزریق خطا را اجرا می‌کند تا شاخه‌های مربوط به تعارض پایگاه داده پوشش داده شوند.
 - `make static-checks` برای اجرای سریع Mypy و Bandit در جریان توسعه استفاده شود.
+- برای اجرای کامل گیت‌های استاتیک در محیط محلی، پیش از فراخوانی `make static-checks` دست‌کم یک‌بار `pip install -r requirements-dev.txt` را اجرا کنید تا Bandit و بسته‌های کمکی نصب شوند.
 - پس از هر مهاجرت دیتابیس، `make post-migration-checks` روی پایگاه داده موقت اجرا و در صورت هرگونه تغییر در قید UNIQUE یا الگوی شمارنده خطا می‌دهد.
 - GitHub Actions تنها از فایل `ci.yml` استفاده می‌کند؛ این پایپ‌لاین روی Python 3.11 و 3.12 اجرا شده و به ترتیب `make fault-tests`, `make static-checks` و در نسخه ۳.۱۱ `make ci-checks` را اجرا می‌کند تا پوشش و اعتبارسنجی آرتیفکت‌ها تضمین شوند.
 

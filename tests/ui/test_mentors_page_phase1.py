@@ -1,6 +1,7 @@
 ﻿"""Phase 1 tests for MentorsPage UI."""
 from __future__ import annotations
 
+import logging
 from typing import Dict
 
 import pytest
@@ -73,6 +74,36 @@ class TestMentorFormDialog:
         assert dialog.type_combo.currentIndex() == 0
         assert dialog.capacity_spin.value() == 10
         assert dialog.active_checkbox.isChecked()
+
+    def test_load_mentor_logs_when_missing(self, dialog: MentorFormDialog, caplog) -> None:
+        caplog.clear()
+        with caplog.at_level(logging.ERROR):
+            dialog._load_mentor()  # noqa: SLF001
+
+        assert any("اطلاعات پشتیبان" in message for message in caplog.messages)
+
+    def test_edit_mode_populates_fields(self, qtbot) -> None:
+        mentor = {
+            "name": "استاد نمونه",
+            "gender": 1,
+            "is_school": True,
+            "capacity": 7,
+            "phone": "09120000001",
+            "is_active": False,
+            "notes": "یادداشت تستی",
+            "groups": ["A", "B"],
+        }
+        dialog = MentorFormDialog(mentor=mentor)
+        qtbot.addWidget(dialog)
+
+        assert dialog.is_edit_mode is True
+        assert dialog.name_input.text() == mentor["name"]
+        assert dialog.gender_combo.currentIndex() == mentor["gender"]
+        assert dialog.type_combo.currentIndex() == 1
+        assert dialog.capacity_spin.value() == mentor["capacity"]
+        assert dialog.phone_input.text() == mentor["phone"]
+        assert dialog.active_checkbox.isChecked() is mentor["is_active"]
+        assert mentor["notes"] in dialog.notes_text.toPlainText()
 
     def test_validation_blocks_empty_name(self, dialog: MentorFormDialog) -> None:
         dialog.name_input.setText(" ")

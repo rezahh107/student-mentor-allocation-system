@@ -25,7 +25,10 @@ def retry(
                     last_exc = ex
                     time.sleep(delay)
                     delay *= backoff_factor
-            assert last_exc is not None
+            if last_exc is None:
+                raise RuntimeError(
+                    "هیچ استثنایی برای گزارش پس از اتمام تلاش‌ها ثبت نشد."
+                )
             raise last_exc
 
         return wrapper

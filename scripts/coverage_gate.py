@@ -6,10 +6,39 @@ import os
 import shlex
 import subprocess  # اجرای کنترل‌شده pytest با پوشش. # nosec B404
 import sys
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List
+
+try:
+    from defusedxml import ElementTree as ET  # type: ignore
+
+    SAFE_XML_BACKEND = "defusedxml"
+    SAFE_XML_FALLBACK_NOTICE = ""
+except ImportError:
+    import xml.etree.ElementTree as ET  # nosec B314,B405 - فقط coverage.xml محلی و تولیدشده توسط pytest خوانده می‌شود.
+
+    SAFE_XML_BACKEND = "stdlib"
+    SAFE_XML_FALLBACK_NOTICE = (
+        "SEC_SAFE_XML_FALLBACK: ماژول defusedxml در دسترس نبود؛ تجزیهٔ coverage.xml"
+        " محلی با ماژول استاندارد انجام شد."
+    )
+    sys.stderr.write(SAFE_XML_FALLBACK_NOTICE + "\n")
+
+
+if SAFE_XML_BACKEND == "stdlib":
+
+    def _safe_parse(xml_path: Path) -> ET.ElementTree:
+        """تجزیهٔ پوشش با اتکا به فایل محلی تولیدشده."""
+
+        return ET.parse(xml_path)  # nosec B314 - فایل coverage.xml فقط در همین ماشین تولید شده است.
+
+else:
+
+    def _safe_parse(xml_path: Path) -> ET.ElementTree:
+        """تجزیهٔ پوشش با defusedxml."""
+
+        return ET.parse(xml_path)  # nosec B314 - defusedxml حملات XXE را خنثی می‌کند.
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COVERAGE_XML = PROJECT_ROOT / "coverage.xml"
@@ -103,7 +132,7 @@ def _parse_coverage() -> float:
             "COV_XML_MISSING: فایل coverage.xml یافت نشد؛ اجرای pytest احتمالاً ناکام مانده است.\n"
         )
         raise SystemExit(4)
-    tree = ET.parse(COVERAGE_XML)
+    tree = _safe_parse(COVERAGE_XML)
     root = tree.getroot()
     line_rate = root.get("line-rate") or "0"
     try:

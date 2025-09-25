@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.secure_utils import parse_secure_xml, run_secure_command
+try:
+    from scripts.secure_utils import parse_secure_xml, run_secure_command
+except RuntimeError as exc:  # pragma: no cover - dependency missing
+    pytest.skip(
+        f"DEPENDENCY_MISSING: اجرای defusedxml ممکن نیست ({exc})",
+        allow_module_level=True,
+    )
 
 
 def test_run_secure_command_allows_whitelisted() -> None:

@@ -84,7 +84,7 @@ class OutboxDispatcher:
             message.status = "FAILED"
             model.last_error = f"MAX_RETRIES_REACHED:{exc}"[:256]
             logger.error(
-                "انتشار رویداد پس از حداکثر تلاش متوقف شد",
+                "MAX_RETRIES_REACHED: انتشار رویداد پس از حداکثر تلاش متوقف شد",
                 extra={
                     "event_id": model.event_id,
                     "retry_count": model.retry_count,

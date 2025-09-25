@@ -3,23 +3,25 @@
 from dataclasses import asdict
 from typing import Dict, Optional
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QDoubleSpinBox,
-    QFileDialog,
-    QFormLayout,
-    QHBoxLayout,
-    QLineEdit,
-    QPushButton,
-    QSpinBox,
-    QTabWidget,
-    QVBoxLayout,
-    QWidget,
-)
+from src.ui.qt_optional import QtCore, QtWidgets, require_qt
+
+require_qt()
+
+Signal = QtCore.Signal
+QCheckBox = QtWidgets.QCheckBox
+QComboBox = QtWidgets.QComboBox
+QDialog = QtWidgets.QDialog
+QDialogButtonBox = QtWidgets.QDialogButtonBox
+QDoubleSpinBox = QtWidgets.QDoubleSpinBox
+QFileDialog = QtWidgets.QFileDialog
+QFormLayout = QtWidgets.QFormLayout
+QHBoxLayout = QtWidgets.QHBoxLayout
+QLineEdit = QtWidgets.QLineEdit
+QPushButton = QtWidgets.QPushButton
+QSpinBox = QtWidgets.QSpinBox
+QTabWidget = QtWidgets.QTabWidget
+QVBoxLayout = QtWidgets.QVBoxLayout
+QWidget = QtWidgets.QWidget
 
 from ...services.config_manager import ConfigManager
 

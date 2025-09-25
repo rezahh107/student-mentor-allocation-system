@@ -23,6 +23,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
+from src.core.datetime_utils import utc_now
+
 
 Base = declarative_base()
 
@@ -78,7 +80,7 @@ class AssignmentModel(Base):
     assignment_id = Column("شناسه_تخصیص", BigInteger, primary_key=True, autoincrement=True)
     national_id = Column("کد_ملی", String(10), ForeignKey("دانش_آموزان.کد_ملی", ondelete="CASCADE"), nullable=False)
     mentor_id = Column("شناسه_منتور", Integer, ForeignKey("منتورها.شناسه_منتور"), nullable=True)
-    assigned_at = Column("زمان_اختصاص", DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    assigned_at = Column("زمان_اختصاص", DateTime(timezone=True), nullable=False, default=utc_now)
     status = Column("وضعیت", Enum("OK", "TEMP_REVIEW", "NEEDS_NEW_MENTOR", name="alloc_status", native_enum=False), nullable=False)
 
     student = relationship("StudentModel", back_populates="assignments")

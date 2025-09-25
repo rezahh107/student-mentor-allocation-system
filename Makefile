@@ -1,9 +1,13 @@
 .PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard \
         ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke \
-        security-fix
+        security-fix security-scan security test test-coverage test-coverage-summary test-legacy
 
 PYTHON ?= python3
 PROJECT_ROOT := $(CURDIR)
+BANDIT_FAIL_LEVEL ?= MEDIUM
+LEGACY_TEST_PATTERN ?= tests/legacy/test_*.py
+PYTEST_ARGS ?=
+LEGACY_TARGETS ?=
 
 # Legacy targets retained for compatibility with existing tooling
 
@@ -55,24 +59,9 @@ static-checks:
 	fi
 	
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
-	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.run_bandit_gate
-	
-	if [ "$$CI" = "true" ]; then \
-		echo "آرشیو Bandit برای دانلود: reports/bandit-report.json"; \
-	fi
-	
+	$(MAKE) security-scan
+
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_no_unused_ignores.py -q
-	
-	@if $(PYTHON) -c "import bandit" >/dev/null 2>&1; then \
-		$(PYTHON) -m bandit -r src/ scripts/; \
-	else \
-		if [ "$$CI" = "true" ] || [ "$$CI" = "1" ]; then \
-			printf "در دستوری نصب: لطفا CI در محیط Bandit خطا: بازرسی\n" >&2; \
-			exit 1; \
-		else \
-			printf "از این مرحله عبور شد Bandit (برای اجرا) نصب نیست؛ در محیط لوکال\n"; \
-		fi; \
-	fi
 
 gui-smoke:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_gui_smoke.py -q
@@ -85,3 +74,22 @@ post-migration-checks:
 
 validate-artifacts:
 	$(PYTHON) -m scripts.validate_artifacts
+
+security-scan:
+	PYTHONPATH=$(PROJECT_ROOT) BANDIT_FAIL_LEVEL=$(BANDIT_FAIL_LEVEL) $(PYTHON) -m scripts.run_bandit_gate
+
+security: security-scan
+
+test:
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -q
+
+test-coverage:
+        PYTHONPATH=$(PROJECT_ROOT) LEGACY_TEST_PATTERN="$(LEGACY_TEST_PATTERN)" \
+        $(PYTHON) -m scripts.coverage_gate $(if $(LEGACY_TARGETS),$(LEGACY_TARGETS),) --pytest-args "$(PYTEST_ARGS)"
+
+test-coverage-summary:
+        PYTHONPATH=$(PROJECT_ROOT) LEGACY_TEST_PATTERN="$(LEGACY_TEST_PATTERN)" \
+        $(PYTHON) -m scripts.coverage_gate $(if $(LEGACY_TARGETS),$(LEGACY_TARGETS),) --pytest-args "$(PYTEST_ARGS)" --summary
+
+test-legacy:
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -q tests/legacy -k "not gui" && echo "✅ Legacy tests passed"

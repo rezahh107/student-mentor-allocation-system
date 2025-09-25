@@ -4,13 +4,15 @@ from __future__ import annotations
 import asyncio
 from typing import Awaitable, Optional
 
-from PySide6.QtWidgets import QWidget
+from src.ui.qt_optional import QtWidgets, require_qt
+
+require_qt()
 
 
-class BasePage(QWidget):
+class BasePage(QtWidgets.QWidget):
     """Base widget that offers small Qt-aware async helpers."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
         self._background_tasks: list[asyncio.Task] = []
 

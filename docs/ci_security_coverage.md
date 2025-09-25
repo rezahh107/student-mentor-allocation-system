@@ -6,7 +6,8 @@
 
 1. `make static-checks` → اجرای تست‌های استاتیک و بررسی‌های Mypy.
 2. `COV_MIN=95 PYTEST_ARGS="-q --maxfail=1 -p pytest_cov --cov=src --cov-report=term --cov-report=xml --cov-report=html" make test-coverage` → اجرای تست‌های legacy با خلاصهٔ فارسی و تولید `htmlcov/`.
-3. `make security-scan` → اجرای Bandit با پیام‌های دترمینیستیک فارسی و تولید `reports/bandit.json`.
+3. `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 make ci-checks` → اجرای تست‌های سرویس شمارنده فاز۲ با یک دستور `pytest -p pytest_cov --cov=src.phase2_counter_service --cov-report=term-missing --cov-report=html --cov-fail-under=95` تا خطای «No data to report» برطرف شود و آستانهٔ ۹۵٪ تضمین گردد.
+4. `make security-scan` → اجرای Bandit با پیام‌های دترمینیستیک فارسی و تولید `reports/bandit.json`.
 
 در CI، خروجی HTML پوشش با نام `htmlcov-<python>` و گزارش امنیتی با نام `bandit-json` به‌صورت artifact آپلود می‌شود.
 

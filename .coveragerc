@@ -5,6 +5,7 @@ source =
     src/api
     src/tools/export
     src/cli
+    src/phase2_counter_service
 parallel = False
 omit =
     */__pycache__/*
@@ -22,6 +23,7 @@ include =
     src/api/*
     src/tools/export/*
     src/cli/*
+    src/phase2_counter_service/*
 exclude_lines =
     pragma: no cover
     if __name__ == .__main__.

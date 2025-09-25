@@ -35,8 +35,9 @@ security-dashboard:
 # Phase 2 counter service hardening gates
 
 ci-checks:
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 coverage run -m pytest tests/phase2_counter_service -q
-	coverage report --include="src/phase2_counter_service/*" --fail-under=95
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service -q -p pytest_cov \
+		--cov=src.phase2_counter_service --cov-report=term-missing \
+		--cov-report=html --cov-fail-under=95
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
 	$(PYTHON) -m bandit -r src/phase2_counter_service
 	$(PYTHON) -m scripts.post_migration_checks

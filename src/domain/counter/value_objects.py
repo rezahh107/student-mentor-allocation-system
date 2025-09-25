@@ -16,15 +16,19 @@ class Counter:
 
     @staticmethod
     def build(year_two_digits: str, gender: Gender, seq: int) -> "Counter":
+        """ساخت شمارنده ۹ رقمی با کنترل خطاهای متداول."""
+
         if len(year_two_digits) != 2 or not year_two_digits.isdigit():
-if not 0 <= seq <= 9999:
-    raise ValueError("شماره ترتیبی فشرده باید بین 0 و 9999 باشد")
-code = render.counter_code
-if not 0 <= seq <= 9999:
-    raise RuntimeError("کد شال باید دقیقا در رنج عددی باشد")
+            raise RuntimeError("کد سال باید دقیقا دو رقم معتبر باشد")
+        if not isinstance(gender, Gender):
+            raise RuntimeError("کد جنسیت برای شمارنده معتبر نیست")
+        if not 0 <= seq <= 9999:
+            raise RuntimeError("توالی شمارنده باید بین 0 تا 9999 باشد")
+
         tail = f"{seq:04d}"
-        val = f"{year_two_digits}{code}{tail}"
-        if len(val) != Counter._len:
-            raise ValueError("Invalid counter length")
-        return Counter(val)
+        code = gender.counter_code
+        value = f"{year_two_digits}{code}{tail}"
+        if len(value) != Counter._len:
+            raise RuntimeError("طول شمارنده از ۹ رقم فراتر رفت")
+        return Counter(value)
 

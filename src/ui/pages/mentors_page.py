@@ -4,20 +4,23 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (
-    QComboBox,
-    QDialog,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QMessageBox,
-    QPushButton,
-    QTableView,
-    QVBoxLayout,
-    QWidget,
-)
+from src.ui.qt_optional import QtCore, QtGui, QtWidgets, require_qt
+
+require_qt()
+
+Qt = QtCore.Qt
+QFont = QtGui.QFont
+QComboBox = QtWidgets.QComboBox
+QDialog = QtWidgets.QDialog
+QGroupBox = QtWidgets.QGroupBox
+QHBoxLayout = QtWidgets.QHBoxLayout
+QLabel = QtWidgets.QLabel
+QMessageBox = QtWidgets.QMessageBox
+QPushButton = QtWidgets.QPushButton
+QTableView = QtWidgets.QTableView
+QVBoxLayout = QtWidgets.QVBoxLayout
+QWidget = QtWidgets.QWidget
+QApplication = QtWidgets.QApplication
 
 from src.ui.components.mentor_form import MentorFormDialog
 from src.ui.models.mentors_model import MentorsTableModel
@@ -284,7 +287,6 @@ class MentorsPage(QWidget):
 
 if __name__ == "__main__":  # pragma: no cover - manual testing helper
     import sys
-    from PySide6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
     app.setLayoutDirection(Qt.RightToLeft)

@@ -22,7 +22,7 @@ def test_excel_export_progress_callbacks(tmp_path):
     async def run():
         await svc.export_students(students, str(out), progress_callback=lambda d, t: _collect_progress(done_list, d, t))
 
-    asyncio.get_event_loop().run_until_complete(run())
+    asyncio.run(run())
     assert out.exists()
     # At least some progress reported
     assert len(done_list) > 0

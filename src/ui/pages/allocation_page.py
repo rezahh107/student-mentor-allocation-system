@@ -5,20 +5,23 @@ import time
 from pathlib import Path
 from typing import Awaitable, Dict, List, Optional
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QFileDialog,
-    QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QMessageBox,
-    QPushButton,
-    QTabWidget,
-    QVBoxLayout,
-    QWidget,
-)
+from src.ui.qt_optional import QtCore, QtWidgets, require_qt
+
+require_qt()
+
+Qt = QtCore.Qt
+Signal = QtCore.Signal
+QCheckBox = QtWidgets.QCheckBox
+QFileDialog = QtWidgets.QFileDialog
+QGridLayout = QtWidgets.QGridLayout
+QGroupBox = QtWidgets.QGroupBox
+QHBoxLayout = QtWidgets.QHBoxLayout
+QLabel = QtWidgets.QLabel
+QMessageBox = QtWidgets.QMessageBox
+QPushButton = QtWidgets.QPushButton
+QTabWidget = QtWidgets.QTabWidget
+QVBoxLayout = QtWidgets.QVBoxLayout
+QWidget = QtWidgets.QWidget
 
 from ...core.allocation_engine import AllocationEngine
 from ...core.models import Mentor, Student

@@ -1,8 +1,16 @@
 from __future__ import annotations
+import pytest
+
+from tests.ui import _headless
+
+_headless.require_ui()
+
+pytestmark = [pytest.mark.ui]
+if _headless.PYTEST_SKIP_MARK is not None:
+    pytestmark.append(_headless.PYTEST_SKIP_MARK)
 
 import asyncio
 
-import pytest
 from PyQt5.QtWidgets import QFileDialog
 
 from src.api.client import APIClient
@@ -72,4 +80,3 @@ async def test_students_page_load_filter_add_bulk_export(qtbot, tmp_path, monkey
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out_path), "Excel Files (*.xlsx)"))
     await page.export_selected()
     assert out_path.exists()
-

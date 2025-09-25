@@ -1,10 +1,22 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import os
+
 import pytest
 
-pytestmark = pytest.mark.skipif(os.name == 'nt', reason='Import/Export UI tests require a GUI environment on Windows')
+from tests.ui import _headless
+
+_headless.require_ui()
+
+pytestmark = [
+    pytest.mark.ui,
+    pytest.mark.skipif(
+        os.name == "nt", reason="Import/Export UI tests require a GUI environment on Windows"
+    ),
+]
+if _headless.PYTEST_SKIP_MARK is not None:
+    pytestmark.append(_headless.PYTEST_SKIP_MARK)
 
 import openpyxl
 from PyQt5.QtWidgets import QFileDialog
@@ -48,5 +60,4 @@ async def test_download_template_and_import_preview(qtbot, tmp_path, monkeypatch
     await page.import_from_excel()
     # After import, a refresh happens
     assert page.model.rowCount() > 0
-
 

@@ -25,8 +25,10 @@ def retry(
                     last_exc = ex
                     time.sleep(delay)
                     delay *= backoff_factor
-            if last_exc is None:  # pragma: no cover - defensive
-                raise RuntimeError("هیچ استثنایی برای بازپرتاب در منطق retry ثبت نشد")
+if last_exc is None:
+            raise RuntimeError(
+                "منع اشتباهی برای گذارده یم از اتمام تلاش‌ها تعیین نشد"
+            )
             raise last_exc
 
         return wrapper

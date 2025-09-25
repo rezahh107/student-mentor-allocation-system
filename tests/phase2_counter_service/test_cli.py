@@ -92,6 +92,7 @@ def test_cli_backfill_writes_excel_safe_csv(monkeypatch, tmp_path, capsys):
     assert lines[0] == f"گزارش آمار در «{csv_path}» ذخیره شد."
     payload = json.loads(lines[-1])
     assert payload["dry_run"] is True
+    assert payload["stats_csv_path"] == str(csv_path)
     content_bytes = csv_path.read_bytes()
     assert content_bytes.startswith(b"\xef\xbb\xbf")
     assert b"\r\n" in content_bytes
@@ -128,7 +129,9 @@ def test_cli_stats_csv_localization_and_digits(monkeypatch, tmp_path, capsys):
     output = capsys.readouterr()
     lines = _non_empty_lines(output.out)
     assert lines[0] == f"گزارش آمار در «{csv_path}» ذخیره شد."
-    assert json.loads(lines[-1])["dry_run"] is False
+    payload = json.loads(lines[-1])
+    assert payload["dry_run"] is False
+    assert payload["stats_csv_path"] == str(csv_path)
     payload = csv_path.read_text(encoding="utf-8")
     assert "خیر" in payload
     assert "۷" not in payload
@@ -171,7 +174,9 @@ def test_cli_stats_csv_overwrite_guard(monkeypatch, tmp_path, capsys):
     assert "بله" in target.read_text(encoding="utf-8")
     lines = _non_empty_lines(captured.out)
     assert lines[0] == f"گزارش آمار در «{target}» ذخیره شد."
-    assert json.loads(lines[-1])["dry_run"] is True
+    payload = json.loads(lines[-1])
+    assert payload["dry_run"] is True
+    assert payload["stats_csv_path"] == str(target)
 
 
 def test_cli_stats_csv_directory_suffix(monkeypatch, tmp_path, capsys):
@@ -216,7 +221,9 @@ def test_cli_stats_csv_directory_suffix(monkeypatch, tmp_path, capsys):
     lines = _non_empty_lines(captured.out)
     expected_path = target_dir / expected_name
     assert lines[0] == f"گزارش آمار در «{expected_path}» ذخیره شد."
-    assert json.loads(lines[-1])["dry_run"] is True
+    payload = json.loads(lines[-1])
+    assert payload["dry_run"] is True
+    assert payload["stats_csv_path"] == str(expected_path)
 
 
 def test_cli_stats_csv_creates_missing_directory(monkeypatch, tmp_path, capsys):
@@ -257,7 +264,9 @@ def test_cli_stats_csv_creates_missing_directory(monkeypatch, tmp_path, capsys):
     assert target_dir.is_dir()
     lines = _non_empty_lines(captured.out)
     assert lines[0] == f"گزارش آمار در «{expected_path}» ذخیره شد."
-    assert json.loads(lines[-1])["dry_run"] is True
+    payload = json.loads(lines[-1])
+    assert payload["dry_run"] is True
+    assert payload["stats_csv_path"] == str(expected_path)
 
 
 def test_cli_stats_csv_path_without_suffix_treated_as_directory(monkeypatch, tmp_path, capsys):
@@ -300,6 +309,44 @@ def test_cli_stats_csv_path_without_suffix_treated_as_directory(monkeypatch, tmp
     assert lines[0] == f"گزارش آمار در «{expected_path}» ذخیره شد."
     payload = json.loads(lines[-1])
     assert payload["dry_run"] is False
+    assert payload["stats_csv_path"] == str(expected_path)
+
+
+def test_cli_backfill_json_only_suppresses_banner(monkeypatch, tmp_path, capsys):
+    stats = BackfillStats(
+        total_rows=3,
+        applied=3,
+        reused=0,
+        skipped=0,
+        dry_run=False,
+        prefix_mismatches=0,
+    )
+
+    def fake_run(service, path, **kwargs):  # noqa: ARG001
+        assert kwargs["observer"] is None
+        return stats
+
+    csv_path = tmp_path / "only.json.csv"
+    monkeypatch.setattr(cli, "get_service", lambda: None)
+    monkeypatch.setattr(cli, "run_backfill", fake_run)
+    exit_code = cli.main(
+        [
+            "backfill",
+            str(tmp_path / "input.csv"),
+            "--stats-csv",
+            str(csv_path),
+            "--json-only",
+            "--verbose",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    output = captured.out.strip()
+    payload = json.loads(output)
+    assert payload["stats_csv_path"] == str(csv_path)
+    assert csv_path.exists()
+    assert "گزارش آمار" not in captured.out
+    assert captured.err == ""
 
 
 def test_cli_metrics(monkeypatch):

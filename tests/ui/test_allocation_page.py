@@ -1,9 +1,17 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+import pytest
+
+from tests.ui import _headless
+
+_headless.require_ui()
+
+pytestmark = [pytest.mark.ui]
+if _headless.PYTEST_SKIP_MARK is not None:
+    pytestmark.append(_headless.PYTEST_SKIP_MARK)
 
 import asyncio
 from typing import Dict, List, Optional
 
-import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
 

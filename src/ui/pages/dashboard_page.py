@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import logging
 import os
-from typing import Dict
 
 import jdatetime
 from PyQt5.QtCore import Qt
@@ -33,6 +32,7 @@ from PyQt5.QtWidgets import (
 )
 from qasync import asyncSlot
 
+from src.ui._safety import is_minimal_mode, log_minimal_mode, swallow_ui_error
 from src.ui.pages.dashboard_presenter import DashboardPresenter
 from src.ui.widgets.charts.age_distribution_chart import AgeDistributionChart
 from src.ui.widgets.charts.center_performance_chart import CenterPerformanceChart
@@ -47,14 +47,26 @@ from src.ui.widgets.charts.chart_themes import ChartThemes
 class DashboardPage(QWidget):
     """صفحه داشبورد تحلیلی دانش‌آموزان با کارت‌ها و نمودارها."""
 
+    LOGGER = logging.getLogger(__name__)
+
     def __init__(self, presenter: DashboardPresenter) -> None:
         super().__init__()
         self.presenter = presenter
         self.charts: Dict[str, QWidget] = {}
         self.cards: Dict[str, StatisticCard] = {}
         self.overlay: LoadingOverlay | None = None
+        self._minimal_mode = is_minimal_mode()
+        if self._minimal_mode:
+            log_minimal_mode("صفحه داشبورد")
+            return
         self._setup_ui()
         self._connect_signals()
+
+    def _skip_if_minimal(self, action: str) -> bool:
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ %s اجرا نشد.", action)
+            return True
+        return False
 
     def _setup_ui(self) -> None:
         main_layout = QVBoxLayout(self)
@@ -226,18 +238,25 @@ class DashboardPage(QWidget):
         self.print_action.triggered.connect(lambda: self._print_dashboard())
         self.settings_action.triggered.connect(lambda: self._open_settings())
 
-    def showEvent(self, event) -> None:  # noqa: D401, N802
-        super().showEvent(event)
-        if not getattr(self, "_initialized", False):
-            self._initialized = True
-            self._refresh_dashboard()
-            if self.auto_refresh_cb.isChecked():
-                self.presenter.start_auto_refresh(300000)
-            # Enable realtime updates (optional, default URL)
-            try:
-                self.presenter.enable_realtime_updates()
-            except Exception as exc:  # noqa: BLE001
-                logging.getLogger(__name__).warning("فعال‌سازی به‌روزرسانی لحظه‌ای ناموفق بود", exc_info=exc)
+def showEvent(self, event) -> None:  # noqa: D401, N802
+    super().showEvent(event)
+    if self._skip_if_minimal("نمایش دادن واقعیتردی"):
+        return
+    
+    if not getattr(self, "_initialized", False):
+        self._initialized = True
+        self._refresh_dashboard()
+        if self.auto_refresh_cb.isChecked():
+            self.presenter.start_auto_refresh(300000)
+    
+    # Enable realtime updates (optional, default URL)
+    try:
+        self.presenter.enable_realtime_updates()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "خطای به‌روزرسانی به‌موقع یا تابوی شد", 
+            exc_info=exc
+        )
 
     def _selected_date_range(self) -> tuple[datetime, datetime]:
         txt = self.date_range_combo.currentText()
@@ -266,12 +285,16 @@ class DashboardPage(QWidget):
         self.custom_dates.setVisible(text == "بازه سفارشی...")
 
     def _toggle_auto_refresh(self, enabled: bool) -> None:
+        if self._skip_if_minimal("تغییر وضعیت بروزرسانی خودکار"):
+            return
         if enabled:
             self.presenter.start_auto_refresh(300000)
         else:
             self.presenter.stop_auto_refresh()
 
     def _open_settings(self) -> None:
+        if self._skip_if_minimal("باز کردن تنظیمات داشبورد"):
+            return
         dlg = DashboardSettingsDialog(self)
         # Pre-fill
         dlg.auto_refresh_enabled.setChecked(self.auto_refresh_cb.isChecked())
@@ -298,6 +321,8 @@ class DashboardPage(QWidget):
             self._apply_chart_theme()
 
     def _apply_chart_theme(self) -> None:
+        if self._skip_if_minimal("اعمال تم نمودار"):
+            return
         theme = getattr(self, "_chart_theme", "default")
         # apply to charts
         self.charts["gender"].set_theme(theme)
@@ -306,17 +331,25 @@ class DashboardPage(QWidget):
         self.charts["age"].set_theme(theme)
 
     def _update_last_refresh_label(self) -> None:
+        if self._skip_if_minimal("به‌روزرسانی برچسب زمان آخرین بروزرسانی"):
+            return
         self.last_update_label.setText(f"آخرین بروزرسانی: {datetime.now().strftime('%H:%M:%S')}")
 
     def _show_overlay(self, msg: str) -> None:
+        if self._skip_if_minimal("نمایش لایه بارگذاری"):
+            return
         if self.overlay:
             self.overlay.show_with_message(msg)
 
     def _hide_overlay(self) -> None:
+        if self._skip_if_minimal("پنهان‌سازی لایه بارگذاری"):
+            return
         if self.overlay:
             self.overlay.hide()
 
     def _on_data_loaded(self, data) -> None:
+        if self._skip_if_minimal("به‌روزرسانی داده‌های داشبورد"):
+            return
         # Cards
         self.cards["total"].update_value(value=f"{data.total_students:,}", change=data.growth_rate, trend=data.growth_trend)
         self.cards["active"].update_value(value=f"{data.active_students:,}", percentage=f"{data.active_percentage:.1f}%")
@@ -352,10 +385,14 @@ class DashboardPage(QWidget):
 
     @asyncSlot()
     async def _refresh_dashboard(self):
+        if self._skip_if_minimal("بروزرسانی داشبورد"):
+            return
         await self.presenter.load_dashboard_data(self._selected_date_range(), force_refresh=True)
 
     @asyncSlot()
     async def _export_pdf(self):
+        if self._skip_if_minimal("صدور PDF داشبورد"):
+            return
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "���?�?�?�? �?���?�?�? PDF",
@@ -372,23 +409,26 @@ class DashboardPage(QWidget):
                 QMessageBox.information(self, "�?�?�?�?", "�?���?�?�? PDF �?�? �?�?�?�?�?�? ���?�?�?�? �?�?.")
             return
 
-        try:
-            await self.presenter.export_pdf_report(filename)
-            QMessageBox.information(self, "�?�?�?�?", "�?���?�?�? PDF �?�? �?�?�?�?�?�? ���?�?�?�? �?�?.")
-        except Exception as e:  # noqa: BLE001
+        def _fallback() -> None:
             self._write_stub_pdf(filename)
             if not os.environ.get('PYTEST_CURRENT_TEST'):
-                QMessageBox.warning(self, "�?���?", f"�?���? �?�? �?�?�?�?�? PDF: {e}")
+                QMessageBox.warning(self, "�?���?", "صدور PDF اصلی با خطا مواجه شد؛ نسخه نمایشی ذخیره شد.")
+
+        with swallow_ui_error("صدور گزارش PDF داشبورد", fallback=_fallback):
+            await self.presenter.export_pdf_report(filename)
+            QMessageBox.information(self, "�?�?�?�?", "�?���?�?�? PDF �?�? �?�?�?�?�?�? ���?�?�?�? �?�?.")
 
     def _write_stub_pdf(self, filepath: str) -> None:
-        try:
+        if self._skip_if_minimal("نوشتن فایل PDF آزمایشی"):
+            return
+        with swallow_ui_error("نوشتن گزارش PDF نمایشی"):
             Path(filepath).parent.mkdir(parents=True, exist_ok=True)
             with open(filepath, 'wb') as handle:
                 handle.write(b'%PDF-1.4\n% SmartAlloc stub report\nendobj\nstartxref\n0\n%%EOF')
-        except Exception:  # noqa: BLE001
-            pass
 
     def _print_dashboard(self) -> None:
+        if self._skip_if_minimal("چاپ داشبورد"):
+            return
         printer = QPrinter(QPrinter.HighResolution)
         dialog = QPrintDialog(printer, self)
         if dialog.exec_() == QPrintDialog.Accepted:

@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QMessageBox,
     QPushButton,
     QTableView,
     QToolBar,
@@ -33,6 +34,7 @@ from src.services.excel_service import ExcelExportService
 from src.services.excel_import_service import ExcelImportService, ImportValidationResult
 from src.ui.pages.dialogs.export_progress_dialog import ExportProgressDialog, ImportProgressDialog
 from src.ui.pages.dialogs.import_preview_dialog import ImportPreviewDialog
+from src.ui._safety import is_minimal_mode, log_minimal_mode, swallow_ui_error
 
 
 class StudentsTableModel(QAbstractTableModel):
@@ -309,6 +311,8 @@ class PaginationWidget(QWidget):
 class StudentsPage(QWidget):
     """صفحه کامل مدیریت دانش‌آموزان با جدول، فیلتر و CRUD."""
 
+    LOGGER = logging.getLogger(__name__)
+
     def __init__(self, api_client: APIClient, event_bus: EventBus) -> None:
         super().__init__()
         self.api_client = api_client
@@ -321,9 +325,20 @@ class StudentsPage(QWidget):
         self.total_count = 0
         self.filters: Dict = {}
 
+        self._minimal_mode = is_minimal_mode()
+        if self._minimal_mode:
+            log_minimal_mode("صفحه دانش‌آموزان")
+            return
+
         self._setup_ui()
         self._setup_connections()
         asyncio.create_task(self._load_page())
+
+    def _skip_if_minimal(self, action: str) -> bool:
+        if getattr(self, "_minimal_mode", False):
+            self.LOGGER.info("حالت UI مینیمال فعال است؛ %s انجام نشد.", action)
+            return True
+        return False
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -378,6 +393,8 @@ class StudentsPage(QWidget):
         self.action_bulk_export.triggered.connect(lambda: asyncio.create_task(self.export_selected()))
 
     async def _load_page(self) -> None:
+        if self._skip_if_minimal("بارگذاری فهرست دانش‌آموزان"):
+            return
         filt = self.filter_panel.get_filters()
         result, total = await self.presenter.load_students(
             page=self.current_page,
@@ -415,15 +432,21 @@ class StudentsPage(QWidget):
     # ---------------- actions ----------------
     @asyncSlot()
     async def on_search_clicked(self) -> None:
+        if self._skip_if_minimal("جست‌وجوی دانش‌آموزان"):
+            return
         self.current_page = 1
         await self._load_page()
 
     @asyncSlot()
     async def on_refresh_clicked(self) -> None:
+        if self._skip_if_minimal("بروزرسانی فهرست دانش‌آموزان"):
+            return
         await self._load_page()
 
     @asyncSlot()
     async def on_add_clicked(self) -> None:
+        if self._skip_if_minimal("افزودن دانش‌آموز جدید"):
+            return
         dlg = StudentDialog(parent=self)
         if dlg.exec_() == dlg.Accepted:
             data = dlg.get_student_data()
@@ -433,22 +456,30 @@ class StudentsPage(QWidget):
 
     @asyncSlot()
     async def on_filters_changed(self, _=None) -> None:  # noqa: ANN001
+        if self._skip_if_minimal("تغییر فیلترهای دانش‌آموزان"):
+            return
         self.current_page = 1
         await self._load_page()
 
     @asyncSlot()
     async def on_search_triggered(self, _=None) -> None:  # noqa: ANN001
+        if self._skip_if_minimal("جست‌وجوی سریع دانش‌آموزان"):
+            return
         self.current_page = 1
         await self._load_page()
 
     @asyncSlot()
     async def on_prev_page(self) -> None:
+        if self._skip_if_minimal("رفتن به صفحه قبلی دانش‌آموزان"):
+            return
         if self.current_page > 1:
             self.current_page -= 1
             await self._load_page()
 
     @asyncSlot()
     async def on_next_page(self) -> None:
+        if self._skip_if_minimal("رفتن به صفحه بعدی دانش‌آموزان"):
+            return
         total_pages = max(1, (self.total_count + self.page_size - 1) // self.page_size)
         if self.current_page < total_pages:
             self.current_page += 1
@@ -456,9 +487,12 @@ class StudentsPage(QWidget):
 
     @asyncSlot()
     async def on_page_size_changed(self, text: str) -> None:
+        if self._skip_if_minimal("تغییر اندازه صفحه دانش‌آموزان"):
+            return
         try:
             self.page_size = int(text.split()[0])
-        except Exception:  # noqa: BLE001
+        except (ValueError, IndexError):
+            self.LOGGER.warning("تغییر اندازه صفحه نامعتبر بود؛ مقدار پیش‌فرض استفاده شد.")
             self.page_size = 20
         self.current_page = 1
         await self._load_page()
@@ -472,6 +506,8 @@ class StudentsPage(QWidget):
         asyncio.create_task(self._edit_student(s.student_id))
 
     async def _edit_student(self, student_id: int) -> None:
+        if self._skip_if_minimal("ویرایش دانش‌آموز"):
+            return
         student: Optional[StudentDTO] = next((x for x in self.model.students if x.student_id == student_id), None)
         if not student:
             return
@@ -487,6 +523,8 @@ class StudentsPage(QWidget):
 
 
     async def _delete_student(self, student_id: int) -> None:
+        if self._skip_if_minimal("حذف دانش‌آموز"):
+            return
         dlg = ConfirmDialog("آیا از حذف این دانش‌آموز مطمئن هستید؟", parent=self)
         if dlg.exec_() == dlg.Accepted:
             ok = await self.presenter.delete_student(student_id)
@@ -495,6 +533,8 @@ class StudentsPage(QWidget):
 
     @asyncSlot()
     async def bulk_delete(self) -> None:
+        if self._skip_if_minimal("حذف گروهی دانش‌آموزان"):
+            return
         students = self.model.get_selected_students()
         if not students:
             return
@@ -545,6 +585,8 @@ class StudentsPage(QWidget):
         self.toolbar.addWidget(self.selected_count_label)
 
     def on_toggle_selection_mode(self, enabled: bool) -> None:
+        if self._skip_if_minimal("تغییر حالت انتخاب گروهی"):
+            return
         self.model.toggle_selection_mode(enabled)
         for act in [self.action_select_all, self.action_select_none, self.action_bulk_delete, self.action_bulk_export]:
             act.setVisible(enabled)
@@ -552,30 +594,42 @@ class StudentsPage(QWidget):
         self._update_selected_count()
 
     def on_select_all(self, select: bool) -> None:
+        if self._skip_if_minimal("انتخاب/لغو انتخاب همه دانش‌آموزان"):
+            return
         self.model.select_all(select)
         self._update_selected_count()
 
     def _update_selected_count(self) -> None:
+        if self._skip_if_minimal("به‌روزرسانی شمارش انتخاب‌ها"):
+            return
         self.selected_count_label.setText(f"{len(self.model.selected_ids)} مورد انتخاب شده")
 
     # ---------------- export/import actions ----------------
     async def export_current_view(self) -> None:
+        if self._skip_if_minimal("صادرات نمای فعلی دانش‌آموزان"):
+            return
         students = self.model.students
         await self._export_students(students, prefix="دانش_آموزان_فیلتر_شده")
 
     async def export_all(self) -> None:
+        if self._skip_if_minimal("صادرات کامل دانش‌آموزان"):
+            return
         # Try paginated fetch of all pages (simple: get all without filters)
         result = await self.presenter.load_students(page=1, page_size=10_000, filters={}, search="")
         students = result[0]
         await self._export_students(students, prefix="دانش_آموزان")
 
     async def export_selected(self) -> None:
+        if self._skip_if_minimal("صادرات دانش‌آموزان انتخاب شده"):
+            return
         students = self.model.get_selected_students()
         if not students:
             return
         await self._export_students(students, prefix="دانش_آموزان_انتخاب_شده")
 
     async def _export_students(self, students: List[StudentDTO], prefix: str) -> None:
+        if self._skip_if_minimal("صادرات فایل اکسل دانش‌آموزان"):
+            return
         if not students:
             return
         dt = datetime.now().strftime("%Y_%m_%d_%H_%M")
@@ -591,15 +645,25 @@ class StudentsPage(QWidget):
             dlg.update_progress(done, total)
             return not dlg.is_cancelled()
 
-        try:
-            await svc.export_students(students, path, progress_callback=progress)
-        except Exception as exc:  # noqa: BLE001
-            logging.getLogger(__name__).warning("خروجی اکسل دانش‌آموزان شکست خورد", exc_info=exc)
-        dlg.close()
+try:
+    await svc.export_students(students, path, progress_callback=progress)
+except Exception as exc:  # noqa: BLE001
+    logging.getLogger(__name__).warning(
+        "خرابی اکسل دانتآورد آن گفت جویر", 
+        exc_info=exc
+    )
+    QMessageBox.warning(
+        self, 
+        "مادرات دانتآورد پا جنا موافد پد", 
+        "خطای صادرات"
+    )
+dlg.close()
 
-    async def download_template(self) -> None:
-        # Build a minimal template using the export headers subset useful for import
-        import openpyxl
+async def download_template(self) -> None:
+    if self._skip_if_minimal("دریافت قالب ورود دانتآورد"):
+        return
+    # Build a minimal template using the export headers subset useful for import
+    import openpyxl
         from openpyxl.worksheet.datavalidation import DataValidation
 
         headers = [
@@ -648,6 +712,8 @@ class StudentsPage(QWidget):
         wb.save(path)
 
     async def import_from_excel(self) -> None:
+        if self._skip_if_minimal("ورود دانش‌آموزان از فایل اکسل"):
+            return
         path, _ = QFileDialog.getOpenFileName(self, "انتخاب فایل اکسل", "", "Excel Files (*.xlsx)")
         if not path:
             return

@@ -27,6 +27,10 @@ from src.ui.core.theme import PersianTheme
 from src.ui.presenters.main_presenter import MainPresenter
 from src.ui.utils.error_handler import ErrorHandler
 from src.ui.widgets.loading_overlay import LoadingOverlay
+from src.ui._safety import swallow_ui_error
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -177,7 +181,8 @@ class MainWindow(QMainWindow):
 
     def _create_pages(self) -> None:
         if self._central_stack is None:
-            raise RuntimeError("پشته مرکزی UI مقداردهی نشده است")
+LOGGER.error("مشکل در تنفیذ امنیت و پیاده‌سازی QStackedWidget - عدم توانایی تنفیذ امنت UI بسته مرکزی")
+raise RuntimeError("عدم توانایی تنفیذ امنت UI بسته مرکزی")
         # صفحات placeholder
         from src.ui.pages.dashboard_page import DashboardPage
         from src.ui.pages.dashboard_presenter import DashboardPresenter
@@ -257,10 +262,10 @@ class MainWindow(QMainWindow):
             self._status_last_update.setText(f"آخرین بروزرسانی: {ts}")
         # Placeholder به‌روزرسانی متن صفحات
         # اگر صفحه دانش‌آموزان لیبل نیست، از بروزرسانی مستقیم متن صرف‌نظر می‌کنیم
-        try:
-            self._page_students.setText(f"لیست دانش‌آموزان (تعداد: {len(state.students)})")  # type: ignore[call-arg]
-        except Exception as exc:  # noqa: BLE001
-            logging.getLogger(__name__).warning("به‌روزرسانی نمای دانش‌آموزان ناموفق بود", exc_info=exc)
+try:
+    self._page_students.setText(f"تعداد {len(state.students)} لیست دانشآموزان")  # type: ignore[call-arg]
+except Exception as exc:  # noqa: BLE001
+    logging.getLogger(__name__).warning("بروزرسانی شمار دانشآموزان شکست خورد", exc_info=exc)
         self._page_mentors.setText(f"لیست منتورها (تعداد: {len(state.mentors)})")
         if state.stats:
             self._page_dashboard.setText(
@@ -299,19 +304,26 @@ class MainWindow(QMainWindow):
 
     def show_dashboard(self) -> None:
         if self._central_stack is None:
-            raise RuntimeError("پشته صفحات برای نمایش داشبورد آماده نیست")
+LOGGER.error("مرکزی فعال‌سازی نشده - گزینه متحده برای نمایش داشبورد آماده نیست")
+raise RuntimeError("گزینه متحده برای نمایش داشبورد آماده نیست")
         self._central_stack.setCurrentWidget(self._page_dashboard)
         self.presenter.state.current_page = "dashboard"
 
     def show_students(self) -> None:
         if self._central_stack is None:
-            raise RuntimeError("پشته صفحات برای نمایش دانش‌آموزان آماده نیست")
+LOGGER.error(
+            "مرورگر فایل آپلودی نشده است؛ صفحه «دانش‌آموزان» نمایش داده نشد"
+        )
+        return
         self._central_stack.setCurrentWidget(self._page_students)
         self.presenter.state.current_page = "students"
 
     def show_mentors(self) -> None:
         if self._central_stack is None:
-            raise RuntimeError("پشته صفحات برای نمایش منتورها آماده نیست")
+LOGGER.error(
+            "مرورگر فایل آپلودی نشده است؛ صفحه «دانش‌آموزان» نمایش داده نشد"
+        )
+        return
         self._central_stack.setCurrentWidget(self._page_mentors)
         self.presenter.state.current_page = "mentors"
 

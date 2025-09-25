@@ -159,3 +159,37 @@ def test_operator_panel_supports_multiple_panels(monkeypatch) -> None:
 
     second.shutdown()
     assert sum(isinstance(h, panel.ObserverLogHandler) for h in logger.handlers) == 0
+
+
+def test_operator_panel_shutdown_idempotent_multi(monkeypatch) -> None:
+    def fake_build_ui(self: "panel.OperatorPanel") -> None:
+        self._progress_var = FakeVar()
+        self._progress = FakeWidget()
+        self._status_var = FakeVar()
+        self._warnings = FakeListbox()
+
+    monkeypatch.setattr(panel.OperatorPanel, "_build_ui", fake_build_ui)
+
+    logger = logging.getLogger("phase2-test.panel.idempotent")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+    logger.setLevel(logging.WARNING)
+    logger.propagate = False
+
+    first = panel.OperatorPanel(FakeRoot(), logger=logger)
+    second = panel.OperatorPanel(FakeRoot(), logger=logger)
+    handlers = [h for h in logger.handlers if isinstance(h, panel.ObserverLogHandler)]
+    assert len(handlers) == 2
+
+    first.shutdown()
+    first.shutdown()  # Idempotent teardown should not remove other leases
+    assert any(h.lease_id == second._lease_id for h in logger.handlers if isinstance(h, panel.ObserverLogHandler))
+
+    warning_payload = json.dumps({"پیام": "هشدار idempotent"})
+    logger.warning(warning_payload)
+    second._process_events()
+    assert any("هشدار idempotent" in item for item in second._warnings.items)
+
+    second.shutdown()
+    second.shutdown()
+    assert sum(isinstance(h, panel.ObserverLogHandler) for h in logger.handlers) == 0

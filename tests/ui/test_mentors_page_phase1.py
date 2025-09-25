@@ -1,9 +1,21 @@
-﻿"""Phase 1 tests for MentorsPage UI."""
-from __future__ import annotations
+"""Phase 1 tests for MentorsPage UI."""
 
+from __future__ import annotations
+import pytest
+
+from tests.ui import _headless
+
+_headless.require_ui()
+
+pytestmark = [pytest.mark.ui]
+if _headless.PYTEST_SKIP_MARK is not None:
+    pytestmark.append(_headless.PYTEST_SKIP_MARK)
+
+import logging
 from typing import Dict
 
-import pytest
+
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QMessageBox
 
@@ -61,7 +73,8 @@ class TestMentorTableModel:
 
 class TestMentorFormDialog:
     @pytest.fixture
-    def dialog(self, qtbot):
+    def dialog(self, qtbot, offscreen_qapp):
+        _ = offscreen_qapp
         dlg = MentorFormDialog()
         qtbot.addWidget(dlg)
         return dlg
@@ -73,6 +86,36 @@ class TestMentorFormDialog:
         assert dialog.type_combo.currentIndex() == 0
         assert dialog.capacity_spin.value() == 10
         assert dialog.active_checkbox.isChecked()
+
+    def test_load_mentor_logs_when_missing(self, dialog: MentorFormDialog, caplog) -> None:
+        caplog.clear()
+        with caplog.at_level(logging.ERROR):
+            dialog._load_mentor()  # noqa: SLF001
+
+        assert any("اطلاعات پشتیبان" in message for message in caplog.messages)
+
+    def test_edit_mode_populates_fields(self, qtbot) -> None:
+        mentor = {
+            "name": "استاد نمونه",
+            "gender": 1,
+            "is_school": True,
+            "capacity": 7,
+            "phone": "09120000001",
+            "is_active": False,
+            "notes": "یادداشت تستی",
+            "groups": ["A", "B"],
+        }
+        dialog = MentorFormDialog(mentor=mentor)
+        qtbot.addWidget(dialog)
+
+        assert dialog.is_edit_mode is True
+        assert dialog.name_input.text() == mentor["name"]
+        assert dialog.gender_combo.currentIndex() == mentor["gender"]
+        assert dialog.type_combo.currentIndex() == 1
+        assert dialog.capacity_spin.value() == mentor["capacity"]
+        assert dialog.phone_input.text() == mentor["phone"]
+        assert dialog.active_checkbox.isChecked() is mentor["is_active"]
+        assert mentor["notes"] in dialog.notes_text.toPlainText()
 
     def test_validation_blocks_empty_name(self, dialog: MentorFormDialog) -> None:
         dialog.name_input.setText(" ")
@@ -86,7 +129,10 @@ class TestMentorsPage:
         return MockMentorService()
 
     @pytest.fixture
-    def mentors_page(self, qtbot, mock_service: MockMentorService) -> MentorsPage:
+    def mentors_page(
+        self, qtbot, offscreen_qapp, mock_service: MockMentorService
+    ) -> MentorsPage:
+        _ = offscreen_qapp
         page = MentorsPage(backend_service=mock_service)
         qtbot.addWidget(page)
         return page
@@ -147,4 +193,3 @@ class TestMentorsPage:
         monkeypatch.setattr(QMessageBox, "warning", fake_warning)
         mentors_page.edit_mentor()
         assert called["warned"]
-

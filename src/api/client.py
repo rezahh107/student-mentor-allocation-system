@@ -311,8 +311,11 @@ class APIClient:
         expect_json: bool = True,
     ) -> Any:
         await self._ensure_session()
-        if self._session is None:
-            raise RuntimeError("جلسه HTTP مقداردهی نشده است")
+session = self._session
+        if session is None:
+            message = "نشست HTTP برای برقراری ارتباط با سرور ایجاد نشد."
+            self._logger.error(message)
+            raise RuntimeError(message)
 
         attempt = 0
         delay = self.config.retry_delay
@@ -323,7 +326,7 @@ class APIClient:
             attempt += 1
             start = time.perf_counter()
             try:
-                async with self._session.request(method, url, params=params, json=json) as resp:
+                async with session.request(method, url, params=params, json=json) as resp:
                     elapsed = round((time.perf_counter() - start) * 1000)
                     status = resp.status
                     text = await resp.text()

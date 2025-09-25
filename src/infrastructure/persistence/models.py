@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import uuid4
 
 from sqlalchemy import (
     BigInteger,
@@ -16,9 +17,11 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.sql import func
 
 
 Base = declarative_base()
@@ -92,4 +95,72 @@ class CounterSequenceModel(Base):
     year_code = Column("کد_سال", CHAR(2), primary_key=True)
     gender_code = Column("کد_جنسیت", CHAR(3), primary_key=True)  # 357/373
     last_seq = Column("آخرین_عدد", Integer, nullable=False, default=0)
+
+
+class AllocationRecord(Base):
+    """Phase 3 atomic allocation rows with strict idempotency constraints."""
+
+    __tablename__ = "allocations"
+
+    allocation_id = Column(BigInteger, primary_key=True)
+    allocation_code = Column(String(32), nullable=False, unique=True)
+    year_code = Column(String(4), nullable=False)
+    student_id = Column(String(32), ForeignKey("دانش_آموزان.کد_ملی"), nullable=False)
+    mentor_id = Column(Integer, ForeignKey("منتورها.شناسه_منتور"), nullable=False)
+    idempotency_key = Column(String(64), nullable=False, unique=True)
+    request_id = Column(String(64), nullable=True)
+    status = Column(
+        Enum("CONFIRMED", "CANCELLED", name="allocation_status", native_enum=False),
+        nullable=False,
+        default="CONFIRMED",
+    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    policy_code = Column(String(64), nullable=True)
+    metadata_json = Column(Text, nullable=True)
+
+    student = relationship("StudentModel")
+    mentor = relationship("MentorModel")
+
+    __table_args__ = (
+        UniqueConstraint("student_id", "year_code", name="ux_alloc_student_year"),
+    )
+
+
+class OutboxMessageModel(Base):
+    """Transport-agnostic outbox records for reliable dispatch."""
+
+    __tablename__ = "outbox_messages"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    event_id = Column(String(36), nullable=False, unique=True)
+    aggregate_type = Column(String(64), nullable=False)
+    aggregate_id = Column(String(64), nullable=False)
+    event_type = Column(String(96), nullable=False)
+    payload_json = Column(Text, nullable=False)
+    occurred_at = Column(DateTime(timezone=True), nullable=False)
+    available_at = Column(DateTime(timezone=True), nullable=False)
+    retry_count = Column(Integer, nullable=False, default=0)
+    status = Column(
+        Enum("PENDING", "SENT", "FAILED", name="outbox_status", native_enum=False),
+        nullable=False,
+        default="PENDING",
+    )
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(String(256), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("length(payload_json) <= 32768", name="ck_outbox_payload_size"),
+        CheckConstraint("retry_count >= 0", name="ck_outbox_retry_non_negative"),
+        CheckConstraint(
+            "status IN ('PENDING','SENT','FAILED')",
+            name="ck_outbox_status_literal",
+        ),
+        Index("ix_outbox_dispatch", "status", "available_at"),
+    )
 

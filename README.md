@@ -5,6 +5,12 @@
 - Use `activate.bat` (Windows) or `source ./activate.sh` (macOS/Linux) before working in a new shell.
 - Launch diagnostics with `python scripts/environment_doctor.py` to validate the environment and apply optional fixes.
 
+## ابزارهای فاز سوم (Allocation + Outbox)
+- اجرای تخصیص اتمیک از خط فرمان: `python -m src.tools.allocation_cli <student_id> <mentor_id> --request-id ... --dry-run`؛ پیام‌ها فارسی و دارای کد خطا هستند.
+- دیسپچر Outbox با گزینه‌های `--once` و `--loop`: `python -m src.tools.outbox_dispatcher_cli --database-url sqlite:///allocation.db`.
+- پنل گرافیکی Tkinter برای اپراتورها: `python -m src.tools.gui_operator`؛ اجرای Dry-Run روی فایل‌های CSV/JSON در نخ جداگانه انجام می‌شود و وضعیت آخرین رویدادها (PENDING/SENT/FAILED) در لیست فارسی نمایش داده می‌شود.
+- خروجی گرفتن از تخصیص‌ها: `python -m src.tools.export_allocations_cli --output allocations.csv --format=csv --bom --crlf`; برای فایل XLSX فرمت را به `xlsx` تغییر دهید. در صورت نیاز به سازگاری کامل با Excel پیام هشدار `EXPORT_BOM_REQUIRED` چاپ می‌شود.
+
 ## نصب وابستگی‌های توسعه و pre-commit
 - برای فعال‌سازی هوک‌ها، یک‌بار `pip install -r requirements-dev.txt` و سپس `pre-commit install` را اجرا کنید؛ از این پس `pyupgrade` و `bandit` روی هر کامیت بررسی می‌شوند.
 

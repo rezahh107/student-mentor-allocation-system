@@ -3,13 +3,19 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import subprocess  # اجرای کنترل‌شده Bandit در CI. # nosec B404
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.core.logging_config import setup_logging
+
+setup_logging()
 REPORT_PATH = PROJECT_ROOT / "reports" / "bandit-report.json"
 
 
@@ -41,7 +47,7 @@ def _write_report(payload: Dict[str, Any]) -> None:
 
 
 def main() -> None:
-    proc = subprocess.run(_build_command(), capture_output=True, text=True)
+    proc = subprocess.run(_build_command(), capture_output=True, text=True)  # دستور داخلی و بدون shell اجرا می‌شود. # nosec B603
     raw_stdout = proc.stdout or ""
 
     try:

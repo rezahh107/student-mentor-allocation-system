@@ -6,6 +6,16 @@ import ast
 from pathlib import Path
 from typing import Any, Dict, List
 
+import sys
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from src.core.logging_config import setup_logging
+
+setup_logging()
+
 import pandas as pd
 import streamlit as st
 from streamlit.errors import StreamlitAPIException

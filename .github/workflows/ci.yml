@@ -59,6 +59,14 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
           pip install 'bandit>=1.7.8' types-PyYAML
 
+      - name: Install security dependencies
+        run: |
+          pip install -r requirements-security.txt
+
+      - name: Verify security dependencies
+        run: |
+          python -c "import defusedxml; print(f'defusedxml {defusedxml.__version__} نصب شد')"
+
       - name: Run fault injection tests
         run: make fault-tests
 
@@ -90,6 +98,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt bandit types-PyYAML
+
+      - name: Install security dependencies
+        run: |
+          pip install -r requirements-security.txt
+
+      - name: Verify security dependencies
+        run: |
+          python -c "import defusedxml; print(f'defusedxml {defusedxml.__version__} نصب شد')"
 
       - name: Run static security checks (با خلاصه فارسی)
         run: make static-checks

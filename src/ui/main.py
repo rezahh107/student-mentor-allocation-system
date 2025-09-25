@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 
 from PyQt5.QtWidgets import QApplication
@@ -19,9 +20,9 @@ async def main() -> bool:
     try:
         finfo = fontutil.install_persian_fonts(app)
         fontutil.configure_matplotlib(app.font().family())
-    except Exception:
+    except Exception as error:
         # در صورت بروز خطا، ادامه می‌دهیم و به فونت پیش‌فرض اتکا می‌کنیم
-        pass
+        logging.warning("بارگذاری فونت‌های برنامه با خطا مواجه شد: %s", error)
 
     # ایجاد و نمایش پنجره اصلی
     api_client = APIClient(use_mock=True)
@@ -45,5 +46,5 @@ if __name__ == "__main__":
     # اجرای برنامه با حلقه رویداد qasync
     try:
         run(main())
-    except asyncio.CancelledError:
-        pass
+    except asyncio.CancelledError as error:
+        logging.info("اجرای برنامه با سیگنال لغو خاتمه یافت: %s", error)

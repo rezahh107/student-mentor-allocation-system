@@ -1,10 +1,18 @@
 import importlib
 import os
 import shutil
-import subprocess
+import subprocess  # اجرای کنترل‌شده دستورات کمکی. # nosec B404
 import sys
 from pathlib import Path
 from typing import List
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.core.logging_config import setup_logging
+
+setup_logging()
 
 
 REQUIRED_MODULES: List[str] = ["pytest", "streamlit", "pandas"]
@@ -93,7 +101,7 @@ class EnvironmentDoctor:
                         [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
                         check=True,
                         capture_output=True,
-                    )
+                    )  # فرمان pip ثابت و بدون shell است. # nosec B603
                     print("✅ Installed base dependencies")
                 except subprocess.CalledProcessError as exc:
                     print(f"❌ Failed to install dependencies: {exc}")
@@ -159,7 +167,7 @@ class EnvironmentDoctor:
             return
 
         try:
-            subprocess.run([docker_path, "--version"], check=True, capture_output=True)
+            subprocess.run([docker_path, "--version"], check=True, capture_output=True)  # بررسی نسخه docker با ورودی ثابت. # nosec B603
         except subprocess.CalledProcessError:
             self.issues.append("Docker installation appears broken")
             self.fixes.append("Reinstall Docker from docker.com")

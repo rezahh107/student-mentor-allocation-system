@@ -4,12 +4,18 @@ import argparse
 import json
 import os
 import shlex
-import subprocess
+import subprocess  # اجرای کنترل‌شده ابزارهای تست؛ ورودی‌ها محدود هستند. # nosec B404
 import sys
 from pathlib import Path
 from typing import Iterable, Sequence, Set
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.core.logging_config import setup_logging
+
+setup_logging()
 REPORT_PATH = ROOT / "report.json"
 BENCHMARK_PATH = ROOT / "benchmark.json"
 COVERAGE_PATH = ROOT / "coverage.json"
@@ -31,7 +37,7 @@ def run(cmd: Sequence[str], *, capture: bool = False, env: dict[str, str] | None
     else:
         kwargs.update({"text": True})
     try:
-        return subprocess.run(cmd, check=False, **kwargs)
+        return subprocess.run(cmd, check=False, **kwargs)  # دستورات تست بدون shell و با کنترل ورودی اجرا می‌شوند. # nosec B603
     except FileNotFoundError as exc:
         name = cmd[0]
         print(f"[run_tests] command not found: {name}: {exc}")

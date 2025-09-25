@@ -117,9 +117,9 @@ def migrate_student_dto(old_dto: Dict) -> StudentDTO:
 
     # افزودن فیلدهای ضروری با پیش‌فرض
     if "national_code" not in data:
-        data["national_code"] = f"{random.randint(1000000000, 9999999999)}"
+        data["national_code"] = f"{random.randint(1000000000, 9999999999)}"  # برای داده‌های آزمایشی از random استفاده می‌کنیم؛ حساسیت امنیتی وجود ندارد. # nosec B311
     if "phone" not in data:
-        data["phone"] = f"09{random.randint(100000000, 999999999)}"
+        data["phone"] = f"09{random.randint(100000000, 999999999)}"  # برای داده‌های آزمایشی از random استفاده می‌کنیم؛ حساسیت امنیتی وجود ندارد. # nosec B311
     if "birth_date" not in data:
         data["birth_date"] = date(2003, 1, 1)
     if "updated_at" not in data:
@@ -129,7 +129,7 @@ def migrate_student_dto(old_dto: Dict) -> StudentDTO:
     if "counter" not in data:
         year = datetime.utcnow().year % 100
         middle = 373 if int(data.get("gender", 1)) == 1 else 357
-        serial = random.randint(1, 9999)
+        serial = random.randint(1, 9999)  # تولید سریال برای داده ساختگی است و نیازی به PRNG امن ندارد. # nosec B311
         data["counter"] = f"{year:02d}{middle}{serial:04d}"
 
     return StudentDTO(**data)

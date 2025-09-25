@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import tempfile
 from collections import OrderedDict
@@ -184,8 +185,8 @@ class TraceViewerStorage:
     def cleanup(self) -> None:
         try:
             self._path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as error:
+            logging.warning(f"حذف فایل موقت نمایش‌گر ردگیری با خطا مواجه شد: {error}")
 
     def get_row(self, index: int) -> TraceViewerRow:
         if index < 0 or index >= len(self._offsets):
@@ -394,8 +395,8 @@ class TraceViewerApp:
             if hasattr(self.root, "after_cancel"):
                 try:
                     self.root.after_cancel(self._filter_job)
-                except Exception:
-                    pass
+                except Exception as error:
+                    logging.warning(f"لغو زمان‌بندی بارگذاری صفحه ممکن نشد: {error}")
             self._filter_job = self.root.after(0, self._load_page)
 
     def _load_page(self) -> None:

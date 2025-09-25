@@ -31,7 +31,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12']
+        include:
+          - python-version: '3.11'
+            with_cov: true
+          - python-version: '3.12'
+            with_cov: true
+          - python-version: '3.11'
+            with_cov: false
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
       LC_ALL: C.UTF-8
@@ -68,19 +74,41 @@ jobs:
         run: |
           python -c "import defusedxml; print(f'defusedxml {defusedxml.__version__} نصب شد')"
 
+      - name: Configure pytest-cov availability
+        run: |
+          if [ "${{ matrix.with_cov }}" = "false" ]; then
+            pip uninstall -y pytest-cov || true
+          fi
+
       - name: Run fault injection tests
+        if: matrix.with_cov == true
         run: make fault-tests
 
       - name: Run static analysis gates
+        if: matrix.with_cov == true
         run: make static-checks
 
       - name: Run legacy coverage gate
         env:
           PYTEST_ARGS: "-q --maxfail=1 -p pytest_cov --cov=src --cov-report=term --cov-report=xml --cov-report=html"
-        run: make test-coverage-summary
+        run: |
+          if [ "${{ matrix.with_cov }}" = "false" ]; then
+            set +e
+            OUTPUT=$(make test-coverage-summary 2>&1)
+            STATUS=$?
+            printf '%s\n' "$OUTPUT"
+            if [ "$STATUS" -eq 0 ]; then
+              echo "انتظار می‌رفت در نبود pytest-cov اسکریپت شکست بخورد" >&2
+              exit 1
+            fi
+            echo "$OUTPUT" | grep 'PYTEST_COV_MISSING'
+            exit 0
+          else
+            make test-coverage-summary
+          fi
 
       - name: Upload legacy coverage HTML report
-        if: always() && matrix.python-version == '3.11'
+        if: always() && matrix.python-version == '3.11' && matrix.with_cov == true
         uses: actions/upload-artifact@v4
         with:
           name: htmlcov-${{ matrix.python-version }}
@@ -88,7 +116,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Run full CI checks (coverage + post-validators)
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.11' && matrix.with_cov == true
         run: make ci-checks
 
   security-scan:

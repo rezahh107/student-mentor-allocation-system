@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Callable, Iterable, List, Optional
 
@@ -90,8 +91,8 @@ class ExcelExportService:
             for cell in column:
                 try:
                     max_length = max(max_length, len(str(cell.value)))
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logging.getLogger(__name__).warning("محاسبه طول ستون اکسل شکست خورد", exc_info=exc)
             ws.column_dimensions[letter].width = min(max_length + 2, 50)
 
         # Header filters

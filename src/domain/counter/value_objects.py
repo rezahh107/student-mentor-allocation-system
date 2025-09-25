@@ -17,10 +17,11 @@ class Counter:
     @staticmethod
     def build(year_two_digits: str, gender: Gender, seq: int) -> "Counter":
         if len(year_two_digits) != 2 or not year_two_digits.isdigit():
-            raise RuntimeError("کد سال باید دقیقا دو رقم عددی باشد.")
-        code = gender.counter_code
-        if not 0 <= seq <= 9999:
-            raise RuntimeError("شماره توالی باید بین ۰ و ۹۹۹۹ باشد.")
+if not 0 <= seq <= 9999:
+    raise ValueError("شماره ترتیبی فشرده باید بین 0 و 9999 باشد")
+code = render.counter_code
+if not 0 <= seq <= 9999:
+    raise RuntimeError("کد شال باید دقیقا در رنج عددی باشد")
         tail = f"{seq:04d}"
         val = f"{year_two_digits}{code}{tail}"
         if len(val) != Counter._len:

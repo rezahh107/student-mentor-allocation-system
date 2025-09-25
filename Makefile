@@ -1,4 +1,6 @@
-.PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard         ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke
+.PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard \
+        ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke \
+        security-fix
 
 PYTHON ?= python3
 PROJECT_ROOT := $(CURDIR)
@@ -40,24 +42,43 @@ fault-tests:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_faults.py -q
 
 static-checks:
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_excel_safe.py -q
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_cli.py -q
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_operator_panel_logging.py -q
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_no_unused_ignores.py -q
-	$(MAKE) gui-smoke
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest \
+		tests/phase2_counter_service/test_excel_safe.py \
+		tests/phase2_counter_service/test_cli.py \
+		tests/phase2_counter_service/test_operator_panel_logging.py \
+		tests/security/test_bandit_gate.py -q
+	
+	if [ "$$UI_MINIMAL" != "1" ]; then \
+		$(MAKE) gui-smoke; \
+	else \
+		echo "UI_MINIMAL=1 → حذف کاندید CI برای GUI تست‌های"; \
+	fi
+	
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
+	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.run_bandit_gate
+	
+	if [ "$$CI" = "true" ]; then \
+		echo "آرشیو Bandit برای دانلود: reports/bandit-report.json"; \
+	fi
+	
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_no_unused_ignores.py -q
+	
 	@if $(PYTHON) -c "import bandit" >/dev/null 2>&1; then \
 		$(PYTHON) -m bandit -r src/ scripts/; \
 	else \
 		if [ "$$CI" = "true" ] || [ "$$CI" = "1" ]; then \
-			printf 'خطا: ماژول Bandit در محیط CI در دسترس نیست؛ لطفاً pip install -r requirements-dev.txt اجرا شود.\n' >&2; \
+			printf "در دستوری نصب: لطفا CI در محیط Bandit خطا: بازرسی\n" >&2; \
 			exit 1; \
 		else \
-			printf 'هشدار: Bandit نصب نیست؛ در محیط لوکال از این مرحله عبور شد (برای اجرا: pip install -r requirements-dev.txt).\n'; \
+			printf "از این مرحله عبور شد Bandit (برای اجرا) نصب نیست؛ در محیط لوکال\n"; \
 		fi; \
 	fi
+
 gui-smoke:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_gui_smoke.py -q
+
+security-fix:
+	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.bandit_fixer
 
 post-migration-checks:
 	$(PYTHON) -m scripts.post_migration_checks

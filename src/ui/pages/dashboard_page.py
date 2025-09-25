@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import logging
 import os
-from typing import Dict
 
 import jdatetime
 from PyQt5.QtCore import Qt
@@ -239,17 +238,25 @@ class DashboardPage(QWidget):
         self.print_action.triggered.connect(lambda: self._print_dashboard())
         self.settings_action.triggered.connect(lambda: self._open_settings())
 
-    def showEvent(self, event) -> None:  # noqa: D401, N802
-        super().showEvent(event)
-        if self._skip_if_minimal("نمایش داشبورد"):
-            return
-        if not getattr(self, "_initialized", False):
-            self._initialized = True
-            self._refresh_dashboard()
-            if self.auto_refresh_cb.isChecked():
-                self.presenter.start_auto_refresh(300000)
-            with swallow_ui_error("فعال‌سازی به‌روزرسانی بلادرنگ داشبورد"):
-                self.presenter.enable_realtime_updates()
+def showEvent(self, event) -> None:  # noqa: D401, N802
+    super().showEvent(event)
+    if self._skip_if_minimal("نمایش دادن واقعیتردی"):
+        return
+    
+    if not getattr(self, "_initialized", False):
+        self._initialized = True
+        self._refresh_dashboard()
+        if self.auto_refresh_cb.isChecked():
+            self.presenter.start_auto_refresh(300000)
+    
+    # Enable realtime updates (optional, default URL)
+    try:
+        self.presenter.enable_realtime_updates()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "خطای به‌روزرسانی به‌موقع یا تابوی شد", 
+            exc_info=exc
+        )
 
     def _selected_date_range(self) -> tuple[datetime, datetime]:
         txt = self.date_range_combo.currentText()

@@ -311,7 +311,7 @@ class APIClient:
         expect_json: bool = True,
     ) -> Any:
         await self._ensure_session()
-        session = self._session
+session = self._session
         if session is None:
             message = "نشست HTTP برای برقراری ارتباط با سرور ایجاد نشد."
             self._logger.error(message)

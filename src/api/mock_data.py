@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import random
 from dataclasses import field
 from datetime import date, datetime, timedelta
@@ -175,7 +176,8 @@ class MockBackend:
         if isinstance(bd, str):
             try:
                 bd = datetime.fromisoformat(bd).date()
-            except Exception:
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning("تبدیل تاریخ تولد ورودی ناموفق بود", exc_info=exc)
                 bd = self._generate_birth_date()
         if not isinstance(bd, date):
             bd = self._generate_birth_date()
@@ -263,7 +265,8 @@ class MockBackend:
             if isinstance(bd, str):
                 try:
                     bd = datetime.fromisoformat(bd).date()
-                except Exception:
+                except Exception as exc:  # noqa: BLE001
+                    logging.getLogger(__name__).warning("تبدیل تاریخ تولد به‌روزرسانی‌شونده ممکن نشد", exc_info=exc)
                     bd = s.birth_date
             s.birth_date = bd  # type: ignore[assignment]
         s.updated_at = datetime.utcnow()
@@ -302,15 +305,15 @@ class MockBackend:
                     dt = dateparser.parse(str(v))
                     if not (s.created_at >= dt):
                         return False
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logging.getLogger(__name__).warning("تحلیل created_at__gte ناموفق بود", exc_info=exc)
             if k == "created_at__lte" and v:
                 try:
                     dt = dateparser.parse(str(v))
                     if not (s.created_at <= dt):
                         return False
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logging.getLogger(__name__).warning("تحلیل created_at__lte ناموفق بود", exc_info=exc)
             if k == "first_name_search" and v:
                 if str(v).strip() not in s.first_name:
                     return False

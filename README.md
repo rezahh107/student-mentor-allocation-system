@@ -5,6 +5,9 @@
 - Use `activate.bat` (Windows) or `source ./activate.sh` (macOS/Linux) before working in a new shell.
 - Launch diagnostics with `python scripts/environment_doctor.py` to validate the environment and apply optional fixes.
 
+## نصب وابستگی‌های توسعه و pre-commit
+- برای فعال‌سازی هوک‌ها، یک‌بار `pip install -r requirements-dev.txt` و سپس `pre-commit install` را اجرا کنید؛ از این پس `pyupgrade` و `bandit` روی هر کامیت بررسی می‌شوند.
+
 ## PYTHONPATH Management
 - `setup.py` sets `PYTHONPATH` to the project root and updates `.env` for VS Code integrations.
 - Activation scripts export `PYTHONPATH` for shell sessions; re-run them whenever you open a new terminal.
@@ -42,6 +45,12 @@
 - در محیط‌های بدون نیاز به رابط گرافیکی می‌توانید متغیر `UI_MINIMAL=1` را تنظیم کنید تا صفحات Qt به صورت خودکار غیرفعال شوند و تنها سرویس FastAPI + Swagger در دسترس بماند.
 - پس از هر مهاجرت دیتابیس، `make post-migration-checks` روی پایگاه داده موقت اجرا و در صورت هرگونه تغییر در قید UNIQUE یا الگوی شمارنده خطا می‌دهد.
 - GitHub Actions تنها از فایل `ci.yml` استفاده می‌کند؛ این پایپ‌لاین روی Python 3.11 و 3.12 اجرا شده و به ترتیب `make fault-tests`, `make static-checks` و در نسخه ۳.۱۱ `make ci-checks` را اجرا می‌کند تا پوشش و اعتبارسنجی آرتیفکت‌ها تضمین شوند.
+
+## سیاست Bandit و حالت UI_MINIMAL
+- Bandit فقط خطاهای با شدت Medium/High را مسدود می‌کند؛ یافته‌های Low صرفاً به صورت هشدار فارسی چاپ می‌شوند تا روند CI قطع نشود.
+- فایل `.bandit` مسیرهای `tests/`, `venv/`, `.venv/` و `__pycache__/` را حذف می‌کند و در صورت تنظیم `UI_MINIMAL=1` می‌توان با افزودن پرچم `-x src/ui` اسکن UI را موقتاً کنار گذاشت.
+- هدف «UI حداقلی با FastAPI+Swagger کافی است» حفظ شده و نبود وابستگی‌های Qt با قرار دادن `UI_MINIMAL=1` در متغیرهای محیطی باعث شکست CI نخواهد شد.
+- برای اصلاح خودکار الگوهای رایج (B110/B403/B506/B602/B603) می‌توان `make security-fix` را اجرا کرد؛ پیام‌های افزوده شده به کد برای کاربران فارسی‌زبان خوانا هستند و خطاهای غیرامن با `# nosec` همراه با دلیل فارسی مستندسازی می‌شوند.
 
 ## محدودیت‌های عملیاتی و بک‌فیل
 - پیشوند جنسیت از SSOT برابر `{0: '373', 1: '357'}` است و هرگونه ناهمخوانی در لاگ‌ها و متریک‌ها گزارش می‌شود.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+import logging
 
 from PyQt5.QtWidgets import (
     QComboBox,
@@ -51,6 +52,8 @@ class StudentDialog(QDialog):
         self.birth_date_edit.setDisplayFormat("yyyy/MM/dd")
         with swallow_ui_error("تنظیم محلی فارسی برای تاریخ تولد"):
             self.birth_date_edit.setLocale(QLocale(QLocale.Persian))
+except Exception as exc:
+    logging.getLogger(__name__).warning("تنظیم تعمیق فارسی در دیتابیس داخل‌آمور تنظیم نشد", exc_info=exc)
         self.gender_combo = QComboBox()
         self.gender_combo.addItems(["زن", "مرد"])  # 0,1
         self.center_combo = QComboBox()

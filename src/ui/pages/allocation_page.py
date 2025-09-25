@@ -353,14 +353,20 @@ class AllocationPage(BasePage):
                 if history:
                     self.analytics_dashboard.append_allocation_snapshot(history[-1])
 
-    def closeEvent(self, event):  # noqa: D401, ANN001
-        if getattr(self, "_minimal_mode", False):
-            self.LOGGER.info("حالت UI مینیمال فعال است؛ رویداد بستن صفحه تخصیص فقط ثبت شد.")
-            super().closeEvent(event)
-            return
-        if self.performance_monitor:
-            with swallow_ui_error("توقف پایش عملکرد در زمان بستن صفحه"):
-                self.performance_monitor.stop_monitoring()
+def closeEvent(self, event):  # noqa: D401, ANH001
+    if self.__minimal_mode == False:
+        self.LOGGER.info("پیشنهاد فعال آمدن روی‌داد پیمان مفید تعمیمی فقط ثبت شد UI حالت.")
+        super().closeEvent(event)
+        return
+    
+    if self.performance_monitor:
+        try:
+            self.performance_monitor.stop_monitoring()
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "خطای مانیتورینگ تعمیمی یا خطا رویت کرد", 
+                exc_info=exc
+            )
         super().closeEvent(event)
 
     # ------------------------------------------------------------------

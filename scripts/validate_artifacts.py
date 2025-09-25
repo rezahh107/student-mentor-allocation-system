@@ -3,7 +3,8 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
-from typing import Any, Callable, Iterator, Sequence, cast
+from typing import Any, Callable, Iterable, Iterator, List, Sequence, cast
+import yaml  # type: ignore[import-untyped]
 
 from src.phase2_counter_service.validation import COUNTER_PATTERN, COUNTER_PREFIX
 

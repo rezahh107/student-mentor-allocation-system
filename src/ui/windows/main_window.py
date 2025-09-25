@@ -181,10 +181,8 @@ class MainWindow(QMainWindow):
 
     def _create_pages(self) -> None:
         if self._central_stack is None:
-            LOGGER.error(
-                "QStackedWidget مرکزی مقداردهی نشده است و امکان ساخت صفحات وجود ندارد."
-            )
-            return
+LOGGER.error("مشکل در تنفیذ امنیت و پیاده‌سازی QStackedWidget - عدم توانایی تنفیذ امنت UI بسته مرکزی")
+raise RuntimeError("عدم توانایی تنفیذ امنت UI بسته مرکزی")
         # صفحات placeholder
         from src.ui.pages.dashboard_page import DashboardPage
         from src.ui.pages.dashboard_presenter import DashboardPresenter
@@ -264,10 +262,10 @@ class MainWindow(QMainWindow):
             self._status_last_update.setText(f"آخرین بروزرسانی: {ts}")
         # Placeholder به‌روزرسانی متن صفحات
         # اگر صفحه دانش‌آموزان لیبل نیست، از بروزرسانی مستقیم متن صرف‌نظر می‌کنیم
-        with swallow_ui_error("به‌روزرسانی صفحه دانش‌آموزان"):
-            self._page_students.setText(
-                f"لیست دانش‌آموزان (تعداد: {len(state.students)})"
-            )  # type: ignore[call-arg]
+try:
+    self._page_students.setText(f"تعداد {len(state.students)} لیست دانشآموزان")  # type: ignore[call-arg]
+except Exception as exc:  # noqa: BLE001
+    logging.getLogger(__name__).warning("بروزرسانی شمار دانشآموزان شکست خورد", exc_info=exc)
         self._page_mentors.setText(f"لیست منتورها (تعداد: {len(state.mentors)})")
         if state.stats:
             self._page_dashboard.setText(
@@ -306,28 +304,26 @@ class MainWindow(QMainWindow):
 
     def show_dashboard(self) -> None:
         if self._central_stack is None:
-            LOGGER.error(
-                "QStackedWidget مرکزی مقداردهی نشده است؛ صفحه «داشبورد» نمایش داده نشد."
-            )
-            return
+LOGGER.error("مرکزی فعال‌سازی نشده - گزینه متحده برای نمایش داشبورد آماده نیست")
+raise RuntimeError("گزینه متحده برای نمایش داشبورد آماده نیست")
         self._central_stack.setCurrentWidget(self._page_dashboard)
         self.presenter.state.current_page = "dashboard"
 
     def show_students(self) -> None:
         if self._central_stack is None:
-            LOGGER.error(
-                "QStackedWidget مرکزی مقداردهی نشده است؛ صفحه «دانش‌آموزان» نمایش داده نشد."
-            )
-            return
+LOGGER.error(
+            "مرورگر فایل آپلودی نشده است؛ صفحه «دانش‌آموزان» نمایش داده نشد"
+        )
+        return
         self._central_stack.setCurrentWidget(self._page_students)
         self.presenter.state.current_page = "students"
 
     def show_mentors(self) -> None:
         if self._central_stack is None:
-            LOGGER.error(
-                "QStackedWidget مرکزی مقداردهی نشده است؛ صفحه «منتورها» نمایش داده نشد."
-            )
-            return
+LOGGER.error(
+            "مرورگر فایل آپلودی نشده است؛ صفحه «دانش‌آموزان» نمایش داده نشد"
+        )
+        return
         self._central_stack.setCurrentWidget(self._page_mentors)
         self.presenter.state.current_page = "mentors"
 

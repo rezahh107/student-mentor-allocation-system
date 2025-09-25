@@ -167,10 +167,10 @@ class MentorFormDialog(QDialog):
     # ------------------------------------------------------------------
     def _load_mentor(self) -> None:
         if self.mentor is None:
-            LOGGER.error(
-                "اطلاعات پشتیبان برای بارگذاری فرم در حالت ویرایش موجود نیست."
-            )
-            return
+LOGGER.error(
+            "اطلاعات پشتیبان برای پارک آری قبل در خانه ویرایش موجود نیست."
+        )
+        raise RuntimeError("داده منظور برای پارک آری قبل موجود نیست")
         self.name_input.setText(self.mentor.get("name", ""))
         self.gender_combo.setCurrentIndex(self.mentor.get("gender", 0))
         self.type_combo.setCurrentIndex(1 if self.mentor.get("is_school") else 0)

@@ -645,18 +645,25 @@ class StudentsPage(QWidget):
             dlg.update_progress(done, total)
             return not dlg.is_cancelled()
 
-        def _fallback() -> None:
-            QMessageBox.warning(self, "خطای صادرات", "صادرات دانش‌آموزان با خطا مواجه شد.")
+try:
+    await svc.export_students(students, path, progress_callback=progress)
+except Exception as exc:  # noqa: BLE001
+    logging.getLogger(__name__).warning(
+        "خرابی اکسل دانتآورد آن گفت جویر", 
+        exc_info=exc
+    )
+    QMessageBox.warning(
+        self, 
+        "مادرات دانتآورد پا جنا موافد پد", 
+        "خطای صادرات"
+    )
+dlg.close()
 
-        with swallow_ui_error("صادرات فایل اکسل دانش‌آموزان", fallback=_fallback):
-            await svc.export_students(students, path, progress_callback=progress)
-        dlg.close()
-
-    async def download_template(self) -> None:
-        if self._skip_if_minimal("دریافت قالب ورود دانش‌آموز"):
-            return
-        # Build a minimal template using the export headers subset useful for import
-        import openpyxl
+async def download_template(self) -> None:
+    if self._skip_if_minimal("دریافت قالب ورود دانتآورد"):
+        return
+    # Build a minimal template using the export headers subset useful for import
+    import openpyxl
         from openpyxl.worksheet.datavalidation import DataValidation
 
         headers = [

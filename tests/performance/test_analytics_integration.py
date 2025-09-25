@@ -4,10 +4,17 @@ import time
 import pytest
 
 from src.core.models import Mentor, Student
-from src.ui.pages.allocation_presenter import AllocationPresenter
-from src.ui.services.config_manager import ConfigManager, AllocationConfig
+from src.ui.services.config_manager import ConfigManager
 from src.ui.services.performance_monitor import PerformanceMonitor
 from src.ui.services.allocation_backend import MockBackendService
+
+try:
+    from src.ui.pages.allocation_presenter import AllocationPresenter
+except RuntimeError as exc:  # pragma: no cover - headless environments
+    pytest.skip(
+        f"GUI_HEADLESS_SKIPPED: محیط گرافیکی برای تست آنالیز در دسترس نیست ({exc})",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.asyncio

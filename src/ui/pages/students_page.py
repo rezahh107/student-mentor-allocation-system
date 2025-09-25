@@ -645,25 +645,26 @@ class StudentsPage(QWidget):
             dlg.update_progress(done, total)
             return not dlg.is_cancelled()
 
-try:
-    await svc.export_students(students, path, progress_callback=progress)
-except Exception as exc:  # noqa: BLE001
-    logging.getLogger(__name__).warning(
-        "خرابی اکسل دانتآورد آن گفت جویر", 
-        exc_info=exc
-    )
-    QMessageBox.warning(
-        self, 
-        "مادرات دانتآورد پا جنا موافد پد", 
-        "خطای صادرات"
-    )
-dlg.close()
+        try:
+            await svc.export_students(students, path, progress_callback=progress)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "خرابی اکسل دانتآورد آن گفت جویر",
+                exc_info=exc,
+            )
+            QMessageBox.warning(
+                self,
+                "مادرات دانتآورد پا جنا موافد پد",
+                "خطای صادرات",
+            )
+        finally:
+            dlg.close()
 
-async def download_template(self) -> None:
-    if self._skip_if_minimal("دریافت قالب ورود دانتآورد"):
-        return
-    # Build a minimal template using the export headers subset useful for import
-    import openpyxl
+    async def download_template(self) -> None:
+        if self._skip_if_minimal("دریافت قالب ورود دانتآورد"):
+            return
+        # Build a minimal template using the export headers subset useful for import
+        import openpyxl
         from openpyxl.worksheet.datavalidation import DataValidation
 
         headers = [
@@ -680,7 +681,12 @@ async def download_template(self) -> None:
             "نوع مدرسه",
             "کد مدرسه",
         ]
-        path, _ = QFileDialog.getSaveFileName(self, "ذخیره قالب ورود", "قالب_ورود_دانش_آموزان.xlsx", "Excel Files (*.xlsx)")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "ذخیره قالب ورود",
+            "قالب_ورود_دانش_آموزان.xlsx",
+            "Excel Files (*.xlsx)",
+        )
         if not path:
             return
         wb = openpyxl.Workbook()
@@ -690,7 +696,20 @@ async def download_template(self) -> None:
         for c, h in enumerate(headers, 1):
             ws.cell(row=1, column=c, value=h)
         # sample
-        sample = ["علی", "احمدی", "0012345678", "09123456789", "2005/01/01", "مرد", "در حال تحصیل", "عادی", "مرکز", "konkoori", "عادی", ""]
+        sample = [
+            "علی",
+            "احمدی",
+            "0012345678",
+            "09123456789",
+            "2005/01/01",
+            "مرد",
+            "در حال تحصیل",
+            "عادی",
+            "مرکز",
+            "konkoori",
+            "عادی",
+            "",
+        ]
         for c, v in enumerate(sample, 1):
             ws.cell(row=2, column=c, value=v)
         # drop-down validations
@@ -705,9 +724,9 @@ async def download_template(self) -> None:
         ws.add_data_validation(dv_center)
         ws.add_data_validation(dv_school_type)
         dv_gender.add(ws["F2:F10000"])  # جنسیت
-        dv_edu.add(ws["G2:G10000"])    # وضعیت تحصیل
-        dv_reg.add(ws["H2:H10000"])    # نوع ثبت نام
-        dv_center.add(ws["I2:I10000"]) # مرکز
+        dv_edu.add(ws["G2:G10000"])  # وضعیت تحصیل
+        dv_reg.add(ws["H2:H10000"])  # نوع ثبت نام
+        dv_center.add(ws["I2:I10000"])  # مرکز
         dv_school_type.add(ws["K2:K10000"])  # نوع مدرسه
         wb.save(path)
 

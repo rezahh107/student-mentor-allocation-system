@@ -8,6 +8,8 @@ from typing import Dict, List, Literal, Optional
 from pydantic.dataclasses import dataclass
 from dataclasses import field
 
+from src.core.datetime_utils import utc_now
+
 
 def validate_national_code(code: str) -> bool:
     """اعتبارسنجی کدملی ایران (۱۰ رقمی)."""
@@ -123,11 +125,11 @@ def migrate_student_dto(old_dto: Dict) -> StudentDTO:
     if "birth_date" not in data:
         data["birth_date"] = date(2003, 1, 1)
     if "updated_at" not in data:
-        data["updated_at"] = data.get("created_at", datetime.utcnow())
+        data["updated_at"] = data.get("created_at", utc_now())
 
     # counter اطمینان از وجود
     if "counter" not in data:
-        year = datetime.utcnow().year % 100
+        year = utc_now().year % 100
         middle = 373 if int(data.get("gender", 1)) == 1 else 357
         serial = random.randint(1, 9999)  # تولید سریال برای داده ساختگی است و نیازی به PRNG امن ندارد. # nosec B311
         data["counter"] = f"{year:02d}{middle}{serial:04d}"

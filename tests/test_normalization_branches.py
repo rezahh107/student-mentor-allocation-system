@@ -13,6 +13,11 @@ import logging
 from typing import Iterable, List
 
 import pytest
+
+pytest.importorskip(
+    "hypothesis",
+    reason="DEPENDENCY_MISSING: کتابخانه Hypothesis برای این محیط نصب نشده است.",
+)
 from hypothesis import given, strategies as st
 
 from src.core.models import (

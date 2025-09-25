@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import pytest
+pytest.importorskip(
+    "hypothesis",
+    reason="DEPENDENCY_MISSING: کتابخانه Hypothesis برای این محیط نصب نشده است.",
+)
 from hypothesis import given, strategies as st
 
 from src.phase2_counter_service import validation

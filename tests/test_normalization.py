@@ -8,6 +8,11 @@ r"""Spec compliance: Gender 0/1; reg_status {0,1,3} (+Hakmat map); reg_center {0
 from __future__ import annotations
 
 import pytest
+
+pytest.importorskip(
+    "hypothesis",
+    reason="DEPENDENCY_MISSING: کتابخانه Hypothesis برای این محیط نصب نشده است.",
+)
 from hypothesis import given, strategies as st
 from pydantic import ValidationError
 

@@ -106,8 +106,20 @@ def _ensure_shlex_import(text: str) -> str:
     return "import shlex\n" + text
 
 
+SHELL_CALL_SPECS: dict[str, dict[str, bool]] = {
+    "run": {"supports_check": True},
+    "check_output": {"supports_check": False},
+    "check_call": {"supports_check": False},
+    "call": {"supports_check": False},
+    "Popen": {"supports_check": False},
+}
+
+
 def _fix_shell_usage(text: str) -> tuple[str, bool]:
-    tree = ast.parse(text)
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return text, False
     lines = text.splitlines(keepends=True)
     offsets = [0]
     for line in lines:
@@ -123,8 +135,9 @@ def _fix_shell_usage(text: str) -> tuple[str, bool]:
                 return
             if not isinstance(node.func.value, ast.Name) or node.func.value.id != "subprocess":
                 return
-            if node.func.attr not in {"run", "check_output"}:
+            if node.func.attr not in SHELL_CALL_SPECS:
                 return
+            spec = SHELL_CALL_SPECS[node.func.attr]
             shell_kw = None
             for kw in node.keywords:
                 if kw.arg == "shell":
@@ -159,7 +172,7 @@ def _fix_shell_usage(text: str) -> tuple[str, bool]:
                 if kw.arg == "check":
                     check_present = True
                 arg_texts.append(f"{kw.arg}={segment}")
-            if not check_present:
+            if spec["supports_check"] and not check_present:
                 arg_texts.append("check=True")
             new_call = f"subprocess.{node.func.attr}(" + ", ".join(arg_texts) + ")"
             start = offsets[node.lineno - 1] + node.col_offset

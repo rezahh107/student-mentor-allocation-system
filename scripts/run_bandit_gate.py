@@ -5,8 +5,9 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = PROJECT_ROOT / "reports" / "bandit-report.json"
@@ -61,7 +62,29 @@ def main() -> None:
         payload = dict(parsed)
     else:
         payload = {"bandit_payload": parsed}
-    payload.setdefault("results", [])
+    results: List[Dict[str, Any]] = list(payload.get("results", []))
+    payload["results"] = results
+
+    now = datetime.now(timezone.utc).isoformat()
+    severity_counts = {"low": 0, "medium": 0, "high": 0}
+    for issue in results:
+        severity = str(issue.get("issue_severity", "")).lower()
+        if severity in severity_counts:
+            severity_counts[severity] += 1
+
+    metadata = payload.setdefault("metadata", {})
+    metadata.update(
+        {
+            "generated_at": now,
+            "severity_counts": {
+                "low": severity_counts["low"],
+                "medium": severity_counts["medium"],
+                "high": severity_counts["high"],
+                "total": len(results),
+            },
+        }
+    )
+
     _write_report(payload)
 
     if proc.returncode not in {0, 1}:
@@ -69,7 +92,6 @@ def main() -> None:
         sys.stderr.write(proc.stderr)
         raise SystemExit(proc.returncode)
 
-    results = payload.get("results", [])
     medium_high = [
         item for item in results if str(item.get("issue_severity", "")).lower() in {"medium", "high"}
     ]

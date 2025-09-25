@@ -43,11 +43,15 @@ fault-tests:
 
 static-checks:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest \
-			tests/phase2_counter_service/test_excel_safe.py \
-			tests/phase2_counter_service/test_cli.py \
-			tests/phase2_counter_service/test_operator_panel_logging.py \
-			tests/security/test_bandit_gate.py -q
-	$(MAKE) gui-smoke
+				tests/phase2_counter_service/test_excel_safe.py \
+				tests/phase2_counter_service/test_cli.py \
+				tests/phase2_counter_service/test_operator_panel_logging.py \
+				tests/security/test_bandit_gate.py -q
+	if [ "$$UI_MINIMAL" != "1" ]; then \
+		$(MAKE) gui-smoke; \
+	else \
+		echo "UI_MINIMAL=1 → تست‌های GUI برای CI حذف شدند."; \
+	fi
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
 	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.run_bandit_gate
 	if [ "$$CI" = "true" ]; then \

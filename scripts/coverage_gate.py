@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import subprocess  # اجرای کنترل‌شده pytest با پوشش. # nosec B404
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List
@@ -55,12 +57,55 @@ class CoverageResult:
     threshold: float
 
 
+ZERO_WIDTH_CHARS = {
+    "\u200b",  # zero width space
+    "\u200c",  # zero width non-joiner
+    "\u200d",  # zero width joiner
+    "\ufeff",  # byte order mark
+}
+
+THRESHOLD_TRANSLATION = str.maketrans(
+    {
+        "۰": "0",
+        "۱": "1",
+        "۲": "2",
+        "۳": "3",
+        "۴": "4",
+        "۵": "5",
+        "۶": "6",
+        "۷": "7",
+        "۸": "8",
+        "۹": "9",
+        "٠": "0",
+        "١": "1",
+        "٢": "2",
+        "٣": "3",
+        "٤": "4",
+        "٥": "5",
+        "٦": "6",
+        "٧": "7",
+        "٨": "8",
+        "٩": "9",
+        "٫": ".",
+        "٬": "",
+    }
+)
+
+
+def _normalize_threshold_text(value: str) -> str:
+    """پاک‌سازی و نرمال‌سازی متن آستانه برای پشتیبانی از ارقام فارسی."""
+
+    stripped = "".join(ch for ch in value if ch not in ZERO_WIDTH_CHARS)
+    translated = stripped.translate(THRESHOLD_TRANSLATION)
+    return unicodedata.normalize("NFKC", translated)
+
+
 def _resolve_threshold(raw_value: str | None) -> float:
     """محاسبهٔ آستانه پوشش با درنظرگرفتن مقادیر غیرعادی."""
 
     if raw_value is None:
         return DEFAULT_THRESHOLD
-    text = str(raw_value).strip()
+    text = _normalize_threshold_text(str(raw_value).strip())
     normalized = text.casefold()
     if not text or normalized in {"null", "none", ""}:
         return DEFAULT_THRESHOLD
@@ -94,7 +139,60 @@ def _discover_tests() -> List[str]:
     return matches if matches else ["tests"]
 
 
-def _run_pytest(test_targets: List[str], extra_args: Iterable[str]) -> subprocess.CompletedProcess[str]:
+def _format_threshold_for_cli(threshold: float) -> str:
+    """نمایش مقدار آستانه برای استفاده در خط فرمان."""
+
+    if threshold.is_integer():
+        return str(int(threshold))
+    formatted = f"{threshold:.2f}".rstrip("0").rstrip(".")
+    return formatted or "0"
+
+
+def _emit_pytest_cov_missing() -> None:
+    """چاپ پیام خطای نبودن افزونه pytest-cov."""
+
+    sys.stderr.write(
+        "❌ PYTEST_COV_MISSING: لطفاً بسته pytest-cov را نصب کنید.\n"
+    )
+
+
+def _ensure_pytest_cov() -> None:
+    """بررسی در دسترس بودن افزونه pytest-cov با مدیریت خطای PluginValidationError."""
+
+    try:
+        import pytest  # type: ignore
+        from _pytest.config import get_config  # type: ignore
+        from _pytest.config.exceptions import PluginValidationError  # type: ignore
+    except ImportError:
+        try:
+            __import__("pytest_cov")
+        except ImportError:
+            _emit_pytest_cov_missing()
+            raise SystemExit(6)
+        return
+
+    try:
+        __import__("pytest_cov")
+    except ImportError:
+        _emit_pytest_cov_missing()
+        raise SystemExit(6)
+
+    try:
+        config = get_config()
+        config.pluginmanager.import_plugin("pytest_cov")
+    except PluginValidationError:
+        _emit_pytest_cov_missing()
+        raise SystemExit(6)
+    except ImportError:
+        _emit_pytest_cov_missing()
+        raise SystemExit(6)
+
+
+def _run_pytest(
+    test_targets: List[str],
+    extra_args: Iterable[str],
+    threshold: float,
+) -> subprocess.CompletedProcess[str]:
     """اجرای pytest با تنظیمات پوشش."""
 
     command = [
@@ -107,6 +205,7 @@ def _run_pytest(test_targets: List[str], extra_args: Iterable[str]) -> subproces
         "--cov-report=term",
         "--cov-report=xml",
         "--cov-report=html",
+        "--cov-fail-under=" + _format_threshold_for_cli(threshold),
         "--maxfail=1",
         "-q",
     ]
@@ -122,6 +221,22 @@ def _run_pytest(test_targets: List[str], extra_args: Iterable[str]) -> subproces
         capture_output=True,
         env=env,
     )
+
+
+def _extract_pytest_cov_failure(stdout: str, stderr: str) -> tuple[float, float] | None:
+    """استخراج پوشش و آستانه از پیام خطای pytest-cov."""
+
+    pattern = re.compile(
+        r"Required test coverage of\s+(?P<threshold>[0-9]+(?:\.[0-9]+)?)%\s+not reached\.\s+Total coverage:\s+(?P<percent>[0-9]+(?:\.[0-9]+)?)%",
+        re.IGNORECASE,
+    )
+    for line in (stdout + "\n" + stderr).splitlines():
+        match = pattern.search(line)
+        if match:
+            threshold_value = float(match.group("threshold"))
+            percent_value = float(match.group("percent"))
+            return percent_value, threshold_value
+    return None
 
 
 def _parse_coverage() -> float:
@@ -208,13 +323,38 @@ def main(argv: list[str] | None = None) -> None:
         test_targets = args.targets
     else:
         test_targets = _discover_tests()
-    process = _run_pytest(test_targets, extra_args)
+    _ensure_pytest_cov()
+    process = _run_pytest(test_targets, extra_args, threshold)
     if process.returncode == 5:
         sys.stderr.write(
             "COV_NO_TESTS: هیچ تست legacy مطابق الگو یافت نشد.\n"
         )
         raise SystemExit(5)
     if process.returncode != 0:
+        coverage_failure = _extract_pytest_cov_failure(process.stdout, process.stderr)
+        if coverage_failure is not None:
+            percent_value, _ = coverage_failure
+            try:
+                percent_from_xml = _parse_coverage()
+            except SystemExit:
+                percent_from_xml = percent_value
+            if summary_mode:
+                tail = _tail_output(process.stdout, process.stderr)
+                if tail:
+                    sys.stdout.write(tail + "\n")
+                sys.stderr.write(
+                    "Failure: ❌ COV_BELOW_THRESHOLD: پوشش %.2f%% < %.2f%%\n"
+                    % (percent_from_xml, threshold)
+                )
+            else:
+                sys.stdout.write(process.stdout)
+                sys.stderr.write(process.stderr)
+                sys.stderr.write(
+                    "COV_BELOW_THRESHOLD: پوشش تست %.2f%% از آستانه %.2f%% کمتر است.\n"
+                    % (percent_from_xml, threshold)
+                )
+            _ensure_html_report()
+            raise SystemExit(1)
         if summary_mode:
             tail = _tail_output(process.stdout, process.stderr)
             if tail:

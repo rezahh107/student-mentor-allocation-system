@@ -8,6 +8,8 @@ BANDIT_FAIL_LEVEL ?= MEDIUM
 LEGACY_TEST_PATTERN ?= tests/legacy/test_*.py
 PYTEST_ARGS ?=
 LEGACY_TARGETS ?=
+COV_MIN ?= 95
+export COV_MIN
 
 # Legacy targets retained for compatibility with existing tooling
 
@@ -39,7 +41,7 @@ ci-checks:
                 -p pytest_cov \
                 --cov=src.phase2_counter_service \
                 --cov-report=term-missing \
-                --cov-fail-under=95 \
+                --cov-fail-under=$(COV_MIN) \
                 -q tests/phase2_counter_service
         PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
         $(PYTHON) -m bandit -r src/phase2_counter_service

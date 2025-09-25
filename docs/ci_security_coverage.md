@@ -5,8 +5,8 @@
 ## گام‌های CI
 
 1. `make static-checks` → اجرای تست‌های استاتیک و بررسی‌های Mypy.
-2. `make ci-checks` → اجرای پوشش ماژول `src/phase2_counter_service` با فرمان `pytest -p pytest_cov --cov=src.phase2_counter_service --cov-report=term-missing --cov-fail-under=95 -q tests/phase2_counter_service` تا خطای «No data to report» رفع شده و آستانهٔ ۹۵٪ تضمین شود.
-3. `COV_MIN=95 PYTEST_ARGS="-q --maxfail=1 -p pytest_cov --cov=src --cov-report=term --cov-report=xml --cov-report=html" make test-coverage` → اجرای تست‌های legacy با خلاصهٔ فارسی و تولید `htmlcov/`.
+2. `make ci-checks` → اجرای پوشش ماژول `src/phase2_counter_service` با فرمانی که `--cov-fail-under=$(COV_MIN)` را بر اساس متغیر محیطی `COV_MIN` (پیش‌فرض ۹۵) تنظیم می‌کند تا خطای «No data to report» رفع شده و آستانهٔ تعیین‌شده تضمین شود.
+3. `COV_MIN=95 PYTEST_ARGS="-q --maxfail=1 -p pytest_cov --cov=src --cov-report=term --cov-report=xml --cov-report=html" make test-coverage` → اجرای تست‌های legacy با خلاصهٔ فارسی و تولید `htmlcov/`. می‌توانید مقدار `COV_MIN` را متناسب با نیاز خود (مثلاً ۹۷) تغییر دهید.
 4. `make security-scan` → اجرای Bandit با پیام‌های دترمینیستیک فارسی و تولید `reports/bandit.json`.
 
 در CI، خروجی HTML پوشش با نام `htmlcov-<python>` و گزارش امنیتی با نام `bandit-json` به‌صورت artifact آپلود می‌شود.
@@ -19,7 +19,7 @@
 
 ## متغیرهای پیکربندی
 
-- `COV_MIN` (پیش‌فرض 95) → آستانهٔ پوشش تست. مقادیر خالی، `null` یا `0` رسیدگی می‌شوند.
+- `COV_MIN` (پیش‌فرض 95) → آستانهٔ پوشش تست. مقادیر خالی، `null`، `0`، ارقام فارسی/عربی یا متن دارای نویسه‌های صفرعرض رسیدگی و نرمال‌سازی می‌شوند.
 - `LEGACY_TEST_PATTERN` (پیش‌فرض `tests/legacy/test_*.py`) → مسیر تست‌های legacy. مقدار خالی یا `0` به مقدار پیش‌فرض برمی‌گردد.
 - `BANDIT_FAIL_LEVEL` (پیش‌فرض `MEDIUM`) → سطح شدت مجاز Bandit. مقادیر معتبر `{LOW, MEDIUM, HIGH}` هستند؛ مقدار نامعتبر به `MEDIUM` تبدیل و با کد `SEC_BANDIT_LEVEL_DEFAULT` اعلام می‌شود.
 - `PYTEST_ARGS` → رشتهٔ quoted برای عبور آرگومان‌های اضافه به pytest در درگاه پوشش.
@@ -52,6 +52,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/gui/test_gui_operator_smoke.py 
 - **`SEC_BANDIT_NOT_INSTALLED`** → بستهٔ Bandit نصب نشده است؛ با `pip install bandit` رفع می‌شود.
 - **`SEC_BANDIT_FINDINGS`** → یافته‌های شدت `BANDIT_FAIL_LEVEL` یا بالاتر وجود دارد؛ فایل `reports/bandit.json` را بررسی کنید.
 - **`COV_BELOW_THRESHOLD`** → پوشش تست کمتر از `COV_MIN` است؛ تست‌های legacy را گسترش دهید و دوباره `make test-coverage` را اجرا کنید.
+- **`PYTEST_COV_MISSING`** → بستهٔ `pytest-cov` نصب نشده یا بارگذاری افزونه با خطای `PluginValidationError` مواجه شده است؛ با `pip install pytest-cov` آن را نصب کرده و دوباره فرمان را اجرا کنید.
 - **`COV_NO_TESTS`** → هیچ تستی با الگوی legacy پیدا نشد؛ مسیر الگو یا نام فایل‌ها را بازبینی کنید.
 - **`COV_XML_MISSING`** → فایل `coverage.xml` تولید نشده؛ اجرای pytest شکست خورده است (خروجی stderr را بررسی کنید).
 

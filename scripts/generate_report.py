@@ -1,10 +1,20 @@
 ﻿from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote_plus
 
+import sys
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from src.core.logging_config import setup_logging
+
+setup_logging()
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "report.json"
 BENCHMARK_PATH = ROOT / "benchmark.json"
@@ -43,8 +53,8 @@ def load_json(path: Path, default: Any) -> Any:
     try:
         if path.exists():
             return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as error:  # noqa: BLE001
+        logging.warning("خواندن فایل JSON با خطا مواجه شد: %s", error)
     return default
 
 

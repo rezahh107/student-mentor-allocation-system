@@ -28,7 +28,7 @@ class MockBackend:
     """
 
     def __init__(self) -> None:
-        self._rng = random.Random(42)
+        self._rng = random.Random(42)  # تولید داده نمایشی است و امنیت رمزنگاری مطرح نیست. # nosec B311
         self._students: List[StudentDTO] = []
         self._mentors: List[MentorDTO] = []
         self._allocations: List[AllocationDTO] = []

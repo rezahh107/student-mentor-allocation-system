@@ -7,12 +7,24 @@ Adaptive testing system with selectable complexity modes and security depth.
 import argparse
 import asyncio
 import json
-import subprocess
+import subprocess  # اجرای کنترل‌شده دستورات تست. # nosec B404
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+
+import sys
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from src.core.logging_config import setup_logging
+
+setup_logging()
+
+from defusedxml import ElementTree as DefusedET
 
 try:  # GitPython is optional but recommended
     import git
@@ -354,7 +366,7 @@ class AdaptiveTester:
                     capture_output=True,
                     timeout=timeout,
                     check=False,
-                )
+                )  # دستورات از منابع کنترل‌شده ساخته می‌شوند و shell=False است. # nosec B603
             except FileNotFoundError as exc:
                 if allow_missing:
                     cp = subprocess.CompletedProcess(cmd, 127, "", str(exc))
@@ -377,9 +389,7 @@ class AdaptiveTester:
 
     def _extract_coverage_percentage(self, coverage_path: Path) -> Optional[float]:
         try:
-            from xml.etree import ElementTree as ET
-
-            tree = ET.fromstring(coverage_path.read_text(encoding="utf-8"))
+            tree = DefusedET.fromstring(coverage_path.read_text(encoding="utf-8"))
             totals = tree.attrib
             lines_valid = float(totals.get("lines-valid", 0.0))
             lines_covered = float(totals.get("lines-covered", 0.0))

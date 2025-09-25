@@ -3,14 +3,24 @@ from __future__ import annotations
 
 import logging
 import shlex
-import subprocess
+import subprocess  # استفاده کنترل‌شده از subprocess برای اجرای دستورات مجاز. # nosec B404
 from pathlib import Path
 from typing import Mapping, Sequence
 
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.core.logging_config import setup_logging
+
+setup_logging()
+
 try:
     from defusedxml import ElementTree as _ElementTree
-except ModuleNotFoundError:  # pragma: no cover - optional dependency
-    from xml.etree import ElementTree as _ElementTree  # nosec B314 - trusted local files only.
+except ModuleNotFoundError as error:  # pragma: no cover - defusedxml باید نصب باشد
+    raise RuntimeError("کتابخانه defusedxml برای پردازش امن XML الزامی است.") from error
 
 LOGGER = logging.getLogger(__name__)
 _COMMAND_WHITELIST = {"git", "python", "make"}
@@ -42,7 +52,7 @@ def run_secure_command(
         text=True,
         timeout=timeout,
         env=safe_env,
-    )
+    )  # ورودی‌ها پیش‌تر بازبینی شده‌اند و shell=False است. # nosec B603
 
 
 def parse_secure_xml(path: str | Path) -> _ElementTree.ElementTree:

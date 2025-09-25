@@ -77,6 +77,6 @@ def configure_matplotlib(font_family: Optional[str] = None) -> None:
         families.extend(["Vazir", "B Nazanin", "B-Nazanin", "Tahoma", "Arial Unicode MS"])  # fallbacks
         mpl.rcParams["font.family"] = families
         mpl.rcParams["axes.unicode_minus"] = False
-    except Exception:  # matplotlib may be optional
-        pass
+    except Exception as error:  # matplotlib may be optional
+        logging.warning("پیکربندی فونت‌های Matplotlib با خطا مواجه شد: %s", error)
 

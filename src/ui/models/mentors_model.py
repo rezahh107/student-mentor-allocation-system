@@ -3,8 +3,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
-from PySide6.QtGui import QColor
+from src.ui.qt_optional import QtCore, QtGui, require_qt
+
+require_qt()
+
+QAbstractTableModel = QtCore.QAbstractTableModel
+QModelIndex = QtCore.QModelIndex
+Qt = QtCore.Qt
+QColor = QtGui.QColor
 
 
 class MentorsTableModel(QAbstractTableModel):

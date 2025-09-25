@@ -18,17 +18,17 @@ def retry(
         def wrapper(*args, **kwargs):
             delay = backoff_initial
             last_exc: BaseException | None = None
-            for i in range(attempts):
+            for attempt in range(attempts):
                 try:
                     return fn(*args, **kwargs)
                 except exceptions as ex:  # pragma: no cover - time-based
                     last_exc = ex
+                    if attempt == attempts - 1:
+                        break
                     time.sleep(delay)
                     delay *= backoff_factor
-if last_exc is None:
-            raise RuntimeError(
-                "منع اشتباهی برای گذارده یم از اتمام تلاش‌ها تعیین نشد"
-            )
+            if last_exc is None:
+                raise RuntimeError("RETRY_INCONSISTENT_STATE: هیچ استثنایی برای بازپخش ثبت نشد")
             raise last_exc
 
         return wrapper

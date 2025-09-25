@@ -15,10 +15,12 @@ COUNTER_PATTERN = re.compile(r"^\d{2}(357|373)\d{4}$")
 COUNTER_PREFIX = {0: "373", 1: "357"}
 COUNTER_MAX_SEQ = 9999
 PERSIAN_DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
+ZERO_WIDTH_TABLE = str.maketrans('', '', '\u200b\ufeff')
 
 
 def normalize(text: str) -> str:
     normalized = unicodedata.normalize('NFKC', text or '').translate(PERSIAN_DIGITS)
+    normalized = normalized.translate(ZERO_WIDTH_TABLE)
     return normalized.strip()
 
 

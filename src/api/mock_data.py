@@ -10,6 +10,8 @@ from typing import Dict, Iterable, List, Literal, Optional
 from dateutil.relativedelta import relativedelta
 from dateutil import parser as dateparser
 
+from src.core.datetime_utils import utc_now
+
 from .exceptions import BusinessRuleException, ValidationException
 from .models import (
     AllocationDTO,
@@ -104,7 +106,7 @@ class MockBackend:
             student_id=student_id,
             mentor_id=mentor_id,
             status="OK",
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
             notes=None,
         )
         self._allocations.append(alloc)
@@ -213,8 +215,8 @@ class MockBackend:
             grade_level=gl,
             school_type=st,  # type: ignore[arg-type]
             school_code=sc_code,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
             allocation_status=None,
         )
         if student.school_type == "school" and not student.school_code:
@@ -269,7 +271,7 @@ class MockBackend:
                     logging.getLogger(__name__).warning("تبدیل تاریخ تولد به‌روزرسانی‌شونده ممکن نشد", exc_info=exc)
                     bd = s.birth_date
             s.birth_date = bd  # type: ignore[assignment]
-        s.updated_at = datetime.utcnow()
+        s.updated_at = utc_now()
         return s
 
     async def delete_student(self, student_id: int) -> bool:
@@ -382,7 +384,7 @@ class MockBackend:
         levels = ["konkoori", "motavassete2", "motavassete1"]
         school_codes = ["SCH-1001", "SCH-1002", "SCH-1003", "SCH-2001", "SCH-3001"]
 
-        now = datetime.utcnow()
+        now = utc_now()
         students: List[StudentDTO] = []
 
         genders = [0] * females + [1] * males
@@ -494,7 +496,7 @@ class MockBackend:
 
         allocations: List[AllocationDTO] = []
         aid = 1
-        now = datetime.utcnow()
+        now = utc_now()
 
         # انتخاب دانش‌آموزان مناسب نسبت به منتورها
         students_pool = list(self._students)
@@ -565,7 +567,7 @@ class MockBackend:
         return allocations[:target]
 
     def _next_counter(self, gender: int) -> str:
-        year = datetime.utcnow().year % 100
+        year = utc_now().year % 100
         middle = 357 if gender == 0 else 373
         self._counters[gender] += 1
         serial = f"{self._counters[gender]:04d}"
@@ -602,7 +604,7 @@ class MockBackend:
         # سن ۱۶ تا ۲۵ سال
         years_back = self._rng.randint(16, 25)
         days_offset = self._rng.randint(0, 364)
-        dt = datetime.utcnow() - relativedelta(years=years_back, days=days_offset)
+        dt = utc_now() - relativedelta(years=years_back, days=days_offset)
         return dt.date()
 
     @staticmethod

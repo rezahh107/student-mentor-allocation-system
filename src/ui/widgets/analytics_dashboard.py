@@ -3,8 +3,16 @@
 from datetime import datetime
 from typing import Dict, Optional
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QLabel, QPushButton, QTextEdit, QVBoxLayout, QWidget
+from src.ui.qt_optional import QtCore, QtWidgets, require_qt
+
+require_qt()
+
+QTimer = QtCore.QTimer
+QLabel = QtWidgets.QLabel
+QPushButton = QtWidgets.QPushButton
+QTextEdit = QtWidgets.QTextEdit
+QVBoxLayout = QtWidgets.QVBoxLayout
+QWidget = QtWidgets.QWidget
 
 from ...services.config_manager import ConfigManager
 from ...services.performance_monitor import PerformanceMonitor

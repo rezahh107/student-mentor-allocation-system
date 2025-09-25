@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from typing import List
 
 from src.api.models import MentorDTO, StudentDTO, validate_national_code
+from src.core.datetime_utils import utc_now
 
 
 def _gen_valid_melli(rng: random.Random) -> str:
@@ -24,15 +25,15 @@ def make_student(student_id: int, gender: int = 1, center: int = 1, school: bool
     rng = random.Random(1234 + student_id)
     first = "علی" if gender == 1 else "فاطمه"
     last = "احمدی"
-    created = datetime.utcnow() - timedelta(days=rng.randint(0, 120))
+    created = utc_now() - timedelta(days=rng.randint(0, 120))
     return StudentDTO(
         student_id=student_id,
-        counter=f"{datetime.utcnow().year % 100:02d}{373 if gender==1 else 357}{student_id:04d}",
+        counter=f"{utc_now().year % 100:02d}{373 if gender==1 else 357}{student_id:04d}",
         first_name=first,
         last_name=last,
         national_code=_gen_valid_melli(rng),
         phone="+98912" + "".join(str(rng.randint(0, 9)) for _ in range(7)),
-        birth_date=(datetime.utcnow() - timedelta(days=365 * rng.randint(16, 25))).date(),
+        birth_date=(utc_now() - timedelta(days=365 * rng.randint(16, 25))).date(),
         gender=gender,  # type: ignore[arg-type]
         education_status=1,
         registration_status=0,

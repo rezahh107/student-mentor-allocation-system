@@ -1,6 +1,32 @@
 [run]
-source = src
+branch = True
+source =
+    src/core
+    src/api
+    src/tools/export
+    src/cli
+    src/phase2_counter_service
+parallel = False
+omit =
+    */__pycache__/*
+    */migrations/*
+    */generated_*.py
+    */__main__.py
+    src/api/mock_data.py
 
 [report]
-include = src/core/enums.py
-show_missing = False
+show_missing = True
+skip_covered = False
+precision = 2
+include =
+    src/core/*
+    src/api/*
+    src/tools/export/*
+    src/cli/*
+    src/phase2_counter_service/*
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.
+
+[html]
+directory = htmlcov

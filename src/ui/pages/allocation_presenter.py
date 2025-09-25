@@ -4,7 +4,12 @@ import inspect
 from dataclasses import replace
 from typing import Dict, List, Optional, TYPE_CHECKING
 
-from PySide6.QtCore import QObject, Signal
+from src.ui.qt_optional import QtCore, require_qt
+
+require_qt()
+
+QObject = QtCore.QObject
+Signal = QtCore.Signal
 
 from ...core.allocation_engine import AllocationEngine
 from ...core.models import Mentor, Student

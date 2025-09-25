@@ -3,6 +3,7 @@ pytest>=7.4
 pytest-cov>=4.1
 mypy>=1.8
 bandit>=1.7.8
+defusedxml>=0.7.1
 sqlalchemy>=2.0
 alembic>=1.12
 prometheus_client>=0.16

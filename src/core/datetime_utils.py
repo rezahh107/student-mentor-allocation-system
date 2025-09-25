@@ -1,0 +1,14 @@
+"""ابزارهای زمانی برای استفاده سراسری با آگاهی از منطقه زمانی."""
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+
+def utc_now() -> datetime:
+    """Return timezone-aware UTC timestamp compliant with Python 3.11 APIs."""
+
+    return datetime.now(UTC)
+
+
+__all__ = ["utc_now"]
+

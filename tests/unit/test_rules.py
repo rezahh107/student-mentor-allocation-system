@@ -4,12 +4,12 @@ import asyncio
 
 import pytest
 
+from src.api.exceptions import BusinessRuleException
 from src.api.mock_data import MockBackend
 from tests.fixtures.factories import make_student, make_mentor
 
 
-@pytest.mark.asyncio
-async def test_rule_filters_gender_center_schooltype_education_status():
+def test_rule_filters_gender_center_schooltype_education_status():
     backend = MockBackend()
     # override mentors with controlled set
     backend._mentors = [
@@ -46,16 +46,19 @@ def test_ranking_by_remaining_capacity_and_tie_break():
     assert [m.id for m in ranked] == [3, 4, 5]
 
 
-@pytest.mark.asyncio
-async def test_create_allocation_honors_capacity_and_rules():
+def test_create_allocation_honors_capacity_and_rules():
     backend = MockBackend()
     m = make_mentor(7, gender=1, capacity=1, current=0, school=False)
     backend._mentors = [m]
     s1 = make_student(100, gender=1, center=1, school=False)
     s2 = make_student(101, gender=1, center=1, school=False)
     backend._students = [s1, s2]
-    alloc1 = await backend.create_allocation(s1.student_id, m.id)
-    assert alloc1.status == "OK"
-    with pytest.raises(Exception):
-        await backend.create_allocation(s2.student_id, m.id)
+
+    async def _scenario() -> None:
+        alloc1 = await backend.create_allocation(s1.student_id, m.id)
+        assert alloc1.status == "OK"
+        with pytest.raises(BusinessRuleException):
+            await backend.create_allocation(s2.student_id, m.id)
+
+    asyncio.run(_scenario())
 

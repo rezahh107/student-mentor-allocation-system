@@ -4,24 +4,27 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QAbstractItemView,
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QMessageBox,
-    QPushButton,
-    QSpinBox,
-    QTextEdit,
-    QVBoxLayout,
-    QLineEdit,
-)
+from src.ui.qt_optional import QtCore, QtWidgets, require_qt
+
+require_qt()
+
+Qt = QtCore.Qt
+Signal = QtCore.Signal
+QAbstractItemView = QtWidgets.QAbstractItemView
+QCheckBox = QtWidgets.QCheckBox
+QComboBox = QtWidgets.QComboBox
+QDialog = QtWidgets.QDialog
+QFormLayout = QtWidgets.QFormLayout
+QGroupBox = QtWidgets.QGroupBox
+QHBoxLayout = QtWidgets.QHBoxLayout
+QLabel = QtWidgets.QLabel
+QLineEdit = QtWidgets.QLineEdit
+QListWidget = QtWidgets.QListWidget
+QMessageBox = QtWidgets.QMessageBox
+QPushButton = QtWidgets.QPushButton
+QSpinBox = QtWidgets.QSpinBox
+QTextEdit = QtWidgets.QTextEdit
+QVBoxLayout = QtWidgets.QVBoxLayout
 
 LOGGER = logging.getLogger(__name__)
 

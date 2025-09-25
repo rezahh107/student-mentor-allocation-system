@@ -15,6 +15,7 @@ from src.phase3_allocation.engine import AllocationEngine
 from src.phase3_allocation.policy import EligibilityPolicy
 from src.phase3_allocation.providers import ManagerCentersProvider, SpecialSchoolsProvider
 from src.tools.export_excel_safe import ExcelSafeExporter, iter_rows, normalize_cell
+from src.ui.trace_index import TraceFilterIndex
 from src.ui.trace_viewer import (
     TraceViewerApp,
     TraceViewerRow,
@@ -24,6 +25,7 @@ from src.ui.trace_viewer import (
 )
 
 LOGGER = logging.getLogger(__name__)
+_PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 
 @dataclass
@@ -88,6 +90,13 @@ def _parse_bool(value: object | None) -> bool:
 
 def _sanitize_text(value: object | None) -> str:
     return normalize_cell(value)
+
+
+def _persian_number(value: int) -> str:
+    """Convert integers to Persian digits with thousands separators."""
+
+    formatted = f"{value:,}".replace(",", "٬")
+    return formatted.translate(_PERSIAN_DIGITS)
 
 
 def _load_mentors(path: Path, *, limit: int) -> tuple[List[CsvMentor], Dict[int, frozenset[int]], Dict[int, frozenset[int]]]:
@@ -277,18 +286,72 @@ def _persist_telemetry(observer: PerformanceObserver, path: Path, *, fmt: str) -
             writer.writerow(["counter", name, value])
 
 
-def _launch_ui(mode: str, storage: TraceViewerStorage) -> None:
+def _launch_ui(
+    mode: str,
+    storage: TraceViewerStorage,
+    *,
+    page_size: int,
+    page: int,
+    index: TraceFilterIndex | None = None,
+) -> None:
     if mode == "text":
-        render_text_ui(storage, stream=sys.stdout)
+        render_text_ui(
+            storage,
+            stream=sys.stdout,
+            limit=page_size,
+            page=page,
+            index=index,
+        )
         return
     try:
-        app = TraceViewerApp.create(storage)
+        app = TraceViewerApp.create(
+            storage,
+            page_size=page_size,
+            initial_page=page,
+            index=index,
+        )
     except RuntimeError as error:
         LOGGER.warning("رابط گرافیکی در دسترس نیست؛ نمایش متنی فعال شد.")
-        render_text_ui(storage, stream=sys.stdout)
+        render_text_ui(
+            storage,
+            stream=sys.stdout,
+            limit=page_size,
+            page=page,
+            index=index,
+        )
         LOGGER.debug("جزئیات خطا رابط گرافیکی", exc_info=error)
         return
     app.start()
+
+
+def _validate_pagination(
+    index: TraceFilterIndex, *, page_size: int, page: int
+) -> None:
+    if page_size <= 0:
+        raise ValueError("اندازه صفحه باید بزرگ‌تر از صفر باشد.")
+    if page <= 0:
+        raise ValueError("شماره صفحه باید بزرگ‌تر از صفر باشد.")
+    stats = index.validate_page({"selected_only": True}, page_size)
+    total_rows = stats["total_rows"]
+    total_pages = stats["total_pages"]
+    if total_rows == 0:
+        if page > 1:
+            message = (
+                f"صفحه { _persian_number(page) } معتبر نیست؛ "
+                f"بیشینهٔ صفحه: {_persian_number(total_pages)} "
+                f"({_persian_number(total_rows)} ردیف)."
+            )
+            raise ValueError(message)
+        return
+    if page > total_pages:
+        nearest = max(1, total_pages)
+        message = (
+            f"صفحه { _persian_number(page) } معتبر نیست؛ "
+            f"بیشینهٔ صفحه: {_persian_number(total_pages)} "
+            f"({_persian_number(total_rows)} ردیف). "
+            f"نزدیک‌ترین صفحهٔ مجاز: {_persian_number(nearest)}."
+        )
+        raise ValueError(message)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -310,6 +373,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         const="tk",
         choices=["tk", "text"],
         help="نمایش رابط گرافیکی یا متنی",
+    )
+    parser.add_argument(
+        "--text-page-size",
+        dest="text_page_size",
+        type=int,
+        default=20,
+        help="تعداد ردیف‌های هر صفحه در حالت متنی",
+    )
+    parser.add_argument(
+        "--text-page",
+        dest="text_page",
+        type=int,
+        default=1,
+        help="شماره صفحه برای خروجی متنی",
     )
     parser.add_argument("--limit", type=int, default=10000, help="حداکثر ردیف‌های ورودی")
     parser.add_argument(
@@ -394,9 +471,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     if args.ui:
+        index = TraceFilterIndex(storage)
         try:
-            _launch_ui(args.ui, storage)
-        except RuntimeError as error:
+            _validate_pagination(
+                index,
+                page_size=args.text_page_size,
+                page=args.text_page,
+            )
+        except ValueError as error:
+            LOGGER.error(str(error))
+            storage.cleanup()
+            return 1
+        try:
+            _launch_ui(
+                args.ui,
+                storage,
+                page_size=args.text_page_size,
+                page=args.text_page,
+                index=index,
+            )
+        except (RuntimeError, ValueError) as error:
             LOGGER.error(str(error))
         finally:
             storage.cleanup()

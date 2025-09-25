@@ -7,7 +7,7 @@ import tempfile
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Iterator, List
+from typing import Iterable, Iterator, List, Tuple
 
 try:  # pragma: no cover - tkinter availability checked at runtime
     import tkinter as tk
@@ -21,9 +21,11 @@ else:  # pragma: no cover - stored for reporting
 
 from src.phase3_allocation.engine import AllocationTraceEntry
 from src.tools.export_excel_safe import normalize_cell
+from src.ui.trace_index import TraceFilterIndex
 
 PAGE_SIZE = 200
 CACHE_LIMIT = 400
+_PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 
 class _CompatItems:
@@ -257,6 +259,9 @@ class TraceViewerApp:
         storage: TraceViewerStorage,
         *,
         tk_module: object | None = None,
+        page_size: int = PAGE_SIZE,
+        initial_page: int = 1,
+        index: TraceFilterIndex | None = None,
     ) -> None:
         if tk is None and tk_module is None:
             raise RuntimeError("کتابخانه Tkinter در دسترس نیست.")
@@ -267,18 +272,29 @@ class TraceViewerApp:
             self.storage = storage
         else:
             self.storage = _InMemoryStorage(storage)
-        self._filtered_indices: List[int] = list(range(len(storage)))
-        self._current_page = 0
+        self._index = index or TraceFilterIndex(self.storage)
+        total = len(self.storage)
+        self._filtered_windows: List[Tuple[int, int]] = [(0, total)] if total else []
+        self._filtered_count = total
+        self._page_size = page_size if page_size > 0 else PAGE_SIZE
+        self._current_page = max(0, initial_page - 1)
         self._filter_job: int | None = None
         self._filter_dirty = False
         self._page_rows: List[TraceViewerRow] = []
         self._visible_rows: List[TraceViewerRow] = []
         self._use_treeview = self.ttk is not None and hasattr(self.ttk, "Treeview")
         self._build_ui()
-        self._schedule_page_load(0)
+        self._schedule_page_load(self._current_page)
 
     @classmethod
-    def create(cls, storage: TraceViewerStorage) -> "TraceViewerApp":
+    def create(
+        cls,
+        storage: TraceViewerStorage,
+        *,
+        page_size: int = PAGE_SIZE,
+        initial_page: int = 1,
+        index: TraceFilterIndex | None = None,
+    ) -> "TraceViewerApp":
         if tk is None:
             raise RuntimeError("قابلیت گرافیکی در این محیط فعال نیست.") from TK_IMPORT_ERROR
         try:
@@ -287,7 +303,13 @@ class TraceViewerApp:
             raise RuntimeError("امکان ایجاد رابط کاربری وجود ندارد.") from exc
         root.title("نمایش ردگیری تخصیص فاز ۳")
         root.geometry("960x640")
-        return cls(root, storage)
+        return cls(
+            root,
+            storage,
+            page_size=page_size,
+            initial_page=initial_page,
+            index=index,
+        )
 
     def start(self) -> None:
         self.root.mainloop()
@@ -362,7 +384,10 @@ class TraceViewerApp:
         self.root.bind("<Next>", self._on_page_down)
 
     def _schedule_page_load(self, page: int) -> None:
-        self._current_page = max(0, page)
+        max_page = 0
+        if self._filtered_count > 0 and self._page_size > 0:
+            max_page = max(0, (self._filtered_count - 1) // self._page_size)
+        self._current_page = min(max_page, max(0, page))
         if self._filter_job is None:
             self._filter_job = self.root.after(0, self._load_page)
         else:
@@ -374,8 +399,10 @@ class TraceViewerApp:
             self._filter_job = self.root.after(0, self._load_page)
 
     def _load_page(self) -> None:
-        start_index = self._current_page * PAGE_SIZE
-        indices = self._filtered_indices[start_index : start_index + PAGE_SIZE]
+        if self._current_page < 0:
+            self._current_page = 0
+        start_index = self._current_page * self._page_size
+        indices = self._page_window_indices(start_index, self._page_size)
         rows = [self.storage.get_row(index) for index in indices]
         self._page_rows = rows
         self._visible_rows = rows
@@ -416,6 +443,30 @@ class TraceViewerApp:
                 self._clear_trace()
         self._filter_job = None
 
+    def refresh_after_selection_toggle(self, indices: Iterable[int]) -> None:
+        """Refresh visible windows after selection state toggles.
+
+        Args:
+            indices: Absolute indices whose selection state changed. Only the
+                active page is reloaded so pagination remains O(window).
+        """
+
+        for index in indices:
+            self._index.queue_selection_update(int(index))
+        self._index.mark_selection_dirty()
+        filters = {
+            "group_code": self.group_entry.get(),
+            "reg_center": self.center_entry.get(),
+        }
+        self._filtered_windows = self._index.apply_filters(filters)
+        self._filtered_count = self._index.last_count
+        max_page = 0
+        if self._filtered_count and self._page_size:
+            max_page = max(0, (self._filtered_count - 1) // self._page_size)
+        if self._current_page > max_page:
+            self._current_page = max_page
+        self._load_page()
+
     def _on_filter_change(self, _event: object) -> None:
         self._filter_dirty = True
         if not self._use_treeview:
@@ -429,34 +480,13 @@ class TraceViewerApp:
             return
         self._filter_job = None
         self._filter_dirty = False
-        group_value = self.group_entry.get().strip()
-        center_value = self.center_entry.get().strip()
-        filtered_indices: List[int] = []
-        filtered_rows: List[TraceViewerRow] = []
-        for index in range(len(self.storage)):
-            row = self.storage.get_row(index)
-            if group_value and group_value not in row.student_group:
-                continue
-            if center_value and center_value not in row.student_center:
-                continue
-            filtered_indices.append(index)
-            filtered_rows.append(row)
-        self._filtered_indices = filtered_indices
-        if not self._use_treeview:
-            self._page_rows = list(filtered_rows)
-            self._visible_rows = list(filtered_rows)
-            self.listbox.delete(0, self.tk.END)
-            for row in filtered_rows:
-                display = " | ".join(row.display_values())
-                if row.is_selected:
-                    display = "★ " + display
-                self.listbox.insert(self.tk.END, display)
-            if filtered_rows:
-                self.listbox.selection_set(0)
-                self._show_entry(0)
-            else:
-                self._clear_trace()
-            return
+        filters = {
+            "group_code": self.group_entry.get(),
+            "reg_center": self.center_entry.get(),
+        }
+        windows = self._index.apply_filters(filters)
+        self._filtered_windows = windows
+        self._filtered_count = self._index.last_count
         self._schedule_page_load(0)
 
     def _load_previous_page(self) -> None:
@@ -464,7 +494,7 @@ class TraceViewerApp:
             self._schedule_page_load(self._current_page - 1)
 
     def _load_next_page(self) -> None:
-        max_page = max(0, (len(self._filtered_indices) - 1) // PAGE_SIZE)
+        max_page = max(0, (self._filtered_count - 1) // self._page_size)
         if self._current_page < max_page:
             self._schedule_page_load(self._current_page + 1)
 
@@ -543,6 +573,26 @@ class TraceViewerApp:
                 return selection[0]
         return None
 
+    def _page_window_indices(self, start: int, size: int) -> List[int]:
+        if start < 0 or size <= 0:
+            return []
+        remaining = size
+        offset = start
+        indices: List[int] = []
+        for window_start, window_end in self._filtered_windows:
+            window_size = window_end - window_start
+            if offset >= window_size:
+                offset -= window_size
+                continue
+            absolute_start = window_start + offset
+            take = min(remaining, window_end - absolute_start)
+            indices.extend(range(absolute_start, absolute_start + take))
+            remaining -= take
+            offset = 0
+            if remaining <= 0:
+                break
+        return indices
+
     def _set_selection(self, index: int) -> None:
         if self._use_treeview:
             children = self.tree.get_children()
@@ -558,18 +608,24 @@ def render_text_ui(
     *,
     stream=None,
     limit: int = 20,
+    page: int = 1,
+    index: TraceFilterIndex | None = None,
 ) -> None:
     """Render a console table for selected rows when Tkinter is unavailable."""
 
     out_stream = stream or sys.stdout
-    rows: List[TraceViewerRow] = []
-    for row in storage.iter_selected():
-        rows.append(row)
-        if len(rows) >= limit:
-            break
-    if not rows:
-        out_stream.write("هیچ تخصیص موفقی یافت نشد.\n")
-        return
+    if limit <= 0:
+        raise ValueError("اندازه صفحه باید بزرگ‌تر از صفر باشد.")
+    if page <= 0:
+        raise ValueError("شماره صفحه باید بزرگ‌تر از صفر باشد.")
+    page_size = int(limit)
+    page_number = int(page)
+
+    trace_index = index or TraceFilterIndex(storage)
+    stats = trace_index.validate_page({"selected_only": True}, page_size)
+    total_selected = stats["total_rows"]
+    total_pages = stats["total_pages"]
+
     header = (
         "شاخص",
         "منتور",
@@ -578,9 +634,44 @@ def render_text_ui(
         "مرکز",
         "گروه",
     )
+
+    if total_selected == 0:
+        out_stream.write("هیچ تخصیص موفقی یافت نشد.\n")
+        return
+
+    if page_number > total_pages:
+        nearest = total_pages if total_pages > 0 else 1
+        message = (
+            f"صفحه { _to_persian_number(page_number) } معتبر نیست؛ "
+            f"بیشینهٔ صفحه: {_to_persian_number(total_pages)} "
+            f"({_to_persian_number(total_selected)} ردیف)."
+        )
+        if total_pages > 0:
+            message += f" نزدیک‌ترین صفحهٔ مجاز: {_to_persian_number(nearest)}."
+        out_stream.write(message + "\n")
+        return
+
+    iterator = trace_index.seek_page({"selected_only": True}, page_number, page_size)
+    indices = list(iterator)
+    if not indices:
+        nearest = total_pages if total_pages > 0 else 1
+        message = (
+            f"صفحه { _to_persian_number(page_number) } معتبر نیست؛ "
+            f"بیشینهٔ صفحه: {_to_persian_number(total_pages)} "
+            f"({_to_persian_number(total_selected)} ردیف)."
+        )
+        if total_pages > 0:
+            message += f" نزدیک‌ترین صفحهٔ مجاز: {_to_persian_number(nearest)}."
+        out_stream.write(message + "\n")
+        return
+
     out_stream.write(" | ".join(header) + "\n")
     out_stream.write("-" * 60 + "\n")
-    for row in rows:
+
+    for index_value in indices:
+        row = storage.get_row(index_value)
+        if not row.is_selected:
+            continue
         ratio_text = "-" if row.occupancy_ratio is None else f"{row.occupancy_ratio:.2f}"
         line = " | ".join(
             [
@@ -595,6 +686,7 @@ def render_text_ui(
         out_stream.write(line + "\n")
 
 
+
 __all__ = [
     "TraceViewerRow",
     "TraceViewerStorage",
@@ -603,3 +695,10 @@ __all__ = [
     "render_text_ui",
     "PAGE_SIZE",
 ]
+
+
+def _to_persian_number(value: int) -> str:
+    """Convert integers to Persian digits with thousands separators."""
+
+    formatted = f"{value:,}".replace(",", "٬")
+    return formatted.translate(_PERSIAN_DIGITS)

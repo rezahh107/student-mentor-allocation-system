@@ -119,6 +119,7 @@ class HardenedAPIConfig:
     metrics_token: str | None = None
     metrics_ip_allowlist: set[str] = field(default_factory=lambda: {"127.0.0.1"})
     redis_url: str | None = None
+    redis_namespace: str | None = None
     admin_token: str | None = None
     jwt_issuer: str | None = None
     jwt_audience: str | None = None
@@ -129,6 +130,7 @@ class HardenedAPIConfig:
         "/allocations": {"alloc:write"},
         "/status": {"alloc:read"},
     })
+    instance_id: str = field(default_factory=lambda: uuid4().hex)
 
     @classmethod
     def from_env(cls) -> "HardenedAPIConfig":
@@ -142,6 +144,7 @@ class HardenedAPIConfig:
         jwt_secret = os.getenv("ALLOC_API_JWT_SECRET")
         leeway = int(os.getenv("ALLOC_API_JWT_LEEWAY", "120"))
         redis_url = os.getenv("REDIS_URL")
+        redis_namespace = os.getenv("ALLOC_API_REDIS_NAMESPACE")
         admin_token = os.getenv("ALLOC_API_ADMIN_TOKEN")
         jwt_issuer = os.getenv("ALLOC_API_JWT_ISS")
         jwt_audience = os.getenv("ALLOC_API_JWT_AUD")
@@ -172,6 +175,7 @@ class HardenedAPIConfig:
             metrics_token=metrics_token,
             metrics_ip_allowlist=metrics_ips or {"127.0.0.1"},
             redis_url=redis_url,
+            redis_namespace=redis_namespace,
             admin_token=admin_token,
             jwt_issuer=jwt_issuer,
             jwt_audience=jwt_audience,
@@ -376,8 +380,10 @@ def create_app(
         )
     )
     if settings.redis_url:
-        rate_backend: RateLimitBackend = RedisRateLimitBackend(settings.redis_url, namespace="alloc")
-        idempotency_store: IdempotencyStore = RedisIdempotencyStore(settings.redis_url, namespace="alloc")
+        namespace_root = settings.redis_namespace or "alloc"
+        instance_namespace = f"{namespace_root}:{settings.instance_id}"
+        rate_backend: RateLimitBackend = RedisRateLimitBackend(settings.redis_url, namespace=instance_namespace)
+        idempotency_store: IdempotencyStore = RedisIdempotencyStore(settings.redis_url, namespace=instance_namespace)
     else:
         rate_backend = InMemoryRateLimitBackend()
         idempotency_store = InMemoryIdempotencyStore()

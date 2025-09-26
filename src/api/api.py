@@ -7,7 +7,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
@@ -30,8 +30,10 @@ from src.api.middleware import (
     APIKeyProvider,
     AuthenticationConfig,
     AuthenticationMiddleware,
+    BodyTooLargeError,
     BodySizeLimitMiddleware,
     ContentTypeValidationMiddleware,
+    ContentTypeMismatchError,
     CorrelationIdMiddleware,
     ObservabilityMiddleware,
     RateLimitMiddleware,
@@ -41,6 +43,7 @@ from src.api.middleware import (
     build_error_response,
     install_cors,
 )
+from pydantic_core import ValidationError as CoreValidationError
 from src.api.observability import Observability, ObservabilityConfig, get_correlation_id
 from src.api.patterns import ascii_token_pattern, zero_width_pattern
 from src.api.rate_limit_backends import (
@@ -385,6 +388,7 @@ def create_app(
     app.state.runtime_extras = runtime_hints
     app.state.started_at = APP_START_TS
     app.state.observability = obs
+    app.add_middleware(ObservabilityMiddleware, observability=obs)
     app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(ContentTypeValidationMiddleware, methods=("POST",), paths=("/allocations",))
     app.add_middleware(
@@ -416,7 +420,6 @@ def create_app(
     )
     app.add_middleware(RateLimitMiddleware, limiter=rate_limiter, observability=obs)
     app.add_middleware(SecurityHeadersMiddleware, allow_origins=settings.allowed_origins)
-    app.add_middleware(ObservabilityMiddleware, observability=obs)
     install_cors(app, allow_origins=settings.allowed_origins)
 
     if settings.admin_token and session_factory is not None:
@@ -427,29 +430,86 @@ def create_app(
         )
         app.include_router(admin_router)
 
+    def _normalize_validation_errors(raw_errors: Iterable[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        if not raw_errors:
+            return normalized
+        for error in raw_errors:
+            if not isinstance(error, Mapping):
+                continue
+            loc_raw = error.get("loc")
+            loc_parts: list[str] = []
+            if isinstance(loc_raw, (list, tuple)):
+                loc_parts = [str(part) for part in loc_raw if part not in {"body", "__root__"}]
+            elif loc_raw:
+                loc_parts = [str(loc_raw)]
+            field = error.get("field")
+            if field and not loc_parts:
+                loc_parts = [str(field)]
+            if not loc_parts:
+                loc_parts = ["body"]
+            msg = str(error.get("msg") or error.get("message") or "درخواست نامعتبر است")
+            error_type = str(error.get("type") or error.get("code") or "value_error")
+            entry: dict[str, Any] = {"loc": loc_parts, "msg": msg, "type": error_type}
+            ctx = error.get("ctx")
+            if isinstance(ctx, Mapping):
+                serializable_ctx: dict[str, Any] = {}
+                for key, value in ctx.items():
+                    try:
+                        json.dumps(value)
+                        serializable_ctx[str(key)] = value
+                    except TypeError:
+                        serializable_ctx[str(key)] = str(value)
+                if serializable_ctx:
+                    entry["ctx"] = serializable_ctx
+            normalized.append(entry)
+        return normalized
+
+    def _validation_error_response(raw_errors: Iterable[Mapping[str, Any]] | None) -> JSONResponse:
+        details = _normalize_validation_errors(raw_errors)
+        if not details:
+            details = [{"loc": ["body"], "msg": "درخواست نامعتبر است", "type": "value_error"}]
+        return build_error_response(
+            HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "VALIDATION_ERROR",
+                    "message_fa": "درخواست نامعتبر است",
+                    "details": details,
+                },
+            )
+        )
+
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
         return build_error_response(exc)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_exception_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
-        errors = [
+        return _validation_error_response(exc.errors())
+
+    @app.exception_handler(CoreValidationError)
+    async def _core_validation_handler(_: Request, exc: CoreValidationError) -> JSONResponse:
+        return _validation_error_response(exc.errors())
+
+    @app.exception_handler(json.JSONDecodeError)
+    async def _json_decode_handler(_: Request, exc: json.JSONDecodeError) -> JSONResponse:
+        detail = [
             {
-                "field": ".".join(str(part) for part in error.get("loc", ()) if part not in {"body", "__root__"}),
-                "message": error.get("msg"),
+                "loc": ["body"],
+                "msg": "ساختار JSON نامعتبر است",
+                "type": "value_error.jsondecode",
             }
-            for error in exc.errors()
         ]
-        return build_error_response(
-            HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "code": "VALIDATION_ERROR",
-                    "message_fa": "اعتبارسنجی ورودی نامعتبر است",
-                    "details": errors,
-                },
-            )
-        )
+        return _validation_error_response(detail)
+
+    @app.exception_handler(BodyTooLargeError)
+    async def _body_too_large_handler(_: Request, exc: BodyTooLargeError) -> JSONResponse:
+        return _validation_error_response(exc.detail)
+
+    @app.exception_handler(ContentTypeMismatchError)
+    async def _content_type_handler(_: Request, exc: ContentTypeMismatchError) -> JSONResponse:
+        return _validation_error_response(exc.detail)
 
     @app.post("/allocations", response_model=AllocationResponseBody, responses=_error_responses())
     async def create_allocation(request: Request, payload: AllocationRequestBody) -> JSONResponse:

@@ -123,6 +123,26 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class ContentTypeMismatchError(Exception):
+    """Raised when the request content-type header is incorrect."""
+
+    def __init__(self, detail: list[dict[str, object]]) -> None:
+        super().__init__("content-type mismatch")
+        self.detail = detail
+        self.status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+        self.error_code = "VALIDATION_ERROR"
+
+
+class BodyTooLargeError(Exception):
+    """Raised when the incoming request body exceeds the configured limit."""
+
+    def __init__(self, detail: list[dict[str, object]]) -> None:
+        super().__init__("body too large")
+        self.detail = detail
+        self.status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+        self.error_code = "VALIDATION_ERROR"
+
+
 class ContentTypeValidationMiddleware(BaseHTTPMiddleware):
     """Rejects requests that do not provide the required content-type."""
 
@@ -145,7 +165,14 @@ class ContentTypeValidationMiddleware(BaseHTTPMiddleware):
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         detail={
                             "code": "VALIDATION_ERROR",
-                            "message_fa": "نوع محتوای درخواست باید application/json; charset=utf-8 باشد",
+                            "message_fa": "درخواست نامعتبر است",
+                            "details": [
+                                {
+                                    "loc": ["header", "Content-Type"],
+                                    "msg": "نوع محتوا باید application/json; charset=utf-8 باشد",
+                                    "type": "value_error.content_type",
+                                }
+                            ],
                         },
                     )
                 )
@@ -175,7 +202,15 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         detail={
                             "code": "VALIDATION_ERROR",
-                            "message_fa": "حجم بدنهٔ درخواست بیش از حد مجاز است",
+                            "message_fa": "درخواست نامعتبر است",
+                            "details": [
+                                {
+                                    "loc": ["body"],
+                                    "msg": "حجم بدنهٔ درخواست بیش از حد مجاز است",
+                                    "type": "value_error.body_size",
+                                    "ctx": {"limit": self._limit},
+                                }
+                            ],
                         },
                     )
                 )
@@ -261,6 +296,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         set_consumer_id(context.consumer_id)
         request.state.auth_context = context
+        request.state.consumer_id = context.consumer_id
         response = await call_next(request)
         return response
 
@@ -349,13 +385,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._observability = observability
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        consumer = getattr(request.state, "auth_context", None)
-        consumer_id = consumer.consumer_id if consumer else get_consumer_id() or (request.client.host if request.client else "anonymous")
+        consumer_id = getattr(request.state, "consumer_id", None) or get_consumer_id()
+        if not consumer_id:
+            consumer_id = request.client.host if request.client and request.client.host else "anonymous"
+        request.state.consumer_id = consumer_id
         route = request.url.path
-        decision = await self._limiter.consume(f"{consumer_id}:{route}")
+        decision = await self._limiter.consume(f"rl:{route}:{consumer_id}")
         if not decision.allowed:
             self._observability.increment_rate_limit(route)
-            headers = {"Retry-After": str(max(int(math.ceil(decision.retry_after)), 1))}
+            retry_after = max(int(math.ceil(decision.retry_after)), 1)
+            headers = {
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Remaining": "0",
+            }
             return build_error_response(
                 HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -364,7 +406,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
             )
         response = await call_next(request)
-        response.headers.setdefault("X-RateLimit-Remaining", str(int(decision.remaining)))
+        remaining = max(0, int(decision.remaining))
+        response.headers.setdefault("X-RateLimit-Remaining", str(remaining))
         return response
 
 
@@ -386,10 +429,28 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             status_code = response.status_code
             outcome = "SUCCESS" if 200 <= status_code < 300 else "ERROR"
             return response
+        except (ContentTypeMismatchError, BodyTooLargeError) as exc:
+            status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+            error_code = "VALIDATION_ERROR"
+            outcome = "ERROR"
+            http_exc = HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "VALIDATION_ERROR",
+                    "message_fa": "درخواست نامعتبر است",
+                    "details": getattr(exc, "detail", []),
+                },
+            )
+            return build_error_response(http_exc)
         except HTTPException as exc:
             status_code = exc.status_code
             detail = exc.detail if isinstance(exc.detail, dict) else {}
             error_code = str(detail.get("code") or "ERROR")
+            outcome = "ERROR"
+            return build_error_response(exc)
+        except Exception as exc:
+            status_code = int(getattr(exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR))
+            error_code = str(getattr(exc, "error_code", "ERROR"))
             outcome = "ERROR"
             raise
         finally:

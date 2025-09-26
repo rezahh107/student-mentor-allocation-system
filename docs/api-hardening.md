@@ -155,6 +155,8 @@ curl -s -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json; c
 
 - الگوریتم سطل توکن با ظرفیت و نرخ تنظیم‌شده برای هر مسیر و هر مصرف‌کننده (شناسهٔ مصرف‌کننده از API key یا `sub` توکن استخراج می‌شود).
 - در صورت عبور از حد مجاز، پاسخ `429` با هدرهای `Retry-After` و `X-RateLimit-Remaining` ارسال می‌شود.
+- کلیدهای محدودسازی با الگوی `rl:{path}:{consumer}` ساخته می‌شوند تا در تمام نمونه‌ها یکسان باشند و پس از اولین ضربه با ظرفیت کامل مقداردهی اولیه می‌شوند.
+- ترتیب میان‌افزارها به‌صورت `CorrelationID → ContentType → BodySize → Authentication → RateLimit → Router → Observability` نگهداری می‌شود تا ثبت لاگ و متریک وضعیت دقیق هر خطای ۴۲۲/۴۲۹ تضمین شود.
 
 ## سیاست ایدمپوتنسی
 

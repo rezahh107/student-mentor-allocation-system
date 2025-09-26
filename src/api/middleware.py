@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from starlette.concurrency import iterate_in_threadpool
 
 from .observability import (
@@ -125,99 +125,187 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class ContentTypeMismatchError(Exception):
-    """Raised when the request content-type header is incorrect."""
-
-    def __init__(self, detail: list[dict[str, object]]) -> None:
-        super().__init__("content-type mismatch")
-        self.detail = detail
-        self.status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
-        self.error_code = "VALIDATION_ERROR"
+def _match_path(paths: tuple[str, ...], target: str) -> bool:
+    if not paths:
+        return True
+    return any(target == candidate or target.startswith(f"{candidate}/") for candidate in paths)
 
 
-class BodyTooLargeError(Exception):
-    """Raised when the incoming request body exceeds the configured limit."""
+async def _send_validation_response(
+    scope: Scope,
+    receive: Receive,
+    send: Send,
+    *,
+    details: list[dict[str, Any]],
+    message: str,
+) -> None:
+    correlation_id = get_correlation_id()
+    payload: dict[str, Any] = {
+        "error": {
+            "code": "VALIDATION_ERROR",
+            "message_fa": message,
+            "correlation_id": correlation_id,
+        }
+    }
+    if details:
+        payload["details"] = details
+    headers = {"X-Correlation-ID": correlation_id}
+    response = JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=payload, headers=headers)
+    await response(scope, receive, send)
 
-    def __init__(self, detail: list[dict[str, object]]) -> None:
-        super().__init__("body too large")
-        self.detail = detail
-        self.status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
-        self.error_code = "VALIDATION_ERROR"
+
+def _decode_header(headers: list[tuple[bytes, bytes]], name: str) -> str:
+    needle = name.lower()
+    for key, value in headers:
+        if key.decode("latin-1").lower() == needle:
+            return value.decode("latin-1").strip()
+    return ""
 
 
-class ContentTypeValidationMiddleware(BaseHTTPMiddleware):
-    """Rejects requests that do not provide the required content-type."""
+async def _drain_request_body(receive: Receive, initial: Message | None = None) -> None:
+    more_body = False
+    if initial is not None:
+        more_body = bool(initial.get("more_body"))
+    while more_body:
+        message = await receive()
+        if message.get("type") != "http.request":
+            more_body = bool(message.get("more_body"))
+            continue
+        more_body = bool(message.get("more_body"))
+
+
+class ContentTypeValidationMiddleware:
+    """Reject requests that do not use the required JSON content type."""
 
     def __init__(self, app: ASGIApp, *, methods: Iterable[str], paths: Iterable[str] | None = None) -> None:
-        super().__init__(app)
-        self._methods = {m.upper() for m in methods}
-        self._paths = {path for path in (paths or ())}
+        self.app = app
+        self._methods = {method.upper() for method in methods}
+        self._paths = tuple(paths or ())
 
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        if request.method.upper() in self._methods:
-            if self._paths and not any(
-                request.url.path == path or request.url.path.startswith(f"{path}/")
-                for path in self._paths
-            ):
-                return await call_next(request)
-            content_type = (request.headers.get("content-type") or "").strip().lower()
-            if content_type != "application/json; charset=utf-8":
-                return build_error_response(
-                    HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        detail={
-                            "code": "VALIDATION_ERROR",
-                            "message_fa": "درخواست نامعتبر است",
-                            "details": [
-                                {
-                                    "loc": ["header", "Content-Type"],
-                                    "msg": "نوع محتوا باید application/json; charset=utf-8 باشد",
-                                    "type": "value_error.content_type",
-                                }
-                            ],
-                        },
-                    )
-                )
-        return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "").upper()
+        if method not in self._methods:
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if not _match_path(self._paths, path):
+            await self.app(scope, receive, send)
+            return
+
+        headers = scope.get("headers") or []
+        content_type = _decode_header(list(headers), "content-type").lower()
+        if content_type != "application/json; charset=utf-8":
+            details = [
+                {
+                    "loc": ["header", "Content-Type"],
+                    "msg": "نوع محتوا باید application/json; charset=utf-8 باشد",
+                    "type": "value_error.content_type",
+                }
+            ]
+            await _send_validation_response(
+                scope,
+                receive,
+                send,
+                details=details,
+                message="درخواست نامعتبر است",
+            )
+            return
+
+        await self.app(scope, receive, send)
 
 
-class BodySizeLimitMiddleware(BaseHTTPMiddleware):
-    """Prevents oversized payloads from reaching the router."""
+class BodySizeLimitMiddleware:
+    """Ensure request bodies stay within the configured byte limit."""
 
-    def __init__(self, app: ASGIApp, *, limit_bytes: int, methods: Iterable[str], paths: Iterable[str] | None = None) -> None:
-        super().__init__(app)
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        limit_bytes: int,
+        methods: Iterable[str],
+        paths: Iterable[str] | None = None,
+    ) -> None:
+        self.app = app
         self._limit = limit_bytes
-        self._methods = {m.upper() for m in methods}
-        self._paths = {path for path in (paths or ())}
+        self._methods = {method.upper() for method in methods}
+        self._paths = tuple(paths or ())
 
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        if request.method.upper() in self._methods:
-            if self._paths and not any(
-                request.url.path == path or request.url.path.startswith(f"{path}/")
-                for path in self._paths
-            ):
-                return await call_next(request)
-            body = await request.body()
-            if len(body) > self._limit:
-                return build_error_response(
-                    HTTPException(
-                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                        detail={
-                            "code": "VALIDATION_ERROR",
-                            "message_fa": "درخواست نامعتبر است",
-                            "details": [
-                                {
-                                    "loc": ["body"],
-                                    "msg": "حجم بدنهٔ درخواست بیش از حد مجاز است",
-                                    "type": "value_error.body_size",
-                                    "ctx": {"limit": self._limit},
-                                }
-                            ],
-                        },
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "").upper()
+        if method not in self._methods:
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if not _match_path(self._paths, path):
+            await self.app(scope, receive, send)
+            return
+
+        body = bytearray()
+        buffered: list[Message] = []
+
+        while True:
+            message = await receive()
+            message_type = message.get("type")
+            if message_type != "http.request":
+                buffered.append(message)
+                if not message.get("more_body", False):
+                    break
+                continue
+
+            chunk = message.get("body", b"") or b""
+            more_body = bool(message.get("more_body", False))
+            if chunk:
+                body.extend(chunk)
+                if len(body) > self._limit:
+                    await _drain_request_body(receive, message)
+                    details = [
+                        {
+                            "loc": ["body"],
+                            "msg": "حجم بدنهٔ درخواست بیش از حد مجاز است",
+                            "type": "value_error.body_size",
+                            "ctx": {"limit": self._limit},
+                        }
+                    ]
+                    await _send_validation_response(
+                        scope,
+                        receive,
+                        send,
+                        details=details,
+                        message="درخواست نامعتبر است",
                     )
-                )
-            request.state.raw_body = body
-        return await call_next(request)
+                    return
+
+            buffered.append({"type": "http.request", "body": chunk, "more_body": more_body})
+            if not more_body:
+                break
+
+        scope_state = scope.setdefault("state", {})
+        scope_state["raw_body"] = bytes(body)
+
+        if not buffered:
+            buffered.append({"type": "http.request", "body": b"", "more_body": False})
+
+        index = 0
+
+        async def replay_receive() -> Message:
+            nonlocal index
+            if index < len(buffered):
+                message = buffered[index]
+                index += 1
+                return message
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay_receive, send)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -529,7 +617,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not consumer_id:
             consumer_id = request.client.host if request.client and request.client.host else "anonymous"
         request.state.consumer_id = consumer_id
-        route = request.url.path
+        route = request.scope.get("path", request.url.path)
         decision = await self._limiter.consume(f"rl:{route}:{consumer_id}")
         if not decision.allowed:
             self._observability.increment_rate_limit(route)
@@ -546,7 +634,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
             )
         response = await call_next(request)
-        remaining = max(0, int(decision.remaining))
+        remaining = max(0, int(math.floor(decision.remaining)))
         response.headers.setdefault("X-RateLimit-Remaining", str(remaining))
         return response
 
@@ -569,19 +657,6 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             status_code = response.status_code
             outcome = "SUCCESS" if 200 <= status_code < 300 else "ERROR"
             return response
-        except (ContentTypeMismatchError, BodyTooLargeError) as exc:
-            status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
-            error_code = "VALIDATION_ERROR"
-            outcome = "ERROR"
-            http_exc = HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "code": "VALIDATION_ERROR",
-                    "message_fa": "درخواست نامعتبر است",
-                    "details": getattr(exc, "detail", []),
-                },
-            )
-            return build_error_response(http_exc)
         except HTTPException as exc:
             status_code = exc.status_code
             detail = exc.detail if isinstance(exc.detail, dict) else {}

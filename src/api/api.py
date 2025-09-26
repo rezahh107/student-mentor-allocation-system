@@ -17,6 +17,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 
 from src.api.admin_ui import AdminConfig, build_admin_router
 from src.api.idempotency_store import (
@@ -28,10 +30,8 @@ from src.api.middleware import (
     APIKeyProvider,
     AuthenticationConfig,
     AuthenticationMiddleware,
-    BodyTooLargeError,
     BodySizeLimitMiddleware,
     ContentTypeValidationMiddleware,
-    ContentTypeMismatchError,
     CorrelationIdMiddleware,
     IdempotencyMiddleware,
     ObservabilityMiddleware,
@@ -40,7 +40,6 @@ from src.api.middleware import (
     SecurityHeadersMiddleware,
     StaticCredential,
     build_error_response,
-    install_cors,
 )
 from pydantic_core import ValidationError as CoreValidationError
 from src.api.observability import Observability, ObservabilityConfig, get_correlation_id
@@ -383,20 +382,6 @@ def create_app(
         rate_backend = InMemoryRateLimitBackend()
         idempotency_store = InMemoryIdempotencyStore()
 
-    app = FastAPI(title="Student Allocation API", version="5.0")
-    app.state.runtime_extras = runtime_hints
-    app.state.started_at = APP_START_TS
-    app.state.observability = obs
-    app.add_middleware(ObservabilityMiddleware, observability=obs)
-    app.add_middleware(CorrelationIdMiddleware)
-    app.add_middleware(ContentTypeValidationMiddleware, methods=("POST",), paths=("/allocations",))
-    app.add_middleware(
-        BodySizeLimitMiddleware,
-        limit_bytes=settings.max_body_bytes,
-        methods=("POST",),
-        paths=("/allocations",),
-    )
-
     auth_config = AuthenticationConfig(
         static_credentials=settings.static_tokens,
         jwt_secret=settings.jwt_secret,
@@ -410,24 +395,63 @@ def create_app(
     if provider is None and session_factory is not None:
         provider = DatabaseAPIKeyProvider(session_factory, salt=settings.pii_salt)
 
-    app.add_middleware(AuthenticationMiddleware, config=auth_config, observability=obs, api_key_provider=provider)
-
-    app.add_middleware(
-        IdempotencyMiddleware,
-        store=idempotency_store,
-        ttl_seconds=settings.idempotency_ttl_seconds,
-        observability=obs,
-        paths=("/allocations",),
-    )
-
     rate_limiter = RateLimiter(
         backend=rate_backend,
         capacity=settings.rate_limit_burst,
         refill_rate_per_sec=max(settings.rate_limit_per_minute, 1) / 60.0,
     )
-    app.add_middleware(RateLimitMiddleware, limiter=rate_limiter, observability=obs)
-    app.add_middleware(SecurityHeadersMiddleware, allow_origins=settings.allowed_origins)
-    install_cors(app, allow_origins=settings.allowed_origins)
+
+    middleware_stack = [
+        Middleware(ObservabilityMiddleware, observability=obs),
+        Middleware(CorrelationIdMiddleware),
+        Middleware(
+            ContentTypeValidationMiddleware,
+            methods=("POST",),
+            paths=("/allocations",),
+        ),
+        Middleware(
+            BodySizeLimitMiddleware,
+            limit_bytes=settings.max_body_bytes,
+            methods=("POST",),
+            paths=("/allocations",),
+        ),
+        Middleware(
+            AuthenticationMiddleware,
+            config=auth_config,
+            observability=obs,
+            api_key_provider=provider,
+        ),
+        Middleware(
+            IdempotencyMiddleware,
+            store=idempotency_store,
+            ttl_seconds=settings.idempotency_ttl_seconds,
+            observability=obs,
+            paths=("/allocations",),
+        ),
+        Middleware(RateLimitMiddleware, limiter=rate_limiter, observability=obs),
+        Middleware(SecurityHeadersMiddleware, allow_origins=settings.allowed_origins),
+        Middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.allowed_origins),
+            allow_methods=["POST", "GET", "OPTIONS"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "X-API-Key",
+                "X-Request-ID",
+                "X-Correlation-ID",
+            ],
+            expose_headers=["X-Correlation-ID", "X-RateLimit-Remaining"],
+            allow_credentials=False,
+            max_age=600,
+        ),
+    ]
+
+    app = FastAPI(title="Student Allocation API", version="5.0", middleware=middleware_stack)
+    app.state.runtime_extras = runtime_hints
+    app.state.started_at = APP_START_TS
+    app.state.observability = obs
 
     if settings.admin_token and session_factory is not None:
         admin_router = build_admin_router(
@@ -510,13 +534,18 @@ def create_app(
         ]
         return _validation_error_response(detail)
 
-    @app.exception_handler(BodyTooLargeError)
-    async def _body_too_large_handler(_: Request, exc: BodyTooLargeError) -> JSONResponse:
-        return _validation_error_response(exc.detail)
-
-    @app.exception_handler(ContentTypeMismatchError)
-    async def _content_type_handler(_: Request, exc: ContentTypeMismatchError) -> JSONResponse:
-        return _validation_error_response(exc.detail)
+    @app.exception_handler(Exception)
+    async def _unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
+        # Observability middleware records the exception; return deterministic envelope.
+        return build_error_response(
+            HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "code": "INTERNAL",
+                    "message_fa": "خطای داخلی رخ داد",
+                },
+            )
+        )
 
     @app.post("/allocations", response_model=AllocationResponseBody, responses=_error_responses())
     async def create_allocation(request: Request, payload: AllocationRequestBody) -> JSONResponse:

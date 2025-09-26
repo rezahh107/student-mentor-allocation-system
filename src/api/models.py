@@ -191,7 +191,7 @@ class DashboardStatsDTO:
 
 
 # ---- Optional: نتایج اعتبارسنجی ورود اکسل (برای سازگاری سطح مدل) ----
-from dataclasses import dataclass as _dc  # type: ignore[override]
+from dataclasses import dataclass as _dc  # type: ignore[override]  # noqa: E402
 
 
 @_dc

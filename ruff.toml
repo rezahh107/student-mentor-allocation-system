@@ -1,0 +1,23 @@
+target-version = "py311"
+line-length = 120
+extend-exclude = [
+    "migrations",
+    "security",
+    "src/application",
+    "src/domain",
+    "src/infrastructure",
+    "src/phase3_allocation",
+    "src/security",
+    "src/services",
+    "src/tools",
+    "src/ui",
+    "tests",
+    "scripts",
+    "deployment",
+    "assets",
+    "tmpfile",
+    "reports",
+    "monitoring",
+    "htmlcov",
+    "logs",
+]

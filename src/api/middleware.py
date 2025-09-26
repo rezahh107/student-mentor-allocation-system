@@ -150,7 +150,7 @@ async def _send_validation_response(
     if details:
         payload["details"] = details
     headers = {"X-Correlation-ID": correlation_id}
-    response = JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=payload, headers=headers)
+    response = JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content=payload, headers=headers)
     await response(scope, receive, send)
 
 
@@ -497,8 +497,8 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
                 }
             ]
             return build_error_response(
-                HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail={
                         "code": "VALIDATION_ERROR",
                         "message_fa": "درخواست نامعتبر است",

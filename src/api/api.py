@@ -502,7 +502,7 @@ def create_app(
             details = [{"loc": ["body"], "msg": "درخواست نامعتبر است", "type": "value_error"}]
         return build_error_response(
             HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": "VALIDATION_ERROR",
                     "message_fa": "درخواست نامعتبر است",
@@ -565,7 +565,7 @@ def create_app(
             )
         except ValidationError as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": "VALIDATION_ERROR",
                     "message_fa": "اعتبارسنجی ورودی نامعتبر است",

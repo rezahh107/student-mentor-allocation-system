@@ -1,24 +1,27 @@
 from __future__ import annotations
 
-from typing import Optional
 import logging
+from typing import Optional
 
+from PyQt5.QtCore import QDate, QLocale
 from PyQt5.QtWidgets import (
     QComboBox,
+    QDateEdit,
     QDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
 )
 
-from PyQt5.QtCore import QDate, QLocale
-from PyQt5.QtWidgets import QDateEdit, QMessageBox
-
 from src.api.models import StudentDTO, validate_iranian_phone, validate_national_code
 from src.ui._safety import is_minimal_mode, log_minimal_mode, swallow_ui_error
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class StudentDialog(QDialog):
@@ -50,10 +53,13 @@ class StudentDialog(QDialog):
         self.birth_date_edit = QDateEdit()
         self.birth_date_edit.setCalendarPopup(True)
         self.birth_date_edit.setDisplayFormat("yyyy/MM/dd")
-        with swallow_ui_error("تنظیم محلی فارسی برای تاریخ تولد"):
-            self.birth_date_edit.setLocale(QLocale(QLocale.Persian))
-except Exception as exc:
-    logging.getLogger(__name__).warning("تنظیم تعمیق فارسی در دیتابیس داخل‌آمور تنظیم نشد", exc_info=exc)
+        try:
+            with swallow_ui_error("تنظیم محلی فارسی برای تاریخ تولد"):
+                self.birth_date_edit.setLocale(QLocale(QLocale.Persian))
+        except Exception as exc:  # pragma: no cover - defensive logging
+            LOGGER.warning(
+                "تنظیم محلی فارسی برای انتخاب‌گر تاریخ انجام نشد", exc_info=exc
+            )
         self.gender_combo = QComboBox()
         self.gender_combo.addItems(["زن", "مرد"])  # 0,1
         self.center_combo = QComboBox()
@@ -98,7 +104,6 @@ except Exception as exc:
         self.last_name_input.setText(self.student.last_name)
         self.national_code_input.setText(self.student.national_code)
         self.phone_input.setText(self.student.phone)
-        # QDate from date
         bd = self.student.birth_date
         self.birth_date_edit.setDate(QDate(bd.year, bd.month, bd.day))
         self.gender_combo.setCurrentIndex(int(self.student.gender))
@@ -132,14 +137,23 @@ except Exception as exc:
             log_minimal_mode("پذیرش دیالوگ دانش‌آموز در حالت مینیمال")
             super().accept()
             return
-        data = self.get_student_data()
-        if not data["first_name"] or not data["last_name"]:
-            QMessageBox.warning(self, "اعتبارسنجی", "نام و نام خانوادگی الزامی است")
-            return
-        if not validate_national_code(data["national_code"]):
-            QMessageBox.warning(self, "اعتبارسنجی", "کدملی نامعتبر است")
-            return
-        if not validate_iranian_phone(data["phone"]):
-            QMessageBox.warning(self, "اعتبارسنجی", "شماره تلفن نامعتبر است")
-            return
-        super().accept()
+
+        try:
+            data = self.get_student_data()
+            if not data["first_name"] or not data["last_name"]:
+                raise ValueError("نام و نام خانوادگی الزامی است.")
+            if not validate_national_code(data["national_code"]):
+                raise ValueError("کدملی نامعتبر است.")
+            if not validate_iranian_phone(data["phone"]):
+                raise ValueError("شماره تلفن نامعتبر است.")
+            super().accept()
+        except ValueError as error:
+            LOGGER.warning("خطای اعتبارسنجی دیالوگ دانش‌آموز", exc_info=False)
+            QMessageBox.warning(self, "خطای اعتبارسنجی", str(error))
+        except Exception as exc:  # pragma: no cover - unexpected failures
+            LOGGER.exception("بروز خطای غیرمنتظره در ذخیره‌سازی دانش‌آموز", exc_info=exc)
+            QMessageBox.critical(
+                self,
+                "خطای سامانه",
+                "در حین ذخیره‌سازی خطای غیرمنتظره‌ای رخ داد. لطفاً دوباره تلاش کنید.",
+            )

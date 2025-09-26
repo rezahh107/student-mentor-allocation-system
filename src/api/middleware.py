@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
+from starlette.concurrency import iterate_in_threadpool
 
 from .observability import (
     Observability,
@@ -452,19 +453,36 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             return
         if response.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
             return
-        media_type = response.media_type or ""
+        media_type = (response.media_type or response.headers.get("content-type") or "").lower()
         if "json" not in media_type:
             return
-        try:
-            raw_body = response.body
-        except AttributeError:
-            raw_body = b""
-        if isinstance(raw_body, str):
-            raw_body = raw_body.encode("utf-8")
-        if not raw_body:
+
+        body_bytes: bytes = b""
+        body_iterator = getattr(response, "body_iterator", None)
+        if body_iterator is not None:
+            chunks: list[bytes] = []
+            async for chunk in body_iterator:
+                if isinstance(chunk, (bytes, bytearray)):
+                    chunks.append(bytes(chunk))
+                else:
+                    chunks.append(str(chunk).encode("utf-8"))
+            body_bytes = b"".join(chunks)
+            response.body_iterator = iterate_in_threadpool(iter([body_bytes]))
+        else:
+            try:
+                raw_body = response.body
+            except AttributeError:
+                raw_body = b""
+            if isinstance(raw_body, str):
+                body_bytes = raw_body.encode("utf-8")
+            elif isinstance(raw_body, (bytes, bytearray)):
+                body_bytes = bytes(raw_body)
+
+        if not body_bytes:
             return
+
         try:
-            payload = json.loads(raw_body.decode("utf-8"))
+            payload = json.loads(body_bytes.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             return
         headers = {k: v for k, v in response.headers.items() if k.lower().startswith("x-")}

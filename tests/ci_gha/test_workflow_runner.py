@@ -80,7 +80,10 @@ def test_api_hardening_workflow_uses_ci_runner(clean_state: dict[str, str]) -> N
     assert "- name: Select mode env" in content, _debug_context(
         clean_state["namespace"], clean_state["redis_url"], duration_ms, content
     )
-    assert "python tools/ci_pytest_runner.py" in content, _debug_context(
+    assert "python -m tools.ci_pytest_runner" in content, _debug_context(
+        clean_state["namespace"], clean_state["redis_url"], duration_ms, content
+    )
+    assert "python tools/ci_pytest_runner.py" not in content, _debug_context(
         clean_state["namespace"], clean_state["redis_url"], duration_ms, content
     )
     assert "pytest -q -k \"excel or admin" not in content, _debug_context(

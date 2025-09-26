@@ -64,7 +64,7 @@ jobs:
 
       - name: Run targeted pytest suite (via CI runner)
         run: |
-          python tools/ci_pytest_runner.py --mode ${{ matrix.mode }} --flush-redis auto --probe-mw-order auto --p95-samples 5
+          python -m tools.ci_pytest_runner --mode ${{ matrix.mode }} --flush-redis auto --probe-mw-order auto --p95-samples 5
 
       - name: Run full pytest smoke (nightly)
         if: github.event_name == 'schedule'

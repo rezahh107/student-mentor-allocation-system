@@ -5,6 +5,8 @@ import warnings
 
 import pytest
 
+pytest_plugins = ["tests.fixtures.httpx_clients"]
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """رفتار اخطارهای فرسودگی را در محیط محلی ملایم می‌کند."""

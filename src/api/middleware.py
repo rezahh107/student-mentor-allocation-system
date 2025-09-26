@@ -30,7 +30,7 @@ from .observability import (
 )
 from .patterns import ascii_token_pattern, zero_width_pattern
 from .idempotency_store import IdempotencyConflictError, IdempotencyRecord, IdempotencyStore
-from .rate_limit_backends import RateLimitBackend, RateLimitDecision
+from .rate_limit_backends import RateLimitBackend, RateLimitDecision, redis_key
 from .security_hardening import validate_jwt_claims
 
 ASCII_TOKEN = ascii_token_pattern(512)
@@ -149,7 +149,8 @@ async def _send_validation_response(
     }
     if details:
         payload["details"] = details
-    headers = {"X-Correlation-ID": correlation_id}
+    headers = {"X-Correlation-ID": correlation_id, "X-Error-Code": "VALIDATION_ERROR"}
+    scope.setdefault("state", {})["error_code"] = "VALIDATION_ERROR"
     response = JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content=payload, headers=headers)
     await response(scope, receive, send)
 
@@ -592,12 +593,17 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
 class RateLimiter:
     """Sliding window limiter delegating to a backend."""
 
-    def __init__(self, *, backend: RateLimitBackend, capacity: int, refill_rate_per_sec: float) -> None:
+    def __init__(self, *, backend: RateLimitBackend, capacity: int, refill_rate_per_sec: float, namespace: str) -> None:
         self._backend = backend
         self._capacity = capacity
         self._refill_rate = refill_rate_per_sec
+        self._namespace = namespace
 
-    async def consume(self, key: str) -> RateLimitDecision:
+    def build_key(self, route: str, consumer: str) -> str:
+        return redis_key(self._namespace, "rl", route, consumer)
+
+    async def consume(self, route: str, consumer: str) -> RateLimitDecision:
+        key = self.build_key(route, consumer)
         return await self._backend.consume(key, capacity=self._capacity, refill_rate_per_sec=self._refill_rate)
 
 
@@ -621,9 +627,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             consumer_id = request.client.host if request.client and request.client.host else "anonymous"
         request.state.consumer_id = consumer_id
         route = request.scope.get("path", request.url.path)
-        decision = await self._limiter.consume(f"rl:{route}:{consumer_id}")
+        decision = await self._limiter.consume(route, consumer_id)
         if not decision.allowed:
             self._observability.increment_rate_limit(route)
+            request.state.error_code = "RATE_LIMIT_EXCEEDED"
             retry_after = max(int(math.ceil(decision.retry_after)), 1)
             headers = {
                 "Retry-After": str(retry_after),
@@ -659,6 +666,14 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             status_code = response.status_code
             outcome = "SUCCESS" if 200 <= status_code < 300 else "ERROR"
+            if error_code is None:
+                header_code = response.headers.get("X-Error-Code")
+                if header_code:
+                    error_code = header_code
+                else:
+                    code_hint = getattr(request.state, "error_code", None)
+                    if code_hint:
+                        error_code = code_hint
             return response
         except HTTPException as exc:
             status_code = exc.status_code
@@ -695,6 +710,10 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
                     status=status_code,
                     latency_ms=round(latency * 1000, 3),
                 )
+            if error_code is None:
+                code_hint = getattr(request.state, "error_code", None)
+                if code_hint:
+                    error_code = code_hint
             self._observability.log_request(
                 path=path,
                 method=method,
@@ -726,6 +745,7 @@ def build_error_response(exc: HTTPException) -> JSONResponse:
         payload["error"]["hint"] = detail["hint"]
     headers = dict(exc.headers or {})
     headers.setdefault("X-Correlation-ID", correlation_id)
+    headers.setdefault("X-Error-Code", code)
     return JSONResponse(status_code=exc.status_code, content=payload, headers=headers)
 
 

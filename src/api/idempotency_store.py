@@ -8,6 +8,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from .rate_limit_backends import redis_key
+
 try:  # pragma: no cover - optional dependency
     import redis.asyncio as redis_asyncio
 except Exception:  # pragma: no cover - graceful fallback
@@ -113,5 +115,5 @@ class RedisIdempotencyStore:
         await self._client.aclose()
 
     def _key(self, key: str) -> str:
-        return f"{self._namespace}:idempotency:{key}"
+        return redis_key(self._namespace, "idem", key)
 

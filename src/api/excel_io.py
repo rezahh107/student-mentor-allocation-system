@@ -1,11 +1,15 @@
 """Streaming Persian-friendly Excel and CSV utilities."""
 from __future__ import annotations
 
+import contextlib
 import csv
+import gc
 import io
+import tempfile
 import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -33,19 +37,53 @@ class ExcelMemoryError(RuntimeError):
     """Raised when streaming exceeds the configured memory budget."""
 
 
-class _BoundedBytesIO(io.BytesIO):
-    """A BytesIO variant enforcing an upper bound on written bytes."""
+class _BoundedBuffer:
+    """A streaming buffer that tracks whether the size budget was exceeded."""
 
     def __init__(self, *, limit: int) -> None:
-        super().__init__()
         self._limit = max(1, limit)
+        self._file = tempfile.SpooledTemporaryFile(max_size=self._limit)
+        self._overflowed = False
 
-    def write(self, data: object) -> int:  # noqa: D401 - override
+    def write(self, data: object) -> int:
         if not isinstance(data, (bytes, bytearray, memoryview)):
             raise TypeError("expected bytes-like object")
-        if self.tell() + len(data) > self._limit:
-            raise ExcelMemoryError("حجم خروجی اکسل از حد مجاز فراتر رفت")
-        return super().write(data)
+        chunk = bytes(data)
+        if self._file.tell() + len(chunk) > self._limit:
+            self._overflowed = True
+        return self._file.write(chunk)
+
+    def getvalue(self) -> bytes:
+        self._file.seek(0)
+        return self._file.read()
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        return self._file.seek(offset, whence)
+
+    def tell(self) -> int:
+        return self._file.tell()
+
+    def read(self, size: int = -1) -> bytes:
+        return self._file.read(size)
+
+    def flush(self) -> None:
+        self._file.flush()
+
+    def close(self) -> None:
+        self._file.close()
+
+    @property
+    def overflowed(self) -> bool:
+        return self._overflowed
+
+
+@contextmanager
+def _bounded_buffer(limit: int) -> Iterator[_BoundedBuffer]:
+    buffer = _BoundedBuffer(limit=limit)
+    try:
+        yield buffer
+    finally:
+        buffer.close()
 
 
 @dataclass(slots=True)
@@ -146,31 +184,37 @@ def write_xlsx(
     worksheet = workbook.create_sheet(title=sheet_name)
     for row in rows:
         worksheet.append([_prepare_xlsx_cell(cell) for cell in row])
-    raw_buffer = _BoundedBytesIO(limit=memory_limit_bytes)
-    try:
+    with _bounded_buffer(memory_limit_bytes) as raw_buffer:
         workbook.save(raw_buffer)
-    except ExcelMemoryError:
-        workbook.close()
-        raise
+        if raw_buffer.overflowed:
+            _close_write_only_handles(workbook)
+            workbook.close()
+            gc.collect()
+            raise ExcelMemoryError("حجم خروجی اکسل از حد مجاز فراتر رفت")
+        payload = raw_buffer.getvalue()
+    _close_write_only_handles(workbook)
     workbook.close()
-    return _repack_xlsx(raw_buffer.getvalue(), memory_limit_bytes)
+    gc.collect()
+    return _repack_xlsx(payload, memory_limit_bytes)
 
 
 def _repack_xlsx(payload: bytes, memory_limit_bytes: int) -> bytes:
     """Repack XLSX bytes with deterministic ordering and timestamps."""
 
-    target = _BoundedBytesIO(limit=memory_limit_bytes)
-    with zipfile.ZipFile(io.BytesIO(payload), "r") as source:
-        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as sink:
-            for info in sorted(source.infolist(), key=lambda entry: entry.filename):
-                data = source.read(info.filename)
-                if info.filename == "docProps/core.xml":
-                    data = _normalise_core_props(data)
-                new_info = zipfile.ZipInfo(filename=info.filename, date_time=(2024, 1, 1, 0, 0, 0))
-                new_info.compress_type = zipfile.ZIP_DEFLATED
-                new_info.external_attr = info.external_attr
-                sink.writestr(new_info, data)
-    return target.getvalue()
+    with _bounded_buffer(memory_limit_bytes) as target:
+        with zipfile.ZipFile(io.BytesIO(payload), "r") as source:
+            with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as sink:
+                for info in sorted(source.infolist(), key=lambda entry: entry.filename):
+                    data = source.read(info.filename)
+                    if info.filename == "docProps/core.xml":
+                        data = _normalise_core_props(data)
+                    new_info = zipfile.ZipInfo(filename=info.filename, date_time=(2024, 1, 1, 0, 0, 0))
+                    new_info.compress_type = zipfile.ZIP_DEFLATED
+                    new_info.external_attr = info.external_attr
+                    sink.writestr(new_info, data)
+        if target.overflowed:
+            raise ExcelMemoryError("حجم خروجی اکسل از حد مجاز فراتر رفت")
+        return target.getvalue()
 
 
 def _normalise_core_props(payload: bytes) -> bytes:
@@ -187,3 +231,18 @@ def _normalise_core_props(payload: bytes) -> bytes:
         if element is not None:
             element.text = constant
     return ET.tostring(root, encoding="utf-8", xml_declaration=False)
+def _close_write_only_handles(workbook: "Workbook") -> None:
+    """Best-effort cleanup for openpyxl write-only internals."""
+
+    if not HAS_OPENPYXL:  # pragma: no cover - defensive guard
+        return
+    with contextlib.suppress(Exception):
+        archive = getattr(workbook, "_archive", None)
+        if archive is not None:
+            archive.close()
+    sheets = getattr(workbook, "_sheets", [])
+    for sheet in sheets:
+        writer = getattr(sheet, "_writer", None)
+        if writer is not None:
+            with contextlib.suppress(Exception):
+                writer.close()

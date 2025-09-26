@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import codecs
 import io
+import warnings
 from datetime import datetime, timezone
 
 import pytest
@@ -63,3 +64,13 @@ def test_write_xlsx_memory_limit_guard() -> None:
     rows = [["الف", "ب"] for _ in range(10)]
     with pytest.raises(ExcelMemoryError):
         write_xlsx(rows, sheet_name="Students", memory_limit_bytes=10)
+
+
+@pytest.mark.skipif(not OPENPYXL_AVAILABLE, reason="openpyxl extra not installed")
+def test_excel_memory_guard_closes_handles() -> None:
+    rows = [["الف", "ب"] for _ in range(10)]
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        with pytest.raises(ExcelMemoryError):
+            write_xlsx(rows, sheet_name="Students", memory_limit_bytes=10)
+    assert not any(w.category is pytest.PytestUnraisableExceptionWarning for w in captured)

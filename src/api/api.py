@@ -379,9 +379,9 @@ def create_app(
             latency_budget_ms=settings.latency_budget_ms,
         )
     )
+    namespace_root = settings.redis_namespace or "alloc"
+    instance_namespace = f"{namespace_root}:{settings.instance_id}"
     if settings.redis_url:
-        namespace_root = settings.redis_namespace or "alloc"
-        instance_namespace = f"{namespace_root}:{settings.instance_id}"
         rate_backend: RateLimitBackend = RedisRateLimitBackend(settings.redis_url, namespace=instance_namespace)
         idempotency_store: IdempotencyStore = RedisIdempotencyStore(settings.redis_url, namespace=instance_namespace)
     else:
@@ -405,6 +405,7 @@ def create_app(
         backend=rate_backend,
         capacity=settings.rate_limit_burst,
         refill_rate_per_sec=max(settings.rate_limit_per_minute, 1) / 60.0,
+        namespace=instance_namespace,
     )
 
     middleware_stack = [

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Iterator
 
 import pytest
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry
 
@@ -13,6 +17,11 @@ from src.api.api import HardenedAPIConfig, create_app
 from src.api.middleware import StaticCredential
 from src.api.observability import iter_registry_metrics
 from src.phase3_allocation import AllocationRequest, AllocationResult
+
+try:  # pragma: no cover - optional dependency guard
+    import redis
+except Exception:  # pragma: no cover
+    redis = None
 
 VALID_STUDENT_ID = "0012345679"
 VALID_MENTOR_ID = 128
@@ -101,6 +110,23 @@ def api_client() -> tuple[TestClient, DummyAllocator, CollectorRegistry, dict[st
         "api_key": api_key_value,
     }
     return TestClient(app, raise_server_exceptions=False), allocator, registry, secrets_map
+
+
+@pytest.fixture
+def redis_url_for_api() -> Iterator[str]:
+    if redis is None:
+        pytest.skip("redis extra not installed")
+    url = os.environ.get("REDIS_URL", "redis://localhost:6379/15")
+    client = redis.Redis.from_url(url)
+    try:
+        client.ping()
+    except Exception as exc:  # pragma: no cover - connection issues
+        pytest.skip(f"redis not available: {exc}")
+    client.flushdb()
+    try:
+        yield url
+    finally:
+        client.flushdb()
 
 
 def _auth_headers(token: str, **extra: str) -> dict[str, str]:
@@ -314,3 +340,40 @@ def test_status_endpoint_requires_read_scope(api_client: tuple[TestClient, Dummy
     assert response.status_code == 200
     forbidden = client.get("/status", headers=_auth_headers("InvalidToken000000"))
     assert forbidden.status_code == 401
+
+
+@pytest.mark.skipif(redis is None, reason="redis extra not installed")
+def test_oversized_body_under_auth_returns_422(redis_url_for_api: str) -> None:
+    registry = CollectorRegistry()
+    allocator = DummyAllocator()
+    write_token = "ValidToken1234567890"
+    config = HardenedAPIConfig(
+        allowed_origins=("https://portal.example",),
+        max_body_bytes=32768,
+        rate_limit_per_minute=2,
+        rate_limit_burst=2,
+        idempotency_ttl_seconds=3600,
+        pii_salt="test-salt",
+        static_tokens={
+            write_token: StaticCredential(
+                token=write_token,
+                scopes=frozenset({"alloc:write"}),
+                consumer_id="token:write",
+            ),
+        },
+        metrics_token="metrics-secret",
+        metrics_ip_allowlist={"127.0.0.1", "testclient"},
+        redis_url=redis_url_for_api,
+        redis_namespace="tenant-oversize",
+        required_scopes={"/allocations": {"alloc:write"}},
+    )
+    config.instance_id = "oversize-instance"
+    app = create_app(allocator, config=config, registry=registry)
+    client = TestClient(app, raise_server_exceptions=False)
+    payload = _base_payload()
+    payload["extra"] = "x" * 40000
+    response = client.post("/allocations", headers=_auth_headers(write_token), json=payload)
+    body = response.json()
+    assert response.status_code == 422
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert response.headers.get("X-Error-Code") == "VALIDATION_ERROR"

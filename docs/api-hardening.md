@@ -228,3 +228,9 @@ curl -s -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json; c
 - در صورت نیاز به بازتنظیم محدودیت حجم بدنه یا نرخ، متغیرهای محیطی `ALLOC_API_MAX_BODY` و `ALLOC_API_RATE_PER_MIN` استفاده شوند.
 - نمک PII (`ALLOC_API_PII_SALT`) را در محیط تولید مقداردهی کنید تا هش‌ها قابل ردیابی نباشند.
 - برای افزودن scope جدید، نگاشت `ALLOC_API_REQUIRED_SCOPES` به شکل `"/path=scope1 scope2;..."` در محیط تنظیم شود.
+
+
+### نکات جدید برای فاز سخت‌سازی
+
+- در محیط‌های تستی که کتابخانهٔ **httpx** نصب نشده است، فیکچر `httpx_client_factory` به‌صورت خودکار از `starlette.testclient.TestClient` استفاده می‌کند تا اجرای pytest بدون وابستگی اضافی انجام شود.
+- برای هر استقرار، مقدار `redis_namespace` (یا مقدار پیش‌فرض برگرفته از شناسهٔ نمونه) به‌همراه `instance_id` در کلیدهای Redis اعمال می‌شود؛ کلیدها به‌صورت `rl:{namespace}:{route}:{consumer}` و `idem:{namespace}:{token}` ساخته می‌شوند تا در خوشه‌های چند-نمونه‌ای تداخلی رخ ندهد.

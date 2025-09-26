@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Callable
 
 import pytest
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry
 from sqlalchemy import create_engine

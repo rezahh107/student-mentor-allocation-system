@@ -4,6 +4,8 @@ import os
 from typing import Iterator
 
 import pytest
+
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry
 
@@ -130,3 +132,42 @@ def test_idempotency_shared_across_instances(redis_url: str) -> None:
     assert second.status_code == first.status_code
     assert second.headers["X-Idempotent-Replay"] == "true"
     assert len(allocator.calls) == calls_after_first
+
+
+def test_redis_namespaces_are_isolated(redis_url: str) -> None:
+    if redis is None:  # pragma: no cover - defensive
+        pytest.skip("redis extra not installed")
+    redis.Redis.from_url(redis_url).flushdb()
+    allocator_a = CountingAllocator()
+    allocator_b = CountingAllocator()
+    config_a = _config(redis_url)
+    config_a.redis_namespace = "tenantA"
+    config_a.instance_id = "shared"
+    config_b = _config(redis_url)
+    config_b.redis_namespace = "tenantB"
+    config_b.instance_id = "shared"
+    client_a = _build_app(config_a, allocator_a)
+    client_b = _build_app(config_b, allocator_b)
+    token_a = next(iter(config_a.static_tokens.keys()))
+    token_b = next(iter(config_b.static_tokens.keys()))
+    payload = {
+        "student_id": "0012345679",
+        "mentor_id": 3,
+        "reg_center": 1,
+        "reg_status": 1,
+        "gender": 0,
+        "payload": {},
+        "metadata": {},
+    }
+    first = client_a.post("/allocations", headers=_auth_headers(token_a), json=payload)
+    assert first.status_code == 200
+    parallel = client_b.post("/allocations", headers=_auth_headers(token_b), json=payload)
+    assert parallel.status_code == 200
+    idem_headers_a = _auth_headers(token_a, **{"Idempotency-Key": "NamespaceKey123456"})
+    idem_headers_b = _auth_headers(token_b, **{"Idempotency-Key": "NamespaceKey123456"})
+    replay_a = client_a.post("/allocations", headers=idem_headers_a, json=payload)
+    replay_b = client_b.post("/allocations", headers=idem_headers_b, json=payload)
+    assert replay_a.status_code == 200
+    assert replay_b.status_code == 200
+    assert replay_b.headers.get("X-Idempotent-Replay") != "true"
+    assert len(allocator_b.calls) == 2

@@ -13,6 +13,20 @@ except Exception:  # pragma: no cover - graceful fallback when extra not install
     redis_asyncio = None
 
 
+def redis_key(namespace: str, *parts: str) -> str:
+    """Build a Redis key using the common namespace layout."""
+
+    if not namespace:
+        raise ValueError("namespace must not be empty")
+    cleaned = [str(part) for part in parts if str(part)]
+    if not cleaned:
+        raise ValueError("at least one key segment is required")
+    prefix, *rest = cleaned
+    segments = [prefix, namespace]
+    segments.extend(rest)
+    return ":".join(segments)
+
+
 @dataclass(slots=True)
 class RateLimitDecision:
     """Outcome of a rate-limit consumption attempt."""
@@ -120,7 +134,7 @@ class RedisRateLimitBackend:
     ) -> RateLimitDecision:
         now = time.monotonic()
         ttl = max(int(math.ceil(capacity / max(refill_rate_per_sec, 0.0001))), 1) * 2
-        namespaced = f"{self._namespace}:ratelimit:{key}"
+        namespaced = key
         result = await self._script(
             keys=[namespaced],
             args=[capacity, refill_rate_per_sec, now, ttl],

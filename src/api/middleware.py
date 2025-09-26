@@ -252,12 +252,13 @@ class BodySizeLimitMiddleware:
 
         body = bytearray()
         buffered: list[Message] = []
+        tail: list[Message] = []
 
         while True:
             message = await receive()
             message_type = message.get("type")
             if message_type != "http.request":
-                buffered.append(message)
+                tail.append(message)
                 if not message.get("more_body", False):
                     break
                 continue
@@ -289,21 +290,23 @@ class BodySizeLimitMiddleware:
             if not more_body:
                 break
 
+        body_bytes = bytes(body)
         scope_state = scope.setdefault("state", {})
-        scope_state["raw_body"] = bytes(body)
+        scope_state["raw_body"] = body_bytes
 
         if not buffered:
-            buffered.append({"type": "http.request", "body": b"", "more_body": False})
+            buffered.append({"type": "http.request", "body": body_bytes, "more_body": False})
 
+        replay_messages = buffered + tail
         index = 0
 
         async def replay_receive() -> Message:
             nonlocal index
-            if index < len(buffered):
-                message = buffered[index]
+            if index < len(replay_messages):
+                message = replay_messages[index]
                 index += 1
                 return message
-            return {"type": "http.request", "body": b"", "more_body": False}
+            return await receive()
 
         await self.app(scope, replay_receive, send)
 

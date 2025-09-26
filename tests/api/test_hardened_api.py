@@ -195,11 +195,11 @@ def test_api_key_authentication(api_client: tuple[TestClient, DummyAllocator, Co
 
 def test_rate_limiting_enforced(api_client: tuple[TestClient, DummyAllocator, CollectorRegistry, dict[str, str]]) -> None:
     client, _, _, secrets_map = api_client
-    headers = _auth_headers(secrets_map["write_token"], **{"Idempotency-Key": "IdemToken123456"})
+    headers = _auth_headers(secrets_map["write_token"], **{"Idempotency-Key": "IdemToken12345678"})
     payload = _base_payload()
     client.post("/allocations", headers=headers, json=payload)
-    client.post("/allocations", headers={**headers, "Idempotency-Key": "IdemToken123457"}, json=payload)
-    response = client.post("/allocations", headers={**headers, "Idempotency-Key": "IdemToken123458"}, json=payload)
+    client.post("/allocations", headers={**headers, "Idempotency-Key": "IdemToken12345679"}, json=payload)
+    response = client.post("/allocations", headers={**headers, "Idempotency-Key": "IdemToken12345680"}, json=payload)
     assert response.status_code == 429
     assert response.headers.get("Retry-After") is not None
     assert response.json()["error"]["code"] == "RATE_LIMIT_EXCEEDED"

@@ -1,0 +1,19 @@
+strategy:
+  matrix:
+    mode: [stub, redis]
+steps:
+  - name: Install pytest runner dependencies
+    run: |
+      python -m pip install --upgrade pip
+      pip install -e ".[fastapi,redis,dev]" || true
+      pip install fastapi redis pytest-asyncio uvicorn httpx pytest prometheus-client
+  - name: Select mode env
+    run: |
+      if [ "${{ matrix.mode }}" = "stub" ]; then
+        echo "TEST_REDIS_STUB=1" >> $GITHUB_ENV
+      else
+        echo "PYTEST_REDIS=1" >> $GITHUB_ENV
+      fi
+  - name: Run targeted pytest suite (via CI runner)
+    run: |
+      python tools/ci_pytest_runner.py --mode ${{ matrix.mode }} --flush-redis auto --probe-mw-order auto --p95-samples 5

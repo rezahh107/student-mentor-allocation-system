@@ -28,6 +28,7 @@ from .observability import (
     set_request_id,
 )
 from .patterns import ascii_token_pattern, zero_width_pattern
+from .idempotency_store import IdempotencyConflictError, IdempotencyRecord, IdempotencyStore
 from .rate_limit_backends import RateLimitBackend, RateLimitDecision
 from .security_hardening import validate_jwt_claims
 
@@ -358,6 +359,127 @@ class AuthContext:
     subject: str
 
 
+
+class IdempotencyMiddleware(BaseHTTPMiddleware):
+    """Caches idempotent responses and short-circuits replays."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        store: IdempotencyStore,
+        ttl_seconds: int,
+        observability: Observability,
+        paths: Iterable[str] | None = None,
+    ) -> None:
+        super().__init__(app)
+        self._store = store
+        self._ttl_seconds = ttl_seconds
+        self._observability = observability
+        self._paths = tuple(paths or ())
+
+    def _path_allowed(self, path: str) -> bool:
+        if not self._paths:
+            return True
+        return any(path == candidate or path.startswith(f"{candidate}/") for candidate in self._paths)
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        request.state.idempotency_key = None
+        request.state.idempotency_body_hash = None
+        request.state.idempotency_replay = False
+
+        if request.method.upper() != "POST" or not self._path_allowed(request.url.path):
+            return await call_next(request)
+
+        raw_key = request.headers.get("Idempotency-Key")
+        if not raw_key:
+            return await call_next(request)
+
+        clean_key = _sanitize_header_token(raw_key)
+        if not clean_key or not ASCII_TOKEN.fullmatch(clean_key):
+            detail = [
+                {
+                    "loc": ["header", "Idempotency-Key"],
+                    "msg": "قالب Idempotency-Key نامعتبر است",
+                    "type": "value_error.header.idempotency_key",
+                }
+            ]
+            return build_error_response(
+                HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "code": "VALIDATION_ERROR",
+                        "message_fa": "درخواست نامعتبر است",
+                        "details": detail,
+                    },
+                )
+            )
+
+        request.state.idempotency_key = clean_key
+        body = getattr(request.state, "raw_body", None)
+        if body is None:
+            body = await request.body()
+            request.state.raw_body = body
+        body_hash = _hash_body(body)
+        request.state.idempotency_body_hash = body_hash
+
+        try:
+            record = await self._store.get(clean_key, body_hash=body_hash, ttl_seconds=self._ttl_seconds)
+        except IdempotencyConflictError:
+            self._observability.increment_idempotency("conflict")
+            return build_error_response(
+                HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "CONFLICT", "message_fa": "کلید ایدمپوتنسی با بدنهٔ متفاوت تکرار شده است"},
+                )
+            )
+
+        if record is not None:
+            self._observability.increment_idempotency("hit")
+            request.state.idempotency_replay = True
+            headers = dict(record.headers)
+            headers.setdefault("X-Correlation-ID", get_correlation_id())
+            headers["X-Idempotent-Replay"] = "true"
+            return JSONResponse(status_code=record.status_code, content=record.response, headers=headers)
+
+        self._observability.increment_idempotency("miss")
+        response = await call_next(request)
+        await self._store_response(clean_key, body_hash, response)
+        return response
+
+    async def _store_response(self, key: str, body_hash: str, response: Response) -> None:
+        if not key or not body_hash:
+            return
+        if response.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+            return
+        media_type = response.media_type or ""
+        if "json" not in media_type:
+            return
+        try:
+            raw_body = response.body
+        except AttributeError:
+            raw_body = b""
+        if isinstance(raw_body, str):
+            raw_body = raw_body.encode("utf-8")
+        if not raw_body:
+            return
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+        headers = {k: v for k, v in response.headers.items() if k.lower().startswith("x-")}
+        headers.setdefault("X-Correlation-ID", get_correlation_id())
+        record = IdempotencyRecord(
+            body_hash=body_hash,
+            response=payload,
+            status_code=response.status_code,
+            headers=headers,
+            stored_at=time.time(),
+        )
+        await self._store.set(key, record, ttl_seconds=self._ttl_seconds)
+        self._observability.increment_idempotency("stored")
+
+
 class RateLimiter:
     """Sliding window limiter delegating to a backend."""
 
@@ -501,13 +623,21 @@ def build_error_response(exc: HTTPException) -> JSONResponse:
             "correlation_id": correlation_id,
         }
     }
-    if "details" in detail and detail["details"]:
-        payload["error"]["details"] = detail["details"]
-    if "hint" in detail and detail["hint"]:
+    details = detail.get("details") if isinstance(detail, dict) else None
+    if details:
+        payload["details"] = details
+    if isinstance(detail, dict) and detail.get("hint"):
         payload["error"]["hint"] = detail["hint"]
     headers = dict(exc.headers or {})
     headers.setdefault("X-Correlation-ID", correlation_id)
     return JSONResponse(status_code=exc.status_code, content=payload, headers=headers)
+
+
+
+def _hash_body(body: bytes) -> str:
+    digest = hashlib.sha256()
+    digest.update(body)
+    return digest.hexdigest()
 
 
 def _sanitize_header_token(value: str) -> str:

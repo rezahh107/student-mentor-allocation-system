@@ -20,8 +20,6 @@ from sqlalchemy.orm import Session
 
 from src.api.admin_ui import AdminConfig, build_admin_router
 from src.api.idempotency_store import (
-    IdempotencyConflictError,
-    IdempotencyRecord,
     IdempotencyStore,
     InMemoryIdempotencyStore,
     RedisIdempotencyStore,
@@ -35,6 +33,7 @@ from src.api.middleware import (
     ContentTypeValidationMiddleware,
     ContentTypeMismatchError,
     CorrelationIdMiddleware,
+    IdempotencyMiddleware,
     ObservabilityMiddleware,
     RateLimitMiddleware,
     RateLimiter,
@@ -413,6 +412,14 @@ def create_app(
 
     app.add_middleware(AuthenticationMiddleware, config=auth_config, observability=obs, api_key_provider=provider)
 
+    app.add_middleware(
+        IdempotencyMiddleware,
+        store=idempotency_store,
+        ttl_seconds=settings.idempotency_ttl_seconds,
+        observability=obs,
+        paths=("/allocations",),
+    )
+
     rate_limiter = RateLimiter(
         backend=rate_backend,
         capacity=settings.rate_limit_burst,
@@ -513,36 +520,6 @@ def create_app(
 
     @app.post("/allocations", response_model=AllocationResponseBody, responses=_error_responses())
     async def create_allocation(request: Request, payload: AllocationRequestBody) -> JSONResponse:
-        idempotency_key = request.headers.get("Idempotency-Key")
-        if idempotency_key:
-            idempotency_key = _canonical_string(idempotency_key)
-            if not ASCII_TOKEN.fullmatch(idempotency_key):
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail={"code": "VALIDATION_ERROR", "message_fa": "قالب Idempotency-Key نامعتبر است"},
-                )
-        body_hash = _hash_payload(payload.model_dump(mode="json"))
-        cached_entry: IdempotencyRecord | None = None
-        if idempotency_key:
-            try:
-                cached_entry = await idempotency_store.get(
-                    idempotency_key,
-                    body_hash=body_hash,
-                    ttl_seconds=settings.idempotency_ttl_seconds,
-                )
-            except IdempotencyConflictError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail={"code": "CONFLICT", "message_fa": "کلید ایدمپوتنسی با بدنهٔ متفاوت تکرار شده است"},
-                ) from exc
-            if cached_entry:
-                obs.increment_idempotency("hit")
-                headers = {**cached_entry.headers, "X-Idempotent-Replay": "true"}
-                headers.setdefault("X-Correlation-ID", get_correlation_id())
-                return JSONResponse(status_code=cached_entry.status_code, content=cached_entry.response, headers=headers)
-            else:
-                obs.increment_idempotency("miss")
-
         try:
             alloc_request = AllocationRequest(
                 studentId=payload.student_id,
@@ -592,19 +569,6 @@ def create_app(
         ).model_dump(by_alias=True)
         status_code = status.HTTP_200_OK if result.status in {"OK", "ALREADY_ASSIGNED", "CONFIRMED", "DRY_RUN"} else status.HTTP_409_CONFLICT
         headers = {"X-Correlation-ID": get_correlation_id()}
-        if idempotency_key:
-            await idempotency_store.set(
-                idempotency_key,
-                IdempotencyRecord(
-                    body_hash=body_hash,
-                    response=response_body,
-                    status_code=status_code,
-                    stored_at=time.time(),
-                    headers=headers,
-                ),
-                ttl_seconds=settings.idempotency_ttl_seconds,
-            )
-            obs.increment_idempotency("stored")
         return JSONResponse(status_code=status_code, content=response_body, headers=headers)
 
     @app.get("/status", response_model=StatusResponse, responses=_error_responses())
@@ -630,10 +594,6 @@ def create_app(
 
     return app
 
-
-def _hash_payload(payload: Mapping[str, Any]) -> str:
-    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return _hash_identifier(serialized)
 
 
 def _hash_identifier(value: str) -> str:

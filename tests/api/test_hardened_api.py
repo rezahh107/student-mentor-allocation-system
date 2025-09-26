@@ -156,6 +156,8 @@ def test_zero_width_student_id_rejected(api_client: tuple[TestClient, DummyAlloc
     body = response.json()
     assert response.status_code == 422
     assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert body.get("details")
+    assert any("student_id" in detail.get("loc", []) for detail in body["details"])
 
 
 def test_missing_auth_returns_401(api_client: tuple[TestClient, DummyAllocator, CollectorRegistry, dict[str, str]]) -> None:
@@ -232,8 +234,11 @@ def test_body_size_guard(api_client: tuple[TestClient, DummyAllocator, Collector
     bloated = _base_payload()
     bloated["extra"] = "x" * 40000
     response = client.post("/allocations", headers=_auth_headers(secrets_map["write_token"]), json=bloated)
+    body = response.json()
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert body.get("details")
+    assert any(detail.get("type") == "value_error.body_size" for detail in body["details"])
 
 
 def test_content_type_guard(api_client: tuple[TestClient, DummyAllocator, CollectorRegistry, dict[str, str]]) -> None:
@@ -241,8 +246,10 @@ def test_content_type_guard(api_client: tuple[TestClient, DummyAllocator, Collec
     headers = _auth_headers(secrets_map["write_token"])
     headers["Content-Type"] = "application/json"
     response = client.post("/allocations", headers=headers, json=_base_payload())
+    body = response.json()
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert any(detail.get("loc") == ["header", "Content-Type"] for detail in body.get("details", []))
 
 
 def test_metrics_requires_auth_or_allowlist(api_client: tuple[TestClient, DummyAllocator, CollectorRegistry, dict[str, str]]) -> None:
@@ -298,7 +305,7 @@ def test_validation_errors_include_details(api_client: tuple[TestClient, DummyAl
     body = response.json()
     assert response.status_code == 422
     assert body["error"]["code"] == "VALIDATION_ERROR"
-    assert body["error"].get("details") is not None
+    assert body.get("details")
 
 
 def test_status_endpoint_requires_read_scope(api_client: tuple[TestClient, DummyAllocator, CollectorRegistry, dict[str, str]]) -> None:

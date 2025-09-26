@@ -166,3 +166,26 @@ class OutboxMessageModel(Base):
         Index("ix_outbox_dispatch", "status", "available_at"),
     )
 
+
+class APIKeyModel(Base):
+    """API key registry with hashed storage."""
+
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False)
+    key_prefix = Column(String(16), nullable=False, unique=True)
+    key_hash = Column(String(128), nullable=False)
+    salt = Column(String(64), nullable=False)
+    scopes = Column(String(256), nullable=False, default="")
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    disabled_at = Column(DateTime(timezone=True), nullable=True)
+    rotation_hint = Column(String(256), nullable=True, default="")
+
+    __table_args__ = (
+        Index("ix_api_keys_active", "is_active"),
+    )
+

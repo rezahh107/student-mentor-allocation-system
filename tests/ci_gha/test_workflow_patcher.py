@@ -94,6 +94,10 @@ def test_patcher_updates_workflow_with_matrix(clean_state, retry_call, tmp_path,
     assert "Select mode env" in updated, "گام انتخاب env افزوده نشد"
     assert RUNNER_COMMAND in updated, "دستور نهایی جایگزین نشد"
     assert "PYTEST_DISABLE_PLUGIN_AUTOLOAD" in updated, "env باید تنظیم شود"
+    assert "pip install aiohttp sqlalchemy python-dateutil" in updated, "بسته‌های تکمیلی باید نصب شوند"
+    assert (
+        "pip install fastapi uvicorn httpx pytest pytest-asyncio redis prometheus-client" in updated
+    ), "بسته‌های اصلی باید نصب شوند"
 
 
 def test_patcher_idempotent(clean_state, retry_call, tmp_path, capsys):
@@ -109,6 +113,39 @@ def test_patcher_idempotent(clean_state, retry_call, tmp_path, capsys):
     assert rc_second == 0, "اجرای دوم باید موفق باشد"
     output = capsys.readouterr().out
     assert "PATCH_IDEMPOTENT" in output, f"انتظار پیام بی‌تغییری داشتیم: {output}"
+
+
+def test_install_step_upgraded_with_new_packages(clean_state, retry_call, tmp_path):
+    repo_root = tmp_path / "repo-install-upgrade"
+    repo_root.mkdir()
+    workflow_file = _prepare_repo_with_content(
+        repo_root,
+        """
+        name: Legacy install
+        on: [push]
+        jobs:
+          simple:
+            runs-on: ubuntu-latest
+            steps:
+              - name: Install dependencies (with extras)
+                run: |
+                  python -m pip install --upgrade pip
+                  pip install -e ".[fastapi,redis,dev]" || true
+                  pip install fastapi redis pytest-asyncio uvicorn httpx pytest prometheus-client
+              - name: Execute tests
+                run: pytest -q simple
+        """,
+    )
+
+    rc = retry_call(lambda: gha_workflow_patcher.run([str(repo_root), "--force-text"]))
+    assert rc == 0, "به‌روزرسانی مرحلهٔ نصب باید موفق شود"
+
+    content = workflow_file.read_text(encoding="utf-8")
+    assert "python -m pip install -U pip" in content, "باید pip با -U ارتقا یابد"
+    assert "pip install aiohttp sqlalchemy python-dateutil" in content, "باید بسته‌های جدید اضافه شوند"
+    assert (
+        content.count("Install dependencies (with extras)") == 1
+    ), "مرحلهٔ نصب نباید تکرار شود"
 
 
 def test_text_fallback_handles_windows_and_multiline(clean_state, retry_call, tmp_path):

@@ -33,3 +33,34 @@ Workflow موجود در `.github/workflows/ci.yml` همان گیت‌ها را 
 - روی شاخهٔ `main` تنها مسیرهای دود و انتهابه‌انتها با دستور `pytest -m "smoke and e2e" -q` اجرا می‌شوند.
 
 تمام پیام‌های خطا و خروجی‌ها به‌صورت فارسی و قطعی هستند تا تجربهٔ توسعه‌دهندگان یکسان بماند.
+
+### مثال استفاده از `ci_pytest_runner`
+
+برای پایدارسازی تست‌ها در GitHub Actions می‌توانید از ماتریس دوحالته استفاده کنید:
+
+```yaml
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [stub, redis]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run pytest in ${{ matrix.mode }} mode
+        run: python tools/ci_pytest_runner.py --mode ${{ matrix.mode }} --flush-redis auto --probe-mw-order auto
+```
+
+این اسکریپت به‌صورت پیش‌فرض Redis واقعی یا stub را پیش از اجرا پاک‌سازی می‌کند، ترتیب `RateLimitMiddleware` و `IdempotencyMiddleware`
+را بررسی می‌نماید و در صورت عبور p95 سربار از ۲۰۰ میلی‌ثانیه، خروجی خطای فارسی و قطعی تولید می‌کند. با `--flush-redis yes` پاک‌سازی
+اجباری شده و در صورت قطع بودن سرویس با backoff نمایی و خطای فارسی متوقف می‌شود. همچنین می‌توانید با `--p95-samples N` (بین ۳ تا ۱۵)
+تعداد نمونه‌برداری برای محاسبهٔ p95 سربار را کنترل کنید تا در محیط‌های کندتر نیز دادهٔ معناداری به‌دست آید.
+
+- برای مسیرهای TLS می‌توانید از `--tls-verify {require,allow-insecure}` و `--tls-ca /path/to/ca.pem` (یا متغیر محیطی `CI_TLS_CA`) استفاده کنید تا اعتبارسنجی گواهی تحت کنترل بماند؛ شکست‌ها با پیام `❶ TLS_VERIFY_FAILED` اعلام می‌شوند.
+- برای بررسی دقیق‌تر لاگ‌ها، گزینهٔ `--redact-urls no` مقادیر را بدون افشای گذرواژه (اما با ماسک کاراکترهای حساس) چاپ می‌کند.
+- در صورت تنظیم `CI_TLS_HARNESS=1`، هارنس TLS در مسیر `tests/ci/certs/` فعال می‌شود و سناریوهای rediss:// بدون وابستگی خارجی آزمایش می‌گردند.

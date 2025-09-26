@@ -87,7 +87,7 @@ class TestValidatePath:
 
     def test_absolute_path(self) -> None:
         assert validate_path("/etc/passwd") is False
-        assert validate_path("C:\Windows\System32") is False
+        assert validate_path(r"C:\Windows\System32") is False
 
     def test_tilde_expansion(self) -> None:
         assert validate_path("~/config.txt") is False

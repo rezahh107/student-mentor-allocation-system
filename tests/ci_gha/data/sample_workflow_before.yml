@@ -1,0 +1,28 @@
+name: Sample Workflow
+on:
+  push:
+    branches: [main]
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Execute tests
+        env:
+          SAMPLE: yes
+        run: |
+          echo "pre"
+          pytest -q -k "alpha or beta"
+  second:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup env
+        run: echo 'setup'
+      - name: Run folded pytest
+        run: >
+          set -e
+          pytest -q second_suite

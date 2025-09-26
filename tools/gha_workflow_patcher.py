@@ -26,6 +26,15 @@ SELECT_STEP_NAME = "Select mode env"
 
 PYTEST_WORD_RE = re.compile(r"(?i)\bpytest\b")
 
+INSTALL_RUN_COMMANDS = [
+    "python -m pip install -U pip",
+    'pip install -e ".[fastapi,redis,dev]" || true',
+    "pip install fastapi uvicorn httpx pytest pytest-asyncio redis prometheus-client",
+    "pip install aiohttp sqlalchemy python-dateutil",
+]
+
+INSTALL_RUN_SCRIPT = "\n".join(INSTALL_RUN_COMMANDS)
+
 
 class PatchError(RuntimeError):
     """Domain specific error for workflow patching."""
@@ -115,11 +124,7 @@ def _find_job_id(text: str) -> Optional[str]:
 def _create_install_step(commented_map_cls=None):
     payload = {
         "name": INSTALL_STEP_NAME,
-        "run": (
-            "python -m pip install --upgrade pip\n"
-            "pip install -e \".[fastapi,redis,dev]\" || true\n"
-            "pip install fastapi redis pytest-asyncio uvicorn httpx pytest prometheus-client"
-        ),
+        "run": INSTALL_RUN_SCRIPT,
     }
     if commented_map_cls:
         node = commented_map_cls()
@@ -540,14 +545,80 @@ class TextWorkflowPatcher:
             idx = block.end
         return names
 
+    @staticmethod
+    def _normalize_step_name(value: Optional[str]) -> Optional[str]:
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        if cleaned.startswith(("'", '"')) and len(cleaned) >= 2 and cleaned.endswith(cleaned[0]):
+            cleaned = cleaned[1:-1]
+        return cleaned
+
+    def _find_step_block(
+        self, job_bounds: tuple[int, int], target: str
+    ) -> Optional[StepBlock]:
+        job_start, job_end = job_bounds
+        idx = job_start
+        while idx < job_end:
+            block = self._extract_step(idx)
+            if block is None:
+                idx += 1
+                continue
+            name = self._normalize_step_name(self._block_name(block))
+            if name == target:
+                return block
+            idx = block.end
+        return None
+
+    def _update_install_block(self, block: StepBlock) -> bool:
+        run_index = None
+        run_indent = 0
+        for idx, line in enumerate(block.lines):
+            indent, stripped = _split_indent(line)
+            if stripped.startswith("run:"):
+                run_index = idx
+                run_indent = indent
+                break
+        if run_index is None:
+            return False
+
+        expected_run_header = " " * run_indent + "run: |"
+        commands = [" " * (run_indent + 2) + cmd for cmd in INSTALL_RUN_COMMANDS]
+
+        tail_index = run_index + 1
+        while tail_index < len(block.lines):
+            indent, stripped = _split_indent(block.lines[tail_index])
+            if not stripped:
+                if indent <= run_indent:
+                    break
+                tail_index += 1
+                continue
+            if indent <= run_indent:
+                break
+            tail_index += 1
+
+        existing = block.lines[run_index + 1 : tail_index]
+        normalized_existing = [line.strip() for line in existing]
+        if (
+            block.lines[run_index] == expected_run_header
+            and normalized_existing == INSTALL_RUN_COMMANDS
+        ):
+            return False
+
+        new_lines = block.lines[:run_index] + [expected_run_header] + commands + block.lines[tail_index:]
+        self.lines[block.start:block.end] = new_lines
+        self._invalidate_offsets()
+        self.changed = True
+        self.debug["install_step"] = "updated"
+        return True
+
     def _build_install_block(self, indent: str) -> list[str]:
-        return [
+        lines = [
             f"{indent}- name: {INSTALL_STEP_NAME}",
             f"{indent}  run: |",
-            f"{indent}    python -m pip install --upgrade pip",
-            f"{indent}    pip install -e \".[fastapi,redis,dev]\" || true",
-            f"{indent}    pip install fastapi redis pytest-asyncio uvicorn httpx pytest prometheus-client",
         ]
+        lines.extend(f"{indent}    {command}" for command in INSTALL_RUN_COMMANDS)
+        return lines
 
     def _build_select_block(self, indent: str) -> list[str]:
         return [
@@ -564,17 +635,26 @@ class TextWorkflowPatcher:
         names = self._collect_step_names(job_bounds)
         indent_str = " " * step.indent
         inserts: list[str] = []
+        relocate = False
+        if INSTALL_STEP_NAME in names:
+            install_block = self._find_step_block(job_bounds, INSTALL_STEP_NAME)
+            if install_block and self._update_install_block(install_block):
+                relocate = True
         if INSTALL_STEP_NAME not in names:
             inserts.extend(self._build_install_block(indent_str))
         if SELECT_STEP_NAME not in names:
             inserts.extend(self._build_select_block(indent_str))
         if not inserts:
             self.debug.setdefault("support_steps", "existing")
+            if relocate:
+                return job_bounds[0]
             return step.start
         self.lines[step.start:step.start] = inserts
         self._invalidate_offsets()
         self.changed = True
         self.debug["support_steps"] = "inserted"
+        if relocate:
+            return job_bounds[0]
         return step.start + len(inserts)
 
     def _invalidate_offsets(self) -> None:
@@ -837,6 +917,11 @@ class RuamelWorkflowPatcher:
             if normalized in occurrences:
                 occurrences[normalized].append(idx)
 
+        if occurrences[INSTALL_STEP_NAME]:
+            install_step = steps[occurrences[INSTALL_STEP_NAME][0]]
+            if isinstance(install_step, dict):
+                self._update_ruamel_install_step(install_step)
+
         duplicates = any(len(indices) > 1 for indices in occurrences.values())
         after_runner = any(any(idx > target_index for idx in indices) for indices in occurrences.values())
         missing = any(len(indices) == 0 for indices in occurrences.values())
@@ -907,6 +992,22 @@ class RuamelWorkflowPatcher:
         if cleaned.startswith(("'", '"')) and len(cleaned) >= 2 and cleaned.endswith(cleaned[0]):
             cleaned = cleaned[1:-1]
         return cleaned
+
+    def _update_ruamel_install_step(self, step: dict) -> bool:
+        updated = False
+        if step.get("name") != INSTALL_STEP_NAME:
+            step["name"] = INSTALL_STEP_NAME
+            updated = True
+        current_run = step.get("run")
+        if current_run != INSTALL_RUN_SCRIPT:
+            step["run"] = INSTALL_RUN_SCRIPT
+            updated = True
+        if updated:
+            self.changed = True
+            self.debug["install_step"] = "updated"
+        else:
+            self.debug.setdefault("install_step", "existing")
+        return updated
 
     def _build_job_offset_map(self, source_text: str) -> dict[str, tuple[int, int]]:
         lines = source_text.splitlines()

@@ -130,7 +130,7 @@ def test_install_step_upgraded_with_new_packages(clean_state, retry_call, tmp_pa
               - name: Install dependencies (with extras)
                 run: |
                   python -m pip install --upgrade pip
-                  pip install -e ".[fastapi,redis,dev]" || true
+                  pip install --no-input -e ".[fastapi,redis,dev]" || true
                   pip install fastapi redis pytest-asyncio uvicorn httpx pytest prometheus-client
               - name: Execute tests
                 run: pytest -q simple
@@ -142,6 +142,8 @@ def test_install_step_upgraded_with_new_packages(clean_state, retry_call, tmp_pa
 
     content = workflow_file.read_text(encoding="utf-8")
     assert "python -m pip install -U pip" in content, "باید pip با -U ارتقا یابد"
+    assert "export PIP_NO_INPUT=1" in content, "باید حالت غیرتعاملی pip تنظیم شود"
+    assert "export INSTALL_ADVANCED_DEPS=false" in content, "باید نصب پیشرفته غیرفعال شود"
     assert "pip install aiohttp sqlalchemy python-dateutil" in content, "باید بسته‌های جدید اضافه شوند"
     assert (
         content.count("Install dependencies (with extras)") == 1
@@ -480,7 +482,7 @@ def test_ruamel_reorders_support_steps(clean_state, retry_call, tmp_path, capsys
                 continue-on-error: true
                 run: |
                   python -m pip install --upgrade pip
-                  pip install -e ".[fastapi,redis,dev]" || true
+                  pip install --no-input -e ".[fastapi,redis,dev]" || true
                   pip install fastapi redis pytest-asyncio uvicorn httpx pytest prometheus-client
               - name: Select mode env
                 timeout-minutes: 5

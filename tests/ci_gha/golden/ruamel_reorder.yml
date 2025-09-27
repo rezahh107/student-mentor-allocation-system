@@ -11,8 +11,11 @@ jobs:
       - name: Install dependencies (with extras)
         continue-on-error: true
         run: |
+          export PIP_NO_INPUT=1
+          export INSTALL_ADVANCED_DEPS=false
+          export INSTALL_ML_DEPS=false
           python -m pip install -U pip
-          pip install -e ".[fastapi,redis,dev]" || true
+          pip install --no-input -e ".[fastapi,redis,dev]" || true
           pip install fastapi uvicorn httpx pytest pytest-asyncio redis prometheus-client
           pip install aiohttp sqlalchemy python-dateutil
       - name: Select mode env

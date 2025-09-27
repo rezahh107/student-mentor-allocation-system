@@ -48,6 +48,21 @@ def _install_from_requirements(requirements_file: str, label: str) -> bool:
     return True
 
 
+def _env_flag(name: str) -> Optional[bool]:
+    """Return a boolean flag from environment variables when provided."""
+
+    value = os.getenv(name)
+    if value is None:
+        return None
+
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    return None
+
+
 def install_dependencies(advanced: bool = False, ml: bool = False) -> bool:
     """Install base and optional dependency groups."""
     ok = _install_from_requirements("requirements.txt", "base")
@@ -128,12 +143,56 @@ def main() -> int:
     if not check_python_version():
         return 1
 
-    try:
-        advanced = input("Install advanced testing dependencies? (y/N): ").strip().lower() == "y"
-        ml = input("Install ML dependencies for prediction features? (y/N): ").strip().lower() == "y"
-    except (EOFError, KeyboardInterrupt):
-        print("\n⚠️ Setup cancelled by user input.")
-        return 1
+    env_advanced = _env_flag("INSTALL_ADVANCED_DEPS")
+    env_ml = _env_flag("INSTALL_ML_DEPS")
+    non_interactive = any(
+        _env_flag(var) is True
+        for var in ("CI", "GITHUB_ACTIONS")
+    ) or os.getenv("PIP_NO_INPUT") == "1"
+
+    if env_advanced is not None:
+        advanced = env_advanced
+        print(
+            "ℹ️ نصب وابستگی‌های پیشرفته بر اساس متغیر محیطی INSTALL_ADVANCED_DEPS"
+            f" = {advanced}."
+        )
+    elif non_interactive:
+        advanced = False
+        print(
+            "ℹ️ حالت غیرتعاملی تشخیص داده شد؛ وابستگی‌های پیشرفته نصب نخواهند شد."
+        )
+    else:
+        try:
+            advanced = (
+                input("Install advanced testing dependencies? (y/N): ")
+                .strip()
+                .lower()
+                == "y"
+            )
+        except (EOFError, KeyboardInterrupt):
+            print("\n⚠️ Setup cancelled by user input.")
+            return 1
+
+    if env_ml is not None:
+        ml = env_ml
+        print(
+            "ℹ️ نصب وابستگی‌های ML بر اساس متغیر محیطی INSTALL_ML_DEPS"
+            f" = {ml}."
+        )
+    elif non_interactive:
+        ml = False
+        print("ℹ️ حالت غیرتعاملی تشخیص داده شد؛ وابستگی‌های ML نصب نخواهند شد.")
+    else:
+        try:
+            ml = (
+                input("Install ML dependencies for prediction features? (y/N): ")
+                .strip()
+                .lower()
+                == "y"
+            )
+        except (EOFError, KeyboardInterrupt):
+            print("\n⚠️ Setup cancelled by user input.")
+            return 1
 
     if not install_dependencies(advanced, ml):
         print("❌ Dependency installation failed. Resolve the issues above and re-run setup.")

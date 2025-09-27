@@ -42,6 +42,9 @@ jobs:
       - name: Install project dependencies
         run: |
           set -euo pipefail
+          export PIP_NO_INPUT=1
+          export INSTALL_ADVANCED_DEPS=false
+          export INSTALL_ML_DEPS=false
           install_if_exists() {
             local file="$1"
             if [ -f "$file" ]; then
@@ -57,7 +60,7 @@ jobs:
           install_if_exists requirements-ml.txt
           install_if_exists requirements-security.txt
           if [ -f setup.py ]; then
-            python -m pip install -e .
+            python -m pip install --no-input -e .
           fi
 
       - name: Prepare parser artifacts directory
@@ -161,6 +164,9 @@ jobs:
       - name: Install project dependencies
         run: |
           set -euo pipefail
+          export PIP_NO_INPUT=1
+          export INSTALL_ADVANCED_DEPS=false
+          export INSTALL_ML_DEPS=false
           install_if_exists() {
             local file="$1"
             if [ -f "$file" ]; then
@@ -176,7 +182,7 @@ jobs:
           install_if_exists requirements-ml.txt
           install_if_exists requirements-security.txt
           if [ -f setup.py ]; then
-            python -m pip install -e .
+            python -m pip install --no-input -e .
           fi
 
       - name: Prepare directories
@@ -336,6 +342,9 @@ jobs:
       - name: Install project dependencies
         run: |
           set -euo pipefail
+          export PIP_NO_INPUT=1
+          export INSTALL_ADVANCED_DEPS=false
+          export INSTALL_ML_DEPS=false
           install_if_exists() {
             local file="$1"
             if [ -f "$file" ]; then
@@ -351,7 +360,7 @@ jobs:
           install_if_exists requirements-ml.txt
           install_if_exists requirements-security.txt
           if [ -f setup.py ]; then
-            python -m pip install -e .
+            python -m pip install --no-input -e .
           fi
 
       - name: Prepare directories

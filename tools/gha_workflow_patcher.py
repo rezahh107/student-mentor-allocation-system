@@ -27,8 +27,11 @@ SELECT_STEP_NAME = "Select mode env"
 PYTEST_WORD_RE = re.compile(r"(?i)\bpytest\b")
 
 INSTALL_RUN_COMMANDS = [
+    "export PIP_NO_INPUT=1",
+    "export INSTALL_ADVANCED_DEPS=false",
+    "export INSTALL_ML_DEPS=false",
     "python -m pip install -U pip",
-    'pip install -e ".[fastapi,redis,dev]" || true',
+    'pip install --no-input -e ".[fastapi,redis,dev]" || true',
     "pip install fastapi uvicorn httpx pytest pytest-asyncio redis prometheus-client",
     "pip install aiohttp sqlalchemy python-dateutil",
 ]

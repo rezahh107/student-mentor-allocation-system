@@ -1,23 +1,58 @@
 from __future__ import annotations
 
+import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
-from tests.export.helpers import build_job_runner, make_row
+from src.phase6_import_to_sabt.api import ExportAPI, ExportJobStatus, ExportLogger, ExporterMetrics
+from src.phase7_release.deploy import ReadinessGate
+
+from tests.phase7_utils import DummyJob, DummyRunner, FrozenClock
 
 
-def test_rate_limit_idem_auth_order(tmp_path):
-    rows = [make_row(idx=i) for i in range(1, 3)]
-    runner, metrics = build_job_runner(tmp_path, rows)
-    signer = HMACSignedURLProvider(secret="secret")
-    app = create_export_api(runner=runner, signer=signer, metrics=metrics, logger=runner.logger)
-    client = TestClient(app)
+@pytest.fixture
+def clean_state():
+    yield
 
-    response = client.post(
-        "/exports",
-        json={"year": 1402, "center": 1},
-        headers={"Idempotency-Key": "order", "X-Role": "ADMIN"},
+
+def _client(tmp_path) -> TestClient:
+    clock = FrozenClock(start=1.0)
+    gate = ReadinessGate(clock=clock.monotonic, readiness_timeout=5)
+    runner = DummyRunner(output_dir=tmp_path)
+    runner.prime(DummyJob(id="job-1", status=ExportJobStatus.PENDING.value))
+
+    async def _probe() -> bool:
+        return True
+
+    api = ExportAPI(
+        runner=runner,
+        signer=lambda path, expires_in=0: path,
+        metrics=ExporterMetrics(),
+        logger=ExportLogger(),
+        metrics_token="secret",
+        readiness_gate=gate,
+        redis_probe=_probe,
+        db_probe=_probe,
     )
-    assert response.status_code == 200
-    chain = response.json()["middleware_chain"]
-    assert chain == ["ratelimit", "idempotency", "auth"]
+    gate.record_dependency(name="redis", healthy=True)
+    gate.record_dependency(name="database", healthy=True)
+    gate.record_cache_warm()
+    app = FastAPI()
+    app.include_router(api.create_router())
+    return TestClient(app)
+
+
+def test_rate_limit_idem_auth_order_all_routes(tmp_path, clean_state):
+    client = _client(tmp_path)
+    headers = {
+        "X-Role": "ADMIN",
+        "Idempotency-Key": "abc",
+        "X-Metrics-Token": "secret",
+    }
+    create = client.post("/exports", json={"year": 1402}, headers=headers)
+    assert create.status_code == 200
+    assert create.json()["middleware_chain"] == ["ratelimit", "idempotency", "auth"]
+
+    health = client.get("/healthz", headers=headers)
+    assert health.status_code in {200, 503}
+    assert health.json()["middleware_chain"] == ["ratelimit", "idempotency", "auth"]

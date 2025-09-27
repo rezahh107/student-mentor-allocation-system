@@ -388,8 +388,8 @@ def _stream_pytest(
         bufsize=1,
         universal_newlines=True,
     )
-    assert process.stdout is not None  # برای type checker
-    assert process.stderr is not None
+    if process.stdout is None or process.stderr is None:
+        raise RuntimeError("COVERAGE_GATE_STREAM_ERROR|جریان استاندارد در دسترس نیست")
     collector = StreamCollector(
         tail_limit=tail_limit,
         capture_char_limit=capture_char_limit,

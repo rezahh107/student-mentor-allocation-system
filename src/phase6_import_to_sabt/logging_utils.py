@@ -26,6 +26,7 @@ class ExportLogger:
 
     def _prepare_payload(self, level: str, message: str, kwargs: dict[str, Any]) -> str:
         sanitized = {}
+        correlation = kwargs.pop("correlation_id", "-")
         for key, value in kwargs.items():
             if key == "national_id":
                 sanitized[key] = hash_national_id(value)
@@ -33,7 +34,12 @@ class ExportLogger:
                 sanitized[key] = mask_mobile(value)
             else:
                 sanitized[key] = value
-        data = {"level": level, "message": message, **sanitized}
+        data = {
+            "level": level,
+            "message": message,
+            "correlation_id": correlation,
+            **sanitized,
+        }
         return dumps_json(data)
 
 

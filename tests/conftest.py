@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import warnings
 
@@ -39,6 +40,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
         _wrapped_init._phase6_patched = True  # type: ignore[attr-defined]
         httpx.Client.__init__ = _wrapped_init  # type: ignore[assignment]
+
+    logging.getLogger("httpx").setLevel(logging.CRITICAL)
+    logging.getLogger("httpx").propagate = False
 
 
 @pytest.fixture(autouse=True)

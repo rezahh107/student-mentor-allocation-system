@@ -3,17 +3,42 @@ from __future__ import annotations
 import os
 import warnings
 
+os.environ.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+
 import pytest
 
-pytest_plugins = ["tests._compat.pytest_asyncio_scope"]
+pytest_plugins = ["pytest_asyncio.plugin", "tests._compat.pytest_asyncio_scope"]
 
 
 def pytest_configure(config: pytest.Config) -> None:
     """رفتار اخطارهای فرسودگی را در محیط محلی ملایم می‌کند."""
 
+    warnings.filterwarnings(
+        "ignore",
+        message="The 'app' shortcut is now deprecated",
+        category=DeprecationWarning,
+        module="httpx._client",
+    )
     if os.getenv("PYTEST_CI") == "1":
         return
-    warnings.filterwarnings("default", category=DeprecationWarning)
+
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - httpx may be absent locally
+        return
+
+    if not getattr(httpx.Client.__init__, "_phase6_patched", False):
+        original_init = httpx.Client.__init__
+
+        def _wrapped_init(self, *args, **kwargs):
+            if kwargs.get("app") is not None:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    return original_init(self, *args, **kwargs)
+            return original_init(self, *args, **kwargs)
+
+        _wrapped_init._phase6_patched = True  # type: ignore[attr-defined]
+        httpx.Client.__init__ = _wrapped_init  # type: ignore[assignment]
 
 
 @pytest.fixture(autouse=True)

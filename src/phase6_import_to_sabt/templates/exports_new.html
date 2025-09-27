@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="placeholder" hx-post="/exports" hx-target="#export-result" hx-swap="innerHTML">
+    <label for="year">سال تحصیلی:</label>
+    <input id="year" name="year" type="number" value="1402" min="1300" max="1500">
+    <label for="format">فرمت:</label>
+    <select id="format" name="format">
+        <option value="xlsx" selected>فایل XLSX</option>
+        <option value="csv">فایل CSV</option>
+    </select>
+    <button type="submit">تولید خروجی</button>
+</form>
+<div id="export-result" aria-live="polite" class="placeholder"></div>
+{% endblock %}

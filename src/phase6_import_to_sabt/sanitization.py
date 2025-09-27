@@ -3,9 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import random
-import hashlib
-import json
-import random
 import re
 import unicodedata
 from typing import Optional
@@ -44,6 +41,7 @@ def sanitize_text(value: Optional[str]) -> str:
     if value is None:
         return ""
     normalized = unicodedata.normalize("NFKC", value)
+    normalized = normalized.replace("ي", "ی").replace("ك", "ک")
     for zw in ZERO_WIDTH:
         normalized = normalized.replace(zw, "")
     normalized = normalized.replace("\r", " ").replace("\n", " ")

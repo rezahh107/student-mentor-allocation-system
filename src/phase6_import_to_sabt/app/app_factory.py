@@ -7,6 +7,7 @@ from typing import Dict, Mapping
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
+from starlette.staticfiles import StaticFiles
 
 from .clock import Clock, build_system_clock
 from .config import AppConfig, AuthConfig
@@ -21,6 +22,7 @@ from .middleware import (
     RequestLoggingMiddleware,
 )
 from ..obs.metrics import ServiceMetrics, build_metrics, render_metrics
+from ..xlsx.workflow import ImportToSabtWorkflow
 from .probes import AsyncProbe, ProbeResult
 from .timing import MonotonicTimer, Timer
 from .stores import KeyValueStore
@@ -87,6 +89,7 @@ def create_application(
     rate_limit_store: KeyValueStore,
     idempotency_store: KeyValueStore,
     readiness_probes: Mapping[str, AsyncProbe],
+    workflow: ImportToSabtWorkflow | None = None,
 ) -> FastAPI:
     clock = clock or build_system_clock(config.timezone)
     metrics = metrics or build_metrics(config.observability.metrics_namespace)
@@ -107,6 +110,7 @@ def create_application(
     )
 
     app = FastAPI(title="ImportToSabt")
+    app.mount("/static", StaticFiles(directory="assets"), name="static")
     app.state.diagnostics = {
         "enabled": config.enable_diagnostics,
         "last_chain": [],
@@ -175,6 +179,10 @@ def create_application(
     async def ui_exports(request: Request):
         return container.templates.TemplateResponse(request, "exports.html", {"title": "خروجی‌ها"})
 
+    @app.get("/ui/exports/new", response_class=HTMLResponse)
+    async def ui_exports_new(request: Request):
+        return container.templates.TemplateResponse(request, "exports_new.html", {"title": "خروجی XLSX"})
+
     @app.get("/ui/jobs/{job_id}", response_class=HTMLResponse)
     async def ui_job(request: Request, job_id: str):
         return container.templates.TemplateResponse(request, "job_detail.html", {"title": "جزئیات کار", "job_id": job_id})
@@ -199,6 +207,11 @@ def create_application(
     @app.get("/api/exports/csv")
     async def exporter_stub() -> dict[str, str]:
         return {"status": "queued"}
+
+    if workflow is not None:
+        from ..xlsx.router import build_router as build_xlsx_router
+
+        app.include_router(build_xlsx_router(workflow))
 
     if config.enable_diagnostics:
 

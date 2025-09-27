@@ -5,6 +5,16 @@
 - Use `activate.bat` (Windows) or `source ./activate.sh` (macOS/Linux) before working in a new shell.
 - Launch diagnostics with `python scripts/environment_doctor.py` to validate the environment and apply optional fixes.
 
+## FastAPI Hardened Service Configuration
+- `REDIS_NAMESPACE` و `REDIS_URL` برای تفکیک فضای کلید و اتصال به Redis استفاده می‌شوند؛ در CI مقدار `REDIS_URL` از سرویس `redis:7` تزریق می‌گردد.
+- سیاست Retry Redis از طریق متغیرهای `REDIS_MAX_RETRIES` (پیش‌فرض ۳)، `REDIS_BASE_DELAY_MS`، `REDIS_MAX_DELAY_MS` و `REDIS_JITTER_MS` قابل تنظیم است.
+- برای فعال‌سازی Fail-Open عمومی می‌توانید `RATE_LIMIT_FAIL_OPEN=1` را تنظیم کنید؛ GET ها در صورت خطا همیشه Fail-Open می‌شوند و `POST /allocations` تنها در صورت تنظیم صریح Fail-Open آزاد می‌ماند.
+- مسیر `/metrics` نیازمند تعیین یکی از `METRICS_TOKEN` یا قرار گرفتن IP در `METRICS_IP_ALLOWLIST` است؛ خروجی شامل متریک‌های `redis_retry_attempts_total` و `redis_retry_exhausted_total` است که برای پایش پایداری Redis ضروری‌اند.
+- اجرای آزمون‌های سخت‌سازی اکنون بدون پرچم‌های اضافی انجام می‌شود: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p pytest_asyncio.plugin tests/hardened_api -q`. حلقهٔ پیش‌فرض asyncio در `pytest.ini` روی `function` ثابت شده و دیگر نیاز به `-o asyncio_default_fixture_loop_scope=function` نیست.
+- تمامی سناریوهای HTTP آزمایشی با `httpx.AsyncClient` و `ASGITransport` اجرا می‌شوند تا اخطارهای فرسودگی نسخه‌های آینده (`data=` خام) حذف شوند؛ برای بدنهٔ دلخواه از آرگومان‌های `json=` یا `content=` استفاده کنید.
+- لانچر Redis ابتدا باینری محلی را تلاش می‌کند و در صورت نبود، به طور خودکار کانتینر `redis:7` را با Docker اجرا می‌کند؛ با متغیر `REDIS_LAUNCH_MODE` می‌توانید حالت را به `binary`، `docker` یا `skip` محدود کنید. در صورت نبود Docker و باینری، مقدار `skip` باعث ثبت `xfail` مستند در تست‌ها می‌شود.
+- نگهبان اخطارهای HTTPX اکنون علاوه بر مسیر موفق POST، مسیر GET `/status` و خطای نوع محتوا را هم بررسی می‌کند تا هیچ اخطار فرسودگی در سناریوهای رایج باقی نماند.
+
 ## ابزارهای فاز سوم (Allocation + Outbox)
 - اجرای تخصیص اتمیک از خط فرمان: `python -m src.tools.allocation_cli <student_id> <mentor_id> --request-id ... --dry-run`؛ پیام‌ها فارسی و دارای کد خطا هستند.
 - دیسپچر Outbox با گزینه‌های `--once` و `--loop`: `python -m src.tools.outbox_dispatcher_cli --database-url sqlite:///allocation.db`.

@@ -156,8 +156,8 @@ class ExportJobRunner:
                 duration = (self.clock() - start_time).total_seconds()
                 self.metrics.observe_duration("export", duration)
                 for file in manifest.files:
-                    self.metrics.observe_file_bytes(file.byte_size)
-                    self.metrics.observe_rows(file.row_count)
+                    self.metrics.observe_file_bytes(file.byte_size, format="csv")
+                    self.metrics.observe_rows(file.row_count, format="csv")
                 self.metrics.inc_job(ExportJobStatus.SUCCESS.value)
                 self._update_job(
                     job_id,

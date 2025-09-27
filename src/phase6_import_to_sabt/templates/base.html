@@ -6,7 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <style>
-        body { font-family: sans-serif; margin: 2rem; background-color: #f7f7f7; }
+        @font-face {
+            font-family: 'Vazir';
+            src: local('Vazir'), local('Vazir FD');
+            font-display: swap;
+        }
+        body { font-family: 'Vazir', 'Tahoma', sans-serif; margin: 2rem; background-color: #f7f7f7; }
         header { margin-bottom: 2rem; }
         .card { background: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 0 6px rgba(0,0,0,0.1); }
         .placeholder { color: #666; }

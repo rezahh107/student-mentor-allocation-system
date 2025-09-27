@@ -1,0 +1,518 @@
+name: CI Tests (Tehran)
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '30 23 * * *'
+
+concurrency:
+  group: ci-tests-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  parser-tests:
+    name: Parser Strict Score unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Tehran
+      TIMEZONE: Asia/Tehran
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONHASHSEED: '0'
+      CI_RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure timezone deterministically
+        run: |
+          sudo ln -snf /usr/share/zoneinfo/Asia/Tehran /etc/localtime
+          echo 'Asia/Tehran' | sudo tee /etc/timezone
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install project dependencies
+        run: |
+          set -euo pipefail
+          install_if_exists() {
+            local file="$1"
+            if [ -f "$file" ]; then
+              echo "Installing dependencies from $file"
+              python -m pip install -r "$file"
+            else
+              echo "Skipping missing $file"
+            fi
+          }
+          install_if_exists requirements.txt
+          install_if_exists requirements-dev.txt
+          install_if_exists requirements-advanced.txt
+          install_if_exists requirements-ml.txt
+          install_if_exists requirements-security.txt
+          if [ -f setup.py ]; then
+            python -m pip install -e .
+          fi
+
+      - name: Prepare parser artifacts directory
+        run: |
+          set -euo pipefail
+          mkdir -p reports/parser artifacts/parser
+
+      - name: Run parser unit tests
+        run: |
+          set -euo pipefail
+          export PYTEST_ADDOPTS="--maxfail=1 --strict-config --strict-markers"
+          RAW_LOG="pytest-raw-parser.log"
+          EXIT_FILE="pytest-exit-parser.txt"
+          set +e
+          pytest tests/ci/test_parser_strictscore.py -vv | tee "${RAW_LOG}"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s' "${status}" > "${EXIT_FILE}"
+          if [ "${status}" -ne 0 ]; then
+            echo "Parser pytest exited with status ${status}"
+          fi
+
+      - name: Parse parser pytest summary
+        run: |
+          python scripts/ci_pytest_summary_parser.py \
+            --summary-file pytest-raw-parser.log \
+            --exit-code-file pytest-exit-parser.txt \
+            --output reports/parser/strict_score.json
+
+      - name: Scan parser artifacts for PII leaks
+        if: always()
+        run: >-
+          python scripts/ci_no_pii_scan.py
+          --include-glob "reports/parser/**"
+          --include-glob "artifacts/parser/**"
+          --include-glob "**/perf*.json"
+          --exclude-glob ".pytest_cache/**"
+          reports/parser
+
+      - name: Upload parser artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parser-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            pytest-raw-parser.log
+            pytest-exit-parser.txt
+            reports/parser
+
+  tests:
+    name: Pytest Matrix (${{ matrix.name }})
+    needs: parser-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: focused
+            pytest-args: '--cache-clear --durations=25 -vv -k "exports or upload or normalize or mw or metrics_auth"'
+            artifact-suffix: focused
+          - name: full
+            pytest-args: '--cache-clear --durations=25 -vv'
+            artifact-suffix: full
+    env:
+      TZ: Asia/Tehran
+      TIMEZONE: Asia/Tehran
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONHASHSEED: '0'
+      CI_RUN_ID: ${{ github.run_id }}
+      REDIS_URL: redis://127.0.0.1:6379/15
+      REDIS_DB: '15'
+      REDIS_NAMESPACE: gha-${{ github.run_id }}-${{ strategy.job-index }}-${{ github.run_attempt }}-${{ matrix.name }}
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure timezone deterministically
+        run: |
+          sudo ln -snf /usr/share/zoneinfo/Asia/Tehran /etc/localtime
+          echo 'Asia/Tehran' | sudo tee /etc/timezone
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install project dependencies
+        run: |
+          set -euo pipefail
+          install_if_exists() {
+            local file="$1"
+            if [ -f "$file" ]; then
+              echo "Installing dependencies from $file"
+              python -m pip install -r "$file"
+            else
+              echo "Skipping missing $file"
+            fi
+          }
+          install_if_exists requirements.txt
+          install_if_exists requirements-dev.txt
+          install_if_exists requirements-advanced.txt
+          install_if_exists requirements-ml.txt
+          install_if_exists requirements-security.txt
+          if [ -f setup.py ]; then
+            python -m pip install -e .
+          fi
+
+      - name: Prepare directories
+        run: |
+          set -euo pipefail
+          mkdir -p reports/${{ matrix.artifact-suffix }}
+          mkdir -p artifacts/${{ matrix.artifact-suffix }}
+
+      - name: Gather deterministic environment snapshot
+        run: python scripts/ci_print_env.py | tee reports/${{ matrix.artifact-suffix }}/env_snapshot.json
+
+      - name: Ensure Redis is healthy and clean
+        run: |
+          python - <<'PY'
+          import os
+          import random
+          import time
+
+          import redis
+
+          host = os.getenv("REDIS_HOST", "127.0.0.1")
+          port = int(os.getenv("REDIS_PORT", "6379"))
+          db = int(os.getenv("REDIS_DB", "15"))
+          namespace = os.getenv("REDIS_NAMESPACE", "gha-ci")
+
+          client = redis.Redis(host=host, port=port, db=db, socket_timeout=5)
+          connected = False
+          for attempt in range(1, 11):
+              try:
+                  if client.ping():
+                      connected = True
+                      break
+              except redis.exceptions.RedisError:
+                  sleep_for = min(2 ** attempt, 10) + random.uniform(0, 0.25)
+                  time.sleep(sleep_for)
+          if not connected:
+              message = "❌ ارتباط با Redis برقرار نشد؛ سلامت سرویس تایید نشد."
+              print(message)
+              raise SystemExit(1)
+          try:
+              client.flushdb()
+              print(f"✅ Redis DB پاکسازی شد؛ فضای نام {namespace}.")
+          except redis.exceptions.RedisError:
+              print("❌ پاکسازی Redis با خطا مواجه شد.")
+              raise SystemExit(1)
+          PY
+
+      - name: Run pytest suite (${{ matrix.name }})
+        run: |
+          set -euo pipefail
+          export PYTEST_ADDOPTS="--maxfail=1 --strict-config --strict-markers"
+          RAW_LOG="pytest-raw-${{ matrix.artifact-suffix }}.log"
+          EXIT_FILE="pytest-exit-code-${{ matrix.artifact-suffix }}.txt"
+          set +e
+          pytest ${{ matrix.pytest-args }} | tee "${RAW_LOG}"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s' "${status}" > "${EXIT_FILE}"
+          if [ "${status}" -ne 0 ]; then
+            echo "Pytest exited with status ${status}"
+          fi
+
+      - name: Parse pytest summary (Strict Scoring v2)
+        run: |
+          python scripts/ci_pytest_summary_parser.py \
+            --summary-file pytest-raw-${{ matrix.artifact-suffix }}.log \
+            --exit-code-file pytest-exit-code-${{ matrix.artifact-suffix }}.txt \
+            --output reports/${{ matrix.artifact-suffix }}/strict_score.json
+
+      - name: Scan artifacts for PII leaks
+        if: always()
+        run: >-
+          python scripts/ci_no_pii_scan.py
+          --include-glob "reports/**"
+          --include-glob "artifacts/**"
+          --include-glob "**/perf*.json"
+          --include-glob "pytest-raw-${{ matrix.artifact-suffix }}.log"
+          --exclude-glob ".pytest_cache/**"
+          reports/${{ matrix.artifact-suffix }}
+
+      - name: Flush Redis after tests
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+
+          import redis
+
+          host = os.getenv("REDIS_HOST", "127.0.0.1")
+          port = int(os.getenv("REDIS_PORT", "6379"))
+          db = int(os.getenv("REDIS_DB", "15"))
+          namespace = os.getenv("REDIS_NAMESPACE", "gha-ci")
+
+          client = redis.Redis(host=host, port=port, db=db, socket_timeout=5)
+          try:
+              client.flushdb()
+              print(f"✅ Redis DB پس از تست‌ها پاکسازی شد؛ فضای نام {namespace}.")
+          except redis.exceptions.RedisError:
+              print("⚠️ امکان پاکسازی Redis پس از تست‌ها فراهم نشد.")
+          PY
+
+      - name: Upload pytest artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-${{ matrix.artifact-suffix }}-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            pytest-raw-${{ matrix.artifact-suffix }}.log
+            pytest-exit-code-${{ matrix.artifact-suffix }}.txt
+            reports/${{ matrix.artifact-suffix }}
+            artifacts/${{ matrix.artifact-suffix }}
+            .pytest_cache/
+
+  perf-smoke:
+    name: Perf smoke (non-blocking)
+    needs: parser-tests
+    if: github.event_name != 'schedule'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TZ: Asia/Tehran
+      TIMEZONE: Asia/Tehran
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONHASHSEED: '0'
+      CI_RUN_ID: ${{ github.run_id }}
+      REDIS_URL: redis://127.0.0.1:6379/15
+      REDIS_DB: '15'
+      REDIS_NAMESPACE: gha-perfsmoke-${{ github.run_id }}-${{ github.run_attempt }}
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure timezone deterministically
+        run: |
+          sudo ln -snf /usr/share/zoneinfo/Asia/Tehran /etc/localtime
+          echo 'Asia/Tehran' | sudo tee /etc/timezone
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install project dependencies
+        run: |
+          set -euo pipefail
+          install_if_exists() {
+            local file="$1"
+            if [ -f "$file" ]; then
+              echo "Installing dependencies from $file"
+              python -m pip install -r "$file"
+            else
+              echo "Skipping missing $file"
+            fi
+          }
+          install_if_exists requirements.txt
+          install_if_exists requirements-dev.txt
+          install_if_exists requirements-advanced.txt
+          install_if_exists requirements-ml.txt
+          install_if_exists requirements-security.txt
+          if [ -f setup.py ]; then
+            python -m pip install -e .
+          fi
+
+      - name: Prepare directories
+        run: |
+          set -euo pipefail
+          mkdir -p reports/perf-smoke artifacts/perf-smoke
+
+      - name: Ensure Redis is healthy and clean
+        run: |
+          python - <<'PY'
+          import os
+          import random
+          import time
+
+          import redis
+
+          host = os.getenv("REDIS_HOST", "127.0.0.1")
+          port = int(os.getenv("REDIS_PORT", "6379"))
+          db = int(os.getenv("REDIS_DB", "15"))
+          namespace = os.getenv("REDIS_NAMESPACE", "gha-perfsmoke")
+
+          client = redis.Redis(host=host, port=port, db=db, socket_timeout=5)
+          connected = False
+          for attempt in range(1, 11):
+              try:
+                  if client.ping():
+                      connected = True
+                      break
+              except redis.exceptions.RedisError:
+                  sleep_for = min(2 ** attempt, 10) + random.uniform(0, 0.25)
+                  time.sleep(sleep_for)
+          if not connected:
+              print("❌ ارتباط با Redis برقرار نشد؛ سلامت سرویس تایید نشد.")
+              raise SystemExit(1)
+          try:
+              client.flushdb()
+              print(f"✅ Redis DB پاکسازی شد؛ فضای نام {namespace}.")
+          except redis.exceptions.RedisError:
+              print("❌ پاکسازی Redis با خطا مواجه شد.")
+              raise SystemExit(1)
+          PY
+
+      - name: Run perf smoke pytest suite
+        run: |
+          set -euo pipefail
+          export PYTEST_ADDOPTS="--maxfail=1 --strict-config --strict-markers"
+          RAW_LOG="pytest-raw-perf-smoke.log"
+          EXIT_FILE="pytest-exit-code-perf-smoke.txt"
+          TIME_LOG="perf-smoke-time.log"
+          set +e
+          /usr/bin/time -v pytest tests/perf -vv --durations=25 2> >(tee "${TIME_LOG}" >&2) | tee "${RAW_LOG}"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s' "${status}" > "${EXIT_FILE}"
+          if [ "${status}" -ne 0 ]; then
+            echo "Perf smoke pytest exited with status ${status}"
+          fi
+
+      - name: Parse pytest summary (Strict Scoring v2)
+        run: |
+          python scripts/ci_pytest_summary_parser.py \
+            --summary-file pytest-raw-perf-smoke.log \
+            --exit-code-file pytest-exit-code-perf-smoke.txt \
+            --output reports/perf-smoke/strict_score.json
+
+      - name: Collect perf smoke metrics
+        run: |
+          python scripts/ci_collect_perf_metrics.py \
+            --pytest-log pytest-raw-perf-smoke.log \
+            --time-log perf-smoke-time.log \
+            --output reports/perf-smoke/perf.json
+
+      - name: Format perf smoke comment
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report_path = Path("reports/perf-smoke/perf.json")
+          if report_path.exists():
+              data = json.loads(report_path.read_text(encoding="utf-8"))
+              body = (
+                  "### گزارش دود کارایی\n"
+                  f"- p95: {data.get('p95_ms', 0):.2f} ms\n"
+                  f"- حافظهٔ اوج: {data.get('mem_mb_peak', 0):.2f} MB\n"
+                  f"- نمونه‌ها: {data.get('samples', 0)}\n"
+                  f"- ساعت مرجع: {data.get('clock', 'Asia/Tehran')}\n"
+              )
+          else:
+              body = "⚠️ گزارش دود کارایی تولید نشد؛ فایل perf.json در دسترس نبود."
+
+          destination = Path("reports/perf-smoke/comment.md")
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          destination.write_text(body, encoding="utf-8")
+          print(body)
+          PY
+
+      - name: Scan perf smoke artifacts for PII leaks
+        if: always()
+        run: >-
+          python scripts/ci_no_pii_scan.py
+          --include-glob "reports/**"
+          --include-glob "artifacts/**"
+          --include-glob "**/perf*.json"
+          --include-glob "pytest-raw-perf-smoke.log"
+          --exclude-glob ".pytest_cache/**"
+          reports/perf-smoke
+
+      - name: Flush Redis after perf smoke
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+
+          import redis
+
+          host = os.getenv("REDIS_HOST", "127.0.0.1")
+          port = int(os.getenv("REDIS_PORT", "6379"))
+          db = int(os.getenv("REDIS_DB", "15"))
+          namespace = os.getenv("REDIS_NAMESPACE", "gha-perfsmoke")
+
+          client = redis.Redis(host=host, port=port, db=db, socket_timeout=5)
+          try:
+              client.flushdb()
+              print(f"✅ Redis DB پس از اجرای دود کارایی پاکسازی شد؛ فضای نام {namespace}.")
+          except redis.exceptions.RedisError:
+              print("⚠️ امکان پاکسازی Redis پس از اجرای دود کارایی فراهم نشد.")
+          PY
+
+      - name: Upload perf smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 5
+          path: |
+            pytest-raw-perf-smoke.log
+            pytest-exit-code-perf-smoke.txt
+            perf-smoke-time.log
+            reports/perf-smoke
+            artifacts/perf-smoke
+
+      - name: Publish perf smoke comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'reports/perf-smoke/comment.md';
+            let body = '⚠️ گزارش دود کارایی در این اجرا در دسترس نبود.';
+            if (fs.existsSync(path)) {
+              body = fs.readFileSync(path, 'utf8');
+            }
+            if (!body.trim()) {
+              body = '⚠️ گزارش دود کارایی در این اجرا خالی بود.';
+            }
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="placeholder" hx-get="/api/exports" hx-trigger="load" hx-swap="innerHTML">
+    لیست خروجی‌ها به زودی نمایش داده می‌شود.
+    <button id="exporter-trigger" hx-get="/api/exports/csv" hx-target="#export-status" hx-swap="innerHTML">
+        دانلود خروجی CSV امن برای اکسل
+    </button>
+    <div id="export-status" aria-live="polite"></div>
+</div>
+{% endblock %}

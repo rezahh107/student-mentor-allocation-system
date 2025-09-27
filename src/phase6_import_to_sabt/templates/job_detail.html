@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="placeholder" hx-get="/api/jobs/{{ job_id }}" hx-trigger="load" hx-swap="innerHTML">
+    اطلاعات شغل {{ job_id }} به زودی بارگذاری می‌شود.
+</div>
+{% endblock %}

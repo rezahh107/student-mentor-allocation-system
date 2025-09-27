@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="placeholder" hx-post="/api/uploads" hx-encoding="multipart/form-data">
+    <label for="file">بارگذاری فایل:</label>
+    <input id="file" name="file" type="file" accept=".xlsx,.csv">
+    <button type="submit">ارسال</button>
+</form>
+{% endblock %}

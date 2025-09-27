@@ -17,6 +17,17 @@ websockets>=10.0
 arabic-reshaper>=3.0.0
 python-bidi>=0.4.2
 
+# ImportToSabt service stack
+fastapi>=0.110,<0.112
+starlette>=0.36,<0.37
+pydantic-settings>=2.11
+redis>=5
+psycopg[binary]>=3.2
+httpx>=0.27
+uvicorn>=0.29
+orjson>=3.11
+prometheus_client>=0.23
+
 # Developer experience & tooling
 GitPython>=3.1.30
 factory_boy>=3.3.0

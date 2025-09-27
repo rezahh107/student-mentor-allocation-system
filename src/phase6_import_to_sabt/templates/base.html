@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="fa-IR" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        body { font-family: sans-serif; margin: 2rem; background-color: #f7f7f7; }
+        header { margin-bottom: 2rem; }
+        .card { background: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 0 6px rgba(0,0,0,0.1); }
+        .placeholder { color: #666; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>{{ title }}</h1>
+</header>
+<main class="card">
+    {% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="placeholder" hx-get="/healthz" hx-trigger="load" hx-swap="outerHTML">در حال بارگذاری وضعیت سامانه...</p>
+{% endblock %}

@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 import json
-import logging
 
-from phase6_import_to_sabt.logging_utils import get_export_logger
+import pytest
+
+from src.phase6_import_to_sabt.logging_utils import ExportLogger
 
 
-def test_pii_masking(caplog):
-    logger = get_export_logger()
-    with caplog.at_level(logging.INFO):
-        logger.info("event", national_id="0012345678", mobile="09123456789")
-    record = caplog.records[0]
+@pytest.fixture
+def clean_state():
+    yield
+
+
+def test_pii_masking_with_correlation_id(clean_state, caplog):
+    logger = ExportLogger()
+    logger.info(
+        "job-complete",
+        correlation_id="RID-1",
+        national_id="0012345678",
+        mobile="09120000000",
+    )
+    record = caplog.records[-1]
     payload = json.loads(record.message)
-    assert payload["national_id"] != "0012345678"
-    assert payload["mobile"].startswith("0912")
-    assert payload["mobile"].endswith("89")
+    assert payload["correlation_id"] == "RID-1"
+    assert payload["national_id"].isalnum() and payload["national_id"] != "0012345678"
+    assert payload["mobile"].startswith("0912") and payload["mobile"].endswith("00")

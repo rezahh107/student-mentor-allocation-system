@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import hmac
 import os
+import time
 from hashlib import sha256
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
+import asyncio
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from dateutil import parser
 from prometheus_client import generate_latest
+
+from src.phase7_release.deploy import CircuitBreaker, ReadinessGate, get_debug_context
 
 from .job_runner import ExportJobRunner
 from .logging_utils import ExportLogger
@@ -70,6 +74,15 @@ def idempotency_dependency(request: Request, idempotency_key: str = Header(..., 
     return idempotency_key
 
 
+def optional_idempotency_dependency(
+    request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")
+) -> Optional[str]:
+    chain = getattr(request.state, "middleware_chain", [])
+    chain.append("idempotency")
+    request.state.middleware_chain = chain
+    return idempotency_key
+
+
 def auth_dependency(
     request: Request,
     role: str = Header(..., alias="X-Role"),
@@ -85,6 +98,17 @@ def auth_dependency(
     return role, center_scope
 
 
+def optional_auth_dependency(
+    request: Request,
+    role: str | None = Header(default=None, alias="X-Role"),
+    center_scope: Optional[int] = Header(default=None, alias="X-Center"),
+) -> tuple[Optional[str], Optional[int]]:
+    chain = getattr(request.state, "middleware_chain", [])
+    chain.append("auth")
+    request.state.middleware_chain = chain
+    return role, center_scope
+
+
 class ExportAPI:
     def __init__(
         self,
@@ -94,12 +118,21 @@ class ExportAPI:
         metrics: ExporterMetrics,
         logger: ExportLogger,
         metrics_token: str | None = None,
+        readiness_gate: ReadinessGate | None = None,
+        redis_probe: Callable[[], Awaitable[bool]] | None = None,
+        db_probe: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         self.runner = runner
         self.signer = signer
         self.metrics = metrics
         self.logger = logger
         self.metrics_token = metrics_token
+        self.readiness_gate = readiness_gate or ReadinessGate(clock=time.monotonic)
+        self._redis_probe = redis_probe or self._build_default_redis_probe()
+        self._db_probe = db_probe or self._build_default_db_probe()
+        self._redis_breaker = CircuitBreaker(clock=time.monotonic, failure_threshold=2, reset_timeout=5.0)
+        self._db_breaker = CircuitBreaker(clock=time.monotonic, failure_threshold=2, reset_timeout=5.0)
+        self._probe_timeout = 2.5
 
     def create_router(self) -> APIRouter:
         router = APIRouter()
@@ -132,6 +165,13 @@ class ExportAPI:
                 excel_mode=payload.excel_mode if payload.excel_mode is not None else True,
             )
             namespace = f"{role}:{center_scope or 'ALL'}:{payload.year}"
+            correlation_id = request.headers.get("X-Request-ID", "-")
+            try:
+                self.readiness_gate.assert_post_allowed(correlation_id=correlation_id)
+            except RuntimeError as exc:
+                debug = self._debug_context()
+                self.logger.error("POST_GATE_BLOCKED", correlation_id=correlation_id, **debug)
+                raise HTTPException(status_code=503, detail={"message": str(exc), "context": debug}) from exc
             job = self.runner.submit(
                 filters=filters,
                 options=options,
@@ -159,6 +199,32 @@ class ExportAPI:
                 manifest_payload = None
             return ExportStatusResponse(job_id=job.id, status=job.status, files=files, manifest=manifest_payload)
 
+        @router.get("/healthz")
+        async def healthz(
+            request: Request,
+            _: None = Depends(rate_limit_dependency),
+            __: Optional[str] = Depends(optional_idempotency_dependency),
+            ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency),
+        ) -> dict[str, Any]:
+            healthy, probes = await self._execute_probes()
+            if not healthy:
+                raise HTTPException(status_code=503, detail={"message": "وضعیت سامانه ناسالم است", "context": self._debug_context()})
+            chain = getattr(request.state, "middleware_chain", [])
+            return {"status": "ok", "probes": probes, "middleware_chain": chain}
+
+        @router.get("/readyz")
+        async def readyz(
+            request: Request,
+            _: None = Depends(rate_limit_dependency),
+            __: Optional[str] = Depends(optional_idempotency_dependency),
+            ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency),
+        ) -> dict[str, Any]:
+            healthy, probes = await self._execute_probes()
+            chain = getattr(request.state, "middleware_chain", [])
+            if not self.readiness_gate.ready():
+                raise HTTPException(status_code=503, detail={"message": "سامانه در حال آماده‌سازی است", "context": self._debug_context()})
+            return {"status": "ready", "probes": probes, "middleware_chain": chain}
+
         if self.metrics_token is not None:
             @router.get("/metrics")
             async def metrics_endpoint(token: Optional[str] = Header(default=None, alias="X-Metrics-Token")) -> Response:
@@ -169,6 +235,78 @@ class ExportAPI:
 
         return router
 
+    async def _execute_probes(self) -> tuple[bool, dict[str, bool]]:
+        redis_ok = await self._check_dependency("redis", self._redis_probe, self._redis_breaker)
+        db_ok = await self._check_dependency("database", self._db_probe, self._db_breaker)
+        return redis_ok and db_ok, {"redis": redis_ok, "database": db_ok}
+
+    async def _check_dependency(
+        self,
+        name: str,
+        probe: Callable[[], Awaitable[bool]],
+        breaker: CircuitBreaker,
+    ) -> bool:
+        if not breaker.allow():
+            self.readiness_gate.record_dependency(name=name, healthy=False, error="circuit-open")
+            return False
+        try:
+            result = await asyncio.wait_for(probe(), timeout=self._probe_timeout)
+        except asyncio.TimeoutError:
+            breaker.record_failure()
+            self.readiness_gate.record_dependency(name=name, healthy=False, error="timeout")
+            return False
+        except Exception as exc:  # noqa: BLE001
+            breaker.record_failure()
+            self.readiness_gate.record_dependency(name=name, healthy=False, error=type(exc).__name__)
+            return False
+        if result:
+            breaker.record_success()
+            self.readiness_gate.record_dependency(name=name, healthy=True)
+            return True
+        breaker.record_failure()
+        self.readiness_gate.record_dependency(name=name, healthy=False, error="probe-failed")
+        return False
+
+    def _debug_context(self) -> dict[str, object]:
+        redis_client = getattr(self.runner, "redis", None)
+
+        def _redis_keys() -> list[str]:
+            if redis_client is None:
+                return []
+            try:
+                return [str(key) for key in sorted(redis_client.keys("*"))]
+            except Exception:  # noqa: BLE001
+                return []
+
+        return get_debug_context(
+            redis_keys=_redis_keys,
+            rate_limit_state=getattr(self.runner, "rate_limit_state", lambda: {"mode": "offline"}),
+            middleware_chain=lambda: ["ratelimit", "idempotency", "auth"],
+            clock=time.monotonic,
+        )
+
+    def _build_default_redis_probe(self) -> Callable[[], Awaitable[bool]]:
+        async def _probe() -> bool:
+            key = "phase7:probe"
+
+            def _call() -> bool:
+                self.runner.redis.setnx(key, "1", ex=5)
+                self.runner.redis.delete(key)
+                return True
+
+            try:
+                return await asyncio.to_thread(_call)
+            except Exception:  # noqa: BLE001
+                return False
+
+        return _probe
+
+    def _build_default_db_probe(self) -> Callable[[], Awaitable[bool]]:
+        async def _probe() -> bool:
+            return True
+
+        return _probe
+
 
 def create_export_api(
     *,
@@ -177,6 +315,9 @@ def create_export_api(
     metrics: ExporterMetrics,
     logger: ExportLogger,
     metrics_token: str | None = None,
+    readiness_gate: ReadinessGate | None = None,
+    redis_probe: Callable[[], Awaitable[bool]] | None = None,
+    db_probe: Callable[[], Awaitable[bool]] | None = None,
 ) -> FastAPI:
     api = FastAPI()
     export_api = ExportAPI(
@@ -185,6 +326,9 @@ def create_export_api(
         metrics=metrics,
         logger=logger,
         metrics_token=metrics_token,
+        readiness_gate=readiness_gate,
+        redis_probe=redis_probe,
+        db_probe=db_probe,
     )
     api.include_router(export_api.create_router())
     return api

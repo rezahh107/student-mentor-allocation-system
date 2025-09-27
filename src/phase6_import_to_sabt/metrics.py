@@ -22,11 +22,13 @@ class ExporterMetrics:
             "export_rows_total",
             "Rows exported",
             registry=self.registry,
+            labelnames=("format",),
         )
         self.file_bytes_total = Counter(
             "export_file_bytes_total",
             "Bytes written per export",
             registry=self.registry,
+            labelnames=("format",),
         )
         self.errors_total = Counter(
             "export_errors_total",
@@ -35,11 +37,11 @@ class ExporterMetrics:
             registry=self.registry,
         )
 
-    def observe_rows(self, rows: int) -> None:
-        self.rows_total.inc(rows)
+    def observe_rows(self, rows: int, *, format: str = "csv") -> None:
+        self.rows_total.labels(format=format).inc(rows)
 
-    def observe_file_bytes(self, size: int) -> None:
-        self.file_bytes_total.inc(size)
+    def observe_file_bytes(self, size: int, *, format: str = "csv") -> None:
+        self.file_bytes_total.labels(format=format).inc(size)
 
     def inc_job(self, status: str) -> None:
         self.jobs_total.labels(status=status).inc()

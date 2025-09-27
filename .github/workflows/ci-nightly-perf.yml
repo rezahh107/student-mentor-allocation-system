@@ -1,0 +1,198 @@
+name: Nightly Performance (Tehran)
+
+on:
+  schedule:
+    - cron: '30 23 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-nightly-perf-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  perf:
+    name: Perf harness regression guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TZ: Asia/Tehran
+      TIMEZONE: Asia/Tehran
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONHASHSEED: '0'
+      CI_RUN_ID: ${{ github.run_id }}
+      REDIS_URL: redis://127.0.0.1:6379/15
+      REDIS_DB: '15'
+      REDIS_NAMESPACE: gha-perf-${{ github.run_id }}-${{ github.run_attempt }}
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure timezone deterministically
+        run: |
+          sudo ln -snf /usr/share/zoneinfo/Asia/Tehran /etc/localtime
+          echo 'Asia/Tehran' | sudo tee /etc/timezone
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install project dependencies
+        run: |
+          set -euo pipefail
+          install_if_exists() {
+            local file="$1"
+            if [ -f "$file" ]; then
+              echo "Installing dependencies from $file"
+              python -m pip install -r "$file"
+            else
+              echo "Skipping missing $file"
+            fi
+          }
+          install_if_exists requirements.txt
+          install_if_exists requirements-dev.txt
+          install_if_exists requirements-advanced.txt
+          install_if_exists requirements-ml.txt
+          install_if_exists requirements-security.txt
+          if [ -f setup.py ]; then
+            python -m pip install -e .
+          fi
+
+      - name: Prepare directories
+        run: |
+          set -euo pipefail
+          mkdir -p reports/nightly
+          mkdir -p artifacts/nightly
+
+      - name: Ensure Redis is healthy and clean
+        run: |
+          python - <<'PY'
+          import os
+          import random
+          import time
+
+          import redis
+
+          host = os.getenv("REDIS_HOST", "127.0.0.1")
+          port = int(os.getenv("REDIS_PORT", "6379"))
+          db = int(os.getenv("REDIS_DB", "15"))
+          namespace = os.getenv("REDIS_NAMESPACE", "gha-perf")
+
+          client = redis.Redis(host=host, port=port, db=db, socket_timeout=5)
+          connected = False
+          for attempt in range(1, 11):
+              try:
+                  if client.ping():
+                      connected = True
+                      break
+              except redis.exceptions.RedisError:
+                  sleep_for = min(2 ** attempt, 10) + random.uniform(0, 0.25)
+                  time.sleep(sleep_for)
+          if not connected:
+              print("❌ ارتباط با Redis برقرار نشد؛ سلامت سرویس تایید نشد.")
+              raise SystemExit(1)
+          try:
+              client.flushdb()
+              print(f"✅ Redis DB پاکسازی شد؛ فضای نام {namespace}.")
+          except redis.exceptions.RedisError:
+              print("❌ پاکسازی Redis با خطا مواجه شد.")
+              raise SystemExit(1)
+          PY
+
+      - name: Run performance pytest suite
+        run: |
+          set -euo pipefail
+          export PYTEST_ADDOPTS="--maxfail=1 --strict-config --strict-markers"
+          RAW_LOG="pytest-raw-perf.log"
+          EXIT_FILE="pytest-exit-code-perf.txt"
+          TIME_LOG="perf-time.log"
+          set +e
+          /usr/bin/time -v pytest tests/perf --durations=25 -vv 2> >(tee "${TIME_LOG}" >&2) | tee "${RAW_LOG}"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s' "${status}" > "${EXIT_FILE}"
+          if [ "${status}" -ne 0 ]; then
+            echo "Perf pytest exited with status ${status}"
+          fi
+
+      - name: Parse pytest summary (Strict Scoring v2)
+        run: |
+          python scripts/ci_pytest_summary_parser.py \
+            --summary-file pytest-raw-perf.log \
+            --exit-code-file pytest-exit-code-perf.txt \
+            --output reports/nightly/strict_score.json
+
+      - name: Record Tehran clock snapshot
+        run: |
+          set -euo pipefail
+          mkdir -p reports/nightly
+          TZ=Asia/Tehran date --iso-8601=seconds > reports/nightly/clock_tehran.txt
+
+      - name: Collect performance metrics
+        run: |
+          python scripts/ci_collect_perf_metrics.py \
+            --pytest-log pytest-raw-perf.log \
+            --time-log perf-time.log \
+            --output reports/nightly/perf.json
+
+      - name: Run performance regression gate
+        run: python scripts/ci_perf_regression_gate.py --current reports/nightly/perf.json --baseline reports/perf_baseline.json
+
+      - name: Scan nightly artifacts for PII leaks
+        if: always()
+        run: >-
+          python scripts/ci_no_pii_scan.py
+          --include-glob "reports/**"
+          --include-glob "artifacts/**"
+          --include-glob "**/perf*.json"
+          --include-glob "pytest-raw-perf.log"
+          --exclude-glob ".pytest_cache/**"
+          reports/nightly
+
+      - name: Flush Redis after tests
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+
+          import redis
+
+          host = os.getenv("REDIS_HOST", "127.0.0.1")
+          port = int(os.getenv("REDIS_PORT", "6379"))
+          db = int(os.getenv("REDIS_DB", "15"))
+          namespace = os.getenv("REDIS_NAMESPACE", "gha-perf")
+
+          client = redis.Redis(host=host, port=port, db=db, socket_timeout=5)
+          try:
+              client.flushdb()
+              print(f"✅ Redis DB پس از اجرای کارایی پاکسازی شد؛ فضای نام {namespace}.")
+          except redis.exceptions.RedisError:
+              print("⚠️ امکان پاکسازی Redis پس از اجرای کارایی فراهم نشد.")
+          PY
+
+      - name: Upload nightly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-perf-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            pytest-raw-perf.log
+            pytest-exit-code-perf.txt
+            perf-time.log
+            reports/nightly
+            artifacts/nightly
+            .pytest_cache/

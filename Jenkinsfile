@@ -5,11 +5,11 @@ pipeline {
   }
   environment {
         PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
-        PYTHONWARNINGS = 'error'
         PYTHONUTF8 = '1'
         MPLBACKEND = 'Agg'
         QT_QPA_PLATFORM = 'offscreen'
         PYTHONDONTWRITEBYTECODE = '1'
+        PYTHONWARNINGS = 'error'
         REDIS_URL = "${env.CI_REDIS_URL ?: 'redis://localhost:6379/0'}"
         STRICT_SCORE_JSON = 'reports/strict_score.json'
         CI_CORRELATION_ID = 'be862f1780d7'
@@ -22,13 +22,19 @@ pipeline {
     }
     stage('Setup') {
       steps {
-        sh "python3 -m pip install --upgrade pip"
-        sh "pip install -r requirements.txt -r requirements-dev.txt"
+        sh "PYTHONWARNINGS=default python3 -m pip install --upgrade pip"
+        sh "PYTHONWARNINGS=default pip install -r requirements.txt -r requirements-dev.txt"
       }
     }
     stage('Test') {
       steps {
         sh '''
+export PYTHONWARNINGS=error
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+export PYTHONUTF8=1
+export MPLBACKEND=Agg
+export QT_QPA_PLATFORM=offscreen
+export PYTHONDONTWRITEBYTECODE=1
 python3 -m tools.ci_test_orchestrator --json reports/strict_score.json
 # Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx
 # Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran

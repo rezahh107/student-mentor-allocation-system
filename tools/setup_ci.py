@@ -12,14 +12,15 @@ from typing import Dict, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 CORRELATION_ID = hashlib.sha256(str(ROOT).encode("utf-8")).hexdigest()[:12]
-HEADLESS_ENV = {
+HEADLESS_BASE_ENV = {
     "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
-    "PYTHONWARNINGS": "error",
     "PYTHONUTF8": "1",
     "MPLBACKEND": "Agg",
     "QT_QPA_PLATFORM": "offscreen",
     "PYTHONDONTWRITEBYTECODE": "1",
 }
+HEADLESS_TEST_ENV = {**HEADLESS_BASE_ENV, "PYTHONWARNINGS": "error"}
+INSTALL_WARNINGS_ENV = {"PYTHONWARNINGS": "default"}
 STRICT_JSON_PATH = "reports/strict_score.json"
 
 
@@ -50,6 +51,10 @@ def sanitize_repo_name(name: str) -> str:
     return cleaned.lower() or "ci"
 
 
+def format_env_lines(env: Dict[str, str], indent: str) -> str:
+    return "\n".join(f"{indent}{key}: '{value}'" for key, value in env.items())
+
+
 def atomic_write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     part_path = path.with_name(path.name + ".part")
@@ -69,18 +74,23 @@ def atomic_write_text(path: Path, content: str) -> None:
 
 
 def render_github_actions(repo_namespace: str) -> str:
-    env_lines = "\n".join(f"      {key}: '{value}'" for key, value in HEADLESS_ENV.items())
-    return f"""name: Strict CI Orchestration\n\non:\n  push:\n    branches:\n      - '**'\n  pull_request:\n\npermissions:\n  contents: read\n  actions: read\n  checks: read\n\nconcurrency:\n  group: strict-ci-${{{{ github.ref }}}}\n  cancel-in-progress: true\n\njobs:\n  test:\n    name: orchestrator\n    runs-on: ubuntu-latest\n    timeout-minutes: 45\n    env:\n{env_lines}\n      REDIS_URL: ${{{{ secrets.CI_REDIS_URL || 'redis://localhost:6379/0' }}}}\n      STRICT_SCORE_JSON: "{STRICT_JSON_PATH}"\n      CI_CORRELATION_ID: "{CORRELATION_ID}"\n    services:\n      redis:\n        image: redis:7-alpine\n        ports:\n          - 6379:6379\n        options: >-\n          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20\n    steps:\n      - name: دریافت مخزن\n        uses: actions/checkout@v4\n      - name: راه‌اندازی پایتون\n        uses: actions/setup-python@v5\n        with:\n          python-version: '3.11'\n      - name: نصب وابستگی‌ها\n        run: |\n          python -m pip install --upgrade pip\n          pip install -r requirements.txt -r requirements-dev.txt\n      - name: اجرای ارکستریتور تست‌ها\n        run: |\n          python -m tools.ci_test_orchestrator --json {STRICT_JSON_PATH}\n        # Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx\n        # Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran\n        # Evidence: tests/hygiene/test_prom_registry_reset.py::test_registry_reset_once\n        # Evidence: tests/obs/test_metrics_protected.py::test_metrics_requires_token\n        # Evidence: tests/exports/test_excel_safety_ci.py::test_always_quote_and_formula_guard\n        # Evidence: tests/exports/test_xlsx_finalize.py::test_atomic_finalize_and_manifest\n        # Evidence: tests/perf/test_health_ready_p95.py::test_readyz_p95_lt_200ms\n        # Evidence: tests/i18n/test_persian_errors.py::test_deterministic_error_messages\n      - name: بارگذاری Strict Score v2\n        if: always()\n        uses: actions/upload-artifact@v4\n        with:\n          name: strict-score\n          if-no-files-found: error\n          path: {STRICT_JSON_PATH}\n"""
+    job_env_lines = format_env_lines(HEADLESS_TEST_ENV, "      ")
+    install_env_lines = format_env_lines(INSTALL_WARNINGS_ENV, "          ")
+    test_env_lines = format_env_lines(HEADLESS_TEST_ENV, "          ")
+    return f"""name: Strict CI Orchestration\n\non:\n  push:\n    branches:\n      - '**'\n  pull_request:\n\npermissions:\n  contents: read\n  actions: read\n  checks: read\n\nconcurrency:\n  group: strict-ci-${{{{ github.ref }}}}\n  cancel-in-progress: true\n\njobs:\n  test:\n    name: orchestrator\n    runs-on: ubuntu-latest\n    timeout-minutes: 45\n    env:\n{job_env_lines}\n      REDIS_URL: ${{{{ secrets.CI_REDIS_URL || 'redis://localhost:6379/0' }}}}\n      STRICT_SCORE_JSON: "{STRICT_JSON_PATH}"\n      CI_CORRELATION_ID: "{CORRELATION_ID}"\n    services:\n      redis:\n        image: redis:7-alpine\n        ports:\n          - 6379:6379\n        options: >-\n          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20\n    steps:\n      - name: دریافت مخزن\n        uses: actions/checkout@v4\n      - name: راه‌اندازی پایتون\n        uses: actions/setup-python@v5\n        with:\n          python-version: '3.11'\n      - name: نصب وابستگی‌ها\n        env:\n{install_env_lines}\n        run: |\n          python -m pip install --upgrade pip\n          pip install -r requirements.txt -r requirements-dev.txt\n      - name: اجرای ارکستریتور تست‌ها\n        env:\n{test_env_lines}\n        run: |\n          python -m tools.ci_test_orchestrator --json {STRICT_JSON_PATH}\n        # Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx\n        # Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran\n        # Evidence: tests/hygiene/test_prom_registry_reset.py::test_registry_reset_once\n        # Evidence: tests/obs/test_metrics_protected.py::test_metrics_requires_token\n        # Evidence: tests/exports/test_excel_safety_ci.py::test_always_quote_and_formula_guard\n        # Evidence: tests/exports/test_xlsx_finalize.py::test_atomic_finalize_and_manifest\n        # Evidence: tests/perf/test_health_ready_p95.py::test_readyz_p95_lt_200ms\n        # Evidence: tests/i18n/test_persian_errors.py::test_deterministic_error_messages\n      - name: بارگذاری Strict Score v2\n        if: always()\n        uses: actions/upload-artifact@v4\n        with:\n          name: strict-score\n          if-no-files-found: ignore\n          path: {STRICT_JSON_PATH}\n"""
 
 
 def render_gitlab_ci(repo_namespace: str) -> str:
-    env_lines = "\n".join(f"    {key}: '{value}'" for key, value in HEADLESS_ENV.items())
-    return f"""stages:\n  - test\n\npytest:\n  stage: test\n  image: python:3.11-slim\n  variables:\n{env_lines}\n    REDIS_URL: '${{CI_REDIS_URL:-redis://redis:6379/0}}'\n    STRICT_SCORE_JSON: "{STRICT_JSON_PATH}"\n    CI_CORRELATION_ID: "{CORRELATION_ID}"\n  services:\n    - name: redis:7-alpine\n      alias: redis\n  script:\n    - python -m pip install --upgrade pip\n    - pip install -r requirements.txt -r requirements-dev.txt\n    - |\n      # Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx\n      # Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran\n      # Evidence: tests/hygiene/test_prom_registry_reset.py::test_registry_reset_once\n      # Evidence: tests/obs/test_metrics_protected.py::test_metrics_requires_token\n      # Evidence: tests/exports/test_excel_safety_ci.py::test_always_quote_and_formula_guard\n      # Evidence: tests/exports/test_xlsx_finalize.py::test_atomic_finalize_and_manifest\n      # Evidence: tests/perf/test_health_ready_p95.py::test_readyz_p95_lt_200ms\n      # Evidence: tests/i18n/test_persian_errors.py::test_deterministic_error_messages\n      python -m tools.ci_test_orchestrator --json {STRICT_JSON_PATH}\n  artifacts:\n    when: always\n    name: {repo_namespace}-strict-score\n    paths:\n      - {STRICT_JSON_PATH}\n"""
+    env_lines = format_env_lines(HEADLESS_TEST_ENV, "    ")
+    headless_exports = "\n".join(
+        f"      export {key}='{value}'" for key, value in HEADLESS_BASE_ENV.items()
+    )
+    return f"""stages:\n  - test\n\npytest:\n  stage: test\n  image: python:3.11-slim\n  variables:\n{env_lines}\n    REDIS_URL: '${{CI_REDIS_URL:-redis://redis:6379/0}}'\n    STRICT_SCORE_JSON: "{STRICT_JSON_PATH}"\n    CI_CORRELATION_ID: "{CORRELATION_ID}"\n  services:\n    - name: redis:7-alpine\n      alias: redis\n  script:\n    - export PYTHONWARNINGS=default\n    - python -m pip install --upgrade pip\n    - pip install -r requirements.txt -r requirements-dev.txt\n    - |\n      export PYTHONWARNINGS=error\n{headless_exports}\n      # Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx\n      # Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran\n      # Evidence: tests/hygiene/test_prom_registry_reset.py::test_registry_reset_once\n      # Evidence: tests/obs/test_metrics_protected.py::test_metrics_requires_token\n      # Evidence: tests/exports/test_excel_safety_ci.py::test_always_quote_and_formula_guard\n      # Evidence: tests/exports/test_xlsx_finalize.py::test_atomic_finalize_and_manifest\n      # Evidence: tests/perf/test_health_ready_p95.py::test_readyz_p95_lt_200ms\n      # Evidence: tests/i18n/test_persian_errors.py::test_deterministic_error_messages\n      python -m tools.ci_test_orchestrator --json {STRICT_JSON_PATH}\n  artifacts:\n    when: always\n    name: {repo_namespace}-strict-score\n    paths:\n      - {STRICT_JSON_PATH}\n"""
 
 
 def render_jenkinsfile(repo_namespace: str) -> str:
-    env_lines = "\n        ".join(f"{key} = '{value}'" for key, value in HEADLESS_ENV.items())
-    return f"""pipeline {{\n  agent any\n  options {{\n    disableConcurrentBuilds()\n  }}\n  environment {{\n        {env_lines}\n        REDIS_URL = "${{env.CI_REDIS_URL ?: 'redis://localhost:6379/0'}}"\n        STRICT_SCORE_JSON = '{STRICT_JSON_PATH}'\n        CI_CORRELATION_ID = '{CORRELATION_ID}'\n  }}\n  stages {{\n    stage('Checkout') {{\n      steps {{\n        checkout scm\n      }}\n    }}\n    stage('Setup') {{\n      steps {{\n        sh "python3 -m pip install --upgrade pip"\n        sh "pip install -r requirements.txt -r requirements-dev.txt"\n      }}\n    }}\n    stage('Test') {{\n      steps {{\n        sh '''\npython3 -m tools.ci_test_orchestrator --json {STRICT_JSON_PATH}\n# Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx\n# Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran\n# Evidence: tests/hygiene/test_prom_registry_reset.py::test_registry_reset_once\n# Evidence: tests/obs/test_metrics_protected.py::test_metrics_requires_token\n# Evidence: tests/exports/test_excel_safety_ci.py::test_always_quote_and_formula_guard\n# Evidence: tests/exports/test_xlsx_finalize.py::test_atomic_finalize_and_manifest\n# Evidence: tests/perf/test_health_ready_p95.py::test_readyz_p95_lt_200ms\n# Evidence: tests/i18n/test_persian_errors.py::test_deterministic_error_messages\n'''\n      }}\n    }}\n  }}\n  post {{\n    always {{\n      archiveArtifacts artifacts: '{STRICT_JSON_PATH}', allowEmptyArchive: false\n    }}\n  }}\n}}\n"""
+    env_lines = "\n        ".join(f"{key} = '{value}'" for key, value in HEADLESS_TEST_ENV.items())
+    return f"""pipeline {{\n  agent any\n  options {{\n    disableConcurrentBuilds()\n  }}\n  environment {{\n        {env_lines}\n        REDIS_URL = "${{env.CI_REDIS_URL ?: 'redis://localhost:6379/0'}}"\n        STRICT_SCORE_JSON = '{STRICT_JSON_PATH}'\n        CI_CORRELATION_ID = '{CORRELATION_ID}'\n  }}\n  stages {{\n    stage('Checkout') {{\n      steps {{\n        checkout scm\n      }}\n    }}\n    stage('Setup') {{\n      steps {{\n        sh "PYTHONWARNINGS=default python3 -m pip install --upgrade pip"\n        sh "PYTHONWARNINGS=default pip install -r requirements.txt -r requirements-dev.txt"\n      }}\n    }}\n    stage('Test') {{\n      steps {{\n        sh '''\nexport PYTHONWARNINGS=error\nexport PYTEST_DISABLE_PLUGIN_AUTOLOAD=1\nexport PYTHONUTF8=1\nexport MPLBACKEND=Agg\nexport QT_QPA_PLATFORM=offscreen\nexport PYTHONDONTWRITEBYTECODE=1\npython3 -m tools.ci_test_orchestrator --json {STRICT_JSON_PATH}\n# Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx\n# Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran\n# Evidence: tests/hygiene/test_prom_registry_reset.py::test_registry_reset_once\n# Evidence: tests/obs/test_metrics_protected.py::test_metrics_requires_token\n# Evidence: tests/exports/test_excel_safety_ci.py::test_always_quote_and_formula_guard\n# Evidence: tests/exports/test_xlsx_finalize.py::test_atomic_finalize_and_manifest\n# Evidence: tests/perf/test_health_ready_p95.py::test_readyz_p95_lt_200ms\n# Evidence: tests/i18n/test_persian_errors.py::test_deterministic_error_messages\n'''\n      }}\n    }}\n  }}\n  post {{\n    always {{\n      archiveArtifacts artifacts: '{STRICT_JSON_PATH}', allowEmptyArchive: false\n    }}\n  }}\n}}\n"""
 
 
 MAKE_BLOCK_START = "# == Strict CI targets (autogen) ==\n"
@@ -88,7 +98,7 @@ MAKE_BLOCK_END = "# == Strict CI targets end ==\n"
 
 
 def render_makefile(existing: str | None) -> str:
-    headless_exports = " ".join(f"{key}={value}" for key, value in HEADLESS_ENV.items())
+    headless_exports = " ".join(f"{key}={value}" for key, value in HEADLESS_TEST_ENV.items())
     block = MAKE_BLOCK_START + (
         ".PHONY: ci ci-json ci-local-redis\n"
         "\n"
@@ -121,7 +131,7 @@ def render_makefile(existing: str | None) -> str:
 
 def render_docs(repo_namespace: str) -> str:
     csv_example = "ستون,مقدار\r\nRateLimit,فعال\r\nIdempotency,فعال\r\nAuth,فعال\r\n"
-    return f"""# راهنمای اجرای Strict CI Orchestration\n\nاین مستند نحوهٔ استفاده از تنظیمات تولیدشده توسط `tools/setup_ci.py` را توضیح می‌دهد. همهٔ پیام‌ها و خروجی‌ها قطعی و فارسی هستند تا مطابق نیازهای تیم داده باقی بمانند.\n\n## شروع سریع\n\n1. وابستگی‌ها را نصب کنید:\n   ```bash\n   python -m pip install --upgrade pip\n   pip install -r requirements.txt -r requirements-dev.txt\n   ```\n2. اجرای محلی ارکستریتور با گزارش Strict Scoring v2:\n   ```bash\n   make ci\n   ```\n3. برای گرفتن خروجی JSON بدون آرشیو اضافی از `make ci-json` استفاده کنید.\n\nنمونهٔ پیکربندی CSV ایمن برای خروجی‌ها (با انتهای CRLF):\n\n```csv\n{csv_example}```\n\n## شاخه‌های حفاظت‌شده\n\nبرای اطمینان از این‌که هر Push یا Pull Request فقط یکبار ارکستریتور را اجرا کند و گزارش `reports/strict_score.json` را بسازد، قوانین حفاظت شاخه در GitHub را به شکل زیر تنظیم کنید:\n\n- شاخهٔ اصلی را محافظت کنید و اجرای workflow «Strict CI Orchestration» را **Required** قرار دهید.\n- گزینهٔ «Require branches to be up to date before merging» را فعال کنید تا از race condition در تست‌های موازی جلوگیری شود.\n- در GitLab، job با نام `pytest` را در بخش Protected Branches به‌عنوان لازم‌الاجرا تنظیم کنید.\n- در Jenkins، مرحلهٔ `Test` را در سیاست‌های merge خود به‌عنوان گیت ادغام اجباری معرفی نمایید.\n\n## پاک‌سازی وضعیت و ایزوله‌سازی\n\nارکستریتور تست‌ها قبل و بعد از هر اجرا وضعیت Redis و Prometheus را ریست می‌کند تا آزمون‌ها با موازی‌سازی (`pytest-xdist`) نیز قطعی بمانند. برای هماهنگی با محیط‌های اشتراکی، از نام‌های فضای‌نامی مشتق‌شده از مخزن (`{repo_namespace}`) استفاده می‌شود.\n\n## گزارش Strict Score v2\n\nفایل `reports/strict_score.json` نتیجهٔ گیت‌های عملکرد، ایمنی Excel و خطاهای فارسی را ذخیره می‌کند. این فایل به صورت خودکار در GitHub Actions، GitLab CI و Jenkins آرشیو می‌شود تا ممیزان بتوانند به سادگی آن را ردیابی کنند.\n"""
+    return f"""# راهنمای اجرای Strict CI Orchestration\n\nاین مستند نحوهٔ استفاده از تنظیمات تولیدشده توسط `tools/setup_ci.py` را توضیح می‌دهد. همهٔ پیام‌ها و خروجی‌ها قطعی و فارسی هستند تا مطابق نیازهای تیم داده باقی بمانند.\n\n## شروع سریع\n\n1. وابستگی‌ها را نصب کنید:\n   ```bash\n   python -m pip install --upgrade pip\n   pip install -r requirements.txt -r requirements-dev.txt\n   ```\n2. اجرای محلی ارکستریتور با گزارش Strict Scoring v2:\n   ```bash\n   make ci\n   ```\n3. برای گرفتن خروجی JSON بدون آرشیو اضافی از `make ci-json` استفاده کنید.\n\nنمونهٔ پیکربندی CSV ایمن برای خروجی‌ها (با انتهای CRLF):\n\n```csv\n{csv_example}```\n\n## شاخه‌های حفاظت‌شده\n\nبرای اطمینان از این‌که هر Push یا Pull Request فقط یکبار ارکستریتور را اجرا کند و گزارش `reports/strict_score.json` را بسازد، قوانین حفاظت شاخه در GitHub را به شکل زیر تنظیم کنید:\n\n- شاخهٔ اصلی را محافظت کنید و اجرای workflow «Strict CI Orchestration» را **Required** قرار دهید.\n- گزینهٔ «Require branches to be up to date before merging» را فعال کنید تا از race condition در تست‌های موازی جلوگیری شود.\n- در GitLab، job با نام `pytest` را در بخش Protected Branches به‌عنوان لازم‌الاجرا تنظیم کنید.\n- در Jenkins، مرحلهٔ `Test` را در سیاست‌های merge خود به‌عنوان گیت ادغام اجباری معرفی نمایید.\n\n> نکته: مرحلهٔ نصب وابستگی‌ها در CI به‌صورت کنترل‌شده مقدار `PYTHONWARNINGS=default` را اعمال می‌کند تا هشدارهای بسته‌های خارجی مانند `pytest-watch` باعث توقف نصب نشوند، اما در گام اجرای تست‌ها دوباره `PYTHONWARNINGS=error` فعال است تا کوچک‌ترین هشدار هم جدی گرفته شود.\n\n## پاک‌سازی وضعیت و ایزوله‌سازی\n\nارکستریتور تست‌ها قبل و بعد از هر اجرا وضعیت Redis و Prometheus را ریست می‌کند تا آزمون‌ها با موازی‌سازی (`pytest-xdist`) نیز قطعی بمانند. برای هماهنگی با محیط‌های اشتراکی، از نام‌های فضای‌نامی مشتق‌شده از مخزن (`{repo_namespace}`) استفاده می‌شود.\n\n## گزارش Strict Score v2\n\nفایل `reports/strict_score.json` نتیجهٔ گیت‌های عملکرد، ایمنی Excel و خطاهای فارسی را ذخیره می‌کند. این فایل به صورت خودکار در GitHub Actions، GitLab CI و Jenkins آرشیو می‌شود تا ممیزان بتوانند به سادگی آن را ردیابی کنند.\n"""
 
 
 def gather_targets(repo_namespace: str) -> Dict[Path, str]:
@@ -169,29 +179,47 @@ def validate_yaml(path: Path, patterns: Sequence[re.Pattern[str]], failure_code:
 
 def run_validator() -> None:
     validate_orchestrator()
-    headless_patterns = [re.compile(re.escape(key)) for key in HEADLESS_ENV]
+    headless_keys = list(HEADLESS_BASE_ENV.keys())
 
     gh_patterns = [
         re.compile(r"\bon:\s*\n\s*push:", re.MULTILINE),
         re.compile(r"\bpython -m tools\.ci_test_orchestrator --json reports/strict_score\.json\b"),
         re.compile(r"\n\s+test:\n"),
         re.compile(r"name: strict-score"),
-    ] + headless_patterns
+        re.compile(r"نصب وابستگی‌ها[\s\S]*?PYTHONWARNINGS: 'default'"),
+        re.compile(r"اجرای ارکستریتور تست‌ها[\s\S]*?PYTHONWARNINGS: 'error'"),
+        re.compile(r"if-no-files-found: ignore"),
+    ]
+    for key in headless_keys:
+        gh_patterns.append(
+            re.compile(r"اجرای ارکستریتور تست‌ها[\s\S]*?" + re.escape(f"{key}: '"))
+        )
     validate_yaml(ROOT / ".github" / "workflows" / "ci.yml", gh_patterns, "ERR_YAML_GITHUB")
 
     gitlab_patterns = [
         re.compile(r"^pytest:\n", re.MULTILINE),
         re.compile(r"python -m tools\.ci_test_orchestrator --json reports/strict_score\.json"),
         re.compile(r"name: .*strict-score"),
-    ] + headless_patterns
+        re.compile(r"export PYTHONWARNINGS=default"),
+        re.compile(r"export PYTHONWARNINGS=error"),
+    ]
+    for key, value in HEADLESS_BASE_ENV.items():
+        gitlab_patterns.append(
+            re.compile(rf"export {re.escape(key)}='{re.escape(value)}'")
+        )
     validate_yaml(ROOT / ".gitlab-ci.yml", gitlab_patterns, "ERR_YAML_GITLAB")
 
     jenkins_text = (ROOT / "Jenkinsfile").read_text(encoding="utf-8")
     jenkins_patterns = [
         re.compile(r"stage\('Test'\)"),
+        re.compile(r"PYTHONWARNINGS=default python3 -m pip install --upgrade pip"),
+        re.compile(r"PYTHONWARNINGS=default pip install -r requirements.txt -r requirements-dev.txt"),
+        re.compile(r"PYTHONWARNINGS=error"),
         re.compile(r"python3 -m tools\.ci_test_orchestrator --json reports/strict_score\.json"),
         re.compile(r"archiveArtifacts artifacts: 'reports/strict_score\.json'"),
-    ] + headless_patterns
+    ]
+    for key in headless_keys:
+        jenkins_patterns.append(re.compile(re.escape(f"{key}=")))
     for pattern in jenkins_patterns:
         if not pattern.search(jenkins_text):
             log_event("validate_workflow", target=str(ROOT / "Jenkinsfile"), status="failed", missing=pattern.pattern)

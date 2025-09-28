@@ -1,7 +1,7 @@
 .PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard \
             ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke \
             security-fix security-scan security test test-coverage test-coverage-summary test-legacy \
-            automation-audit pii-scan
+            automation-audit pii-scan pytest-json
 
 PYTHON ?= python3
 PROJECT_ROOT := $(CURDIR)
@@ -131,3 +131,6 @@ else \
 	make ci; \
 fi'
 # == Strict CI targets end ==
+pytest-json:
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.pytest_json_gate $(PYTEST_ARGS)
+

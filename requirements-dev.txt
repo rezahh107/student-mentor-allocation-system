@@ -10,3 +10,6 @@ alembic>=1.12
 prometheus_client>=0.16
 PyYAML>=6.0
 types-PyYAML>=6.0.12
+fastapi>=0.110
+redis>=5.0
+fakeredis>=2.19

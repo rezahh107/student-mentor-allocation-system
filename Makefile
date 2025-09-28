@@ -99,3 +99,26 @@ test-coverage-summary:
 
 test-legacy:
         PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -q tests/legacy -k "not gui" && echo "✅ Legacy tests passed"
+
+# == Strict CI targets (autogen) ==
+.PHONY: ci ci-json ci-local-redis
+
+ci:
+	@PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONUTF8=1 MPLBACKEND=Agg QT_QPA_PLATFORM=offscreen PYTHONDONTWRITEBYTECODE=1 PYTHONWARNINGS=error REDIS_URL="$${REDIS_URL:-redis://localhost:6379/0}" \
+	STRICT_SCORE_JSON=reports/strict_score.json CI_CORRELATION_ID=be862f1780d7 python -m tools.ci_test_orchestrator --json reports/strict_score.json
+
+ci-json:
+	@PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONUTF8=1 MPLBACKEND=Agg QT_QPA_PLATFORM=offscreen PYTHONDONTWRITEBYTECODE=1 PYTHONWARNINGS=error REDIS_URL="$${REDIS_URL:-redis://localhost:6379/0}" \
+	STRICT_SCORE_JSON=reports/strict_score.json CI_CORRELATION_ID=be862f1780d7 python -m tools.ci_test_orchestrator --json reports/strict_score.json
+
+ci-local-redis:
+	@bash -lc 'set -euo pipefail; \
+if command -v redis-server >/dev/null 2>&1; then \
+  redis-server --save "" --appendonly no --port 6379 --daemonize yes; \
+  trap "redis-cli shutdown >/dev/null 2>&1 || true" EXIT; \
+  make ci; \
+else \
+  echo "redis-server در دسترس نیست؛ ارکستریتور بدون آن اجرا می‌شود."; \
+  make ci; \
+fi'
+# == Strict CI targets end ==

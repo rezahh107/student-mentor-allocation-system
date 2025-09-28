@@ -1,0 +1,44 @@
+# راهنمای اجرای Strict CI Orchestration
+
+این مستند نحوهٔ استفاده از تنظیمات تولیدشده توسط `tools/setup_ci.py` را توضیح می‌دهد. همهٔ پیام‌ها و خروجی‌ها قطعی و فارسی هستند تا مطابق نیازهای تیم داده باقی بمانند.
+
+## شروع سریع
+
+1. وابستگی‌ها را نصب کنید:
+   ```bash
+   python -m pip install --upgrade pip
+   pip install -r requirements.txt -r requirements-dev.txt
+   ```
+2. اجرای محلی ارکستریتور با گزارش Strict Scoring v2:
+   ```bash
+   make ci
+   ```
+3. برای گرفتن خروجی JSON بدون آرشیو اضافی از `make ci-json` استفاده کنید.
+
+نمونهٔ پیکربندی CSV ایمن برای خروجی‌ها (با انتهای CRLF):
+
+```csv
+ستون,مقدار
+RateLimit,فعال
+Idempotency,فعال
+Auth,فعال
+```
+
+## شاخه‌های حفاظت‌شده
+
+برای اطمینان از این‌که هر Push یا Pull Request فقط یکبار ارکستریتور را اجرا کند و گزارش `reports/strict_score.json` را بسازد، قوانین حفاظت شاخه در GitHub را به شکل زیر تنظیم کنید:
+
+- شاخهٔ اصلی را محافظت کنید و اجرای workflow «Strict CI Orchestration» را **Required** قرار دهید.
+- گزینهٔ «Require branches to be up to date before merging» را فعال کنید تا از race condition در تست‌های موازی جلوگیری شود.
+- در GitLab، job با نام `pytest` را در بخش Protected Branches به‌عنوان لازم‌الاجرا تنظیم کنید.
+- در Jenkins، مرحلهٔ `Test` را در سیاست‌های merge خود به‌عنوان گیت ادغام اجباری معرفی نمایید.
+
+> نکته: مرحلهٔ نصب وابستگی‌ها در CI به‌صورت کنترل‌شده مقدار `PYTHONWARNINGS=default` را اعمال می‌کند تا هشدارهای بسته‌های خارجی مانند `pytest-watch` باعث توقف نصب نشوند، اما در گام اجرای تست‌ها دوباره `PYTHONWARNINGS=error` فعال است تا کوچک‌ترین هشدار هم جدی گرفته شود.
+
+## پاک‌سازی وضعیت و ایزوله‌سازی
+
+ارکستریتور تست‌ها قبل و بعد از هر اجرا وضعیت Redis و Prometheus را ریست می‌کند تا آزمون‌ها با موازی‌سازی (`pytest-xdist`) نیز قطعی بمانند. برای هماهنگی با محیط‌های اشتراکی، از نام‌های فضای‌نامی مشتق‌شده از مخزن (`student-mentor-allocation-system`) استفاده می‌شود.
+
+## گزارش Strict Score v2
+
+فایل `reports/strict_score.json` نتیجهٔ گیت‌های عملکرد، ایمنی Excel و خطاهای فارسی را ذخیره می‌کند. این فایل به صورت خودکار در GitHub Actions، GitLab CI و Jenkins آرشیو می‌شود تا ممیزان بتوانند به سادگی آن را ردیابی کنند.

@@ -12,6 +12,7 @@ from .logging_utils import ExportLogger
 from .metrics import ExporterMetrics
 from .models import (
     Clock,
+    ExportExecutionStats,
     ExportFilters,
     ExportJob,
     ExportJobStatus,
@@ -112,7 +113,8 @@ class ExportJobRunner:
                 return self.jobs[existing_id]
             raise ValueError("EXPORT_DUPLICATE")
         job_id = str(uuid.uuid4())
-        snapshot = ExportSnapshot(marker=f"snapshot-{job_id}", created_at=self.clock())
+        now = self.clock()
+        snapshot = ExportSnapshot(marker=f"snapshot-{job_id}", created_at=now)
         job = ExportJob(
             id=job_id,
             status=ExportJobStatus.PENDING,
@@ -121,6 +123,7 @@ class ExportJobRunner:
             snapshot=snapshot,
             namespace=namespace,
             correlation_id=correlation_id,
+            queued_at=now,
         )
         with self._lock:
             self.jobs[job_id] = job
@@ -143,21 +146,30 @@ class ExportJobRunner:
     # internal
     def _run_job(self, job_id: str, redis_key: str) -> None:
         start_time = self.clock()
-        format_label = self.jobs[job_id].options.output_format
+        job = self.jobs[job_id]
+        format_label = job.options.output_format
+        queue_duration = (start_time - job.queued_at).total_seconds()
+        if queue_duration >= 0:
+            self.metrics.observe_duration("queue", queue_duration, format_label)
         self._update_job(job_id, status=ExportJobStatus.RUNNING, started_at=start_time)
         self.redis.hset(redis_key, {"status": ExportJobStatus.RUNNING.value})
         attempt = 0
         while True:
             attempt += 1
+            job = self.jobs[job_id]
             try:
+                stats = ExportExecutionStats()
                 manifest = self.exporter.run(
-                    filters=self.jobs[job_id].filters,
-                    options=self.jobs[job_id].options,
-                    snapshot=self.jobs[job_id].snapshot,
-                    clock_now=self.clock(),
+                    filters=job.filters,
+                    options=job.options,
+                    snapshot=job.snapshot,
+                    clock_now=start_time,
+                    stats=stats,
                 )
                 duration = (self.clock() - start_time).total_seconds()
-                self.metrics.observe_duration("export", duration, format_label)
+                self.metrics.observe_duration("total", duration, format_label)
+                for phase, value in stats.phase_durations.items():
+                    self.metrics.observe_duration(phase, value, format_label)
                 for file in manifest.files:
                     self.metrics.observe_file_bytes(file.byte_size, format_label)
                     self.metrics.observe_rows(file.row_count, format_label)
@@ -174,8 +186,8 @@ class ExportJobRunner:
                     "export_completed",
                     job_id=job_id,
                     rid=job_id,
-                    namespace=self.jobs[job_id].namespace,
-                    snapshot=self.jobs[job_id].snapshot.marker,
+                    namespace=job.namespace,
+                    snapshot=job.snapshot.marker,
                     operation="export",
                     rows=manifest.total_rows,
                     last_error="",
@@ -197,8 +209,8 @@ class ExportJobRunner:
                     "export_failed",
                     job_id=job_id,
                     rid=job_id,
-                    namespace=self.jobs[job_id].namespace,
-                    snapshot=self.jobs[job_id].snapshot.marker,
+                    namespace=job.namespace,
+                    snapshot=job.snapshot.marker,
                     operation="export",
                     last_error=str(exc),
                     correlation_id=self.jobs[job_id].correlation_id,
@@ -251,8 +263,8 @@ class ExportJobRunner:
                     "export_failed",
                     job_id=job_id,
                     rid=job_id,
-                    namespace=self.jobs[job_id].namespace,
-                    snapshot=self.jobs[job_id].snapshot.marker,
+                    namespace=job.namespace,
+                    snapshot=job.snapshot.marker,
                     operation="export",
                     last_error=str(exc),
                     correlation_id=self.jobs[job_id].correlation_id,

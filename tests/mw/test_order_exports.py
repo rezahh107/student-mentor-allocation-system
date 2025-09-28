@@ -7,7 +7,7 @@ from phase7_release.deploy import ReadinessGate
 from tests.export.helpers import build_job_runner, make_row
 
 
-def test_middleware_order_is_rl_idem_auth(tmp_path):
+def test_mw_order_rate_idem_auth(tmp_path):
     rows = [make_row(idx=1)]
     runner, metrics = build_job_runner(tmp_path, rows)
     signer = HMACSignedURLProvider(secret="secret")

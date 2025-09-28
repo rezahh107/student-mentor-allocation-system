@@ -28,88 +28,72 @@ class SpecRequirement:
 
 
 SPEC_ITEMS: Dict[str, SpecRequirement] = {
-    "middleware_order": SpecRequirement(
+    "stable_sort_keys": SpecRequirement(
         axis="performance",
-        description="Middleware order RateLimit → Idempotency → Auth verified",
-        default_evidence="tests/mw/test_order_with_xlsx_ci.py::test_middleware_order",
-    ),
-    "deterministic_clock": SpecRequirement(
-        axis="performance",
-        description="Deterministic clock/timezone controls injected",
-        default_evidence="tests/time/test_clock_tz_ci.py::test_tehran_clock_injection",
+        description="Stable sort keys (year_code, reg_center, group_code, coalesce(school_code,999999), national_id)",
+        default_evidence="tests/exports/test_sabt_core.py::test_stable_sort_order",
     ),
     "state_hygiene": SpecRequirement(
         axis="performance",
-        description="Global state hygiene (Redis flush & Prometheus registry reset)",
-        default_evidence="tests/hygiene/test_registry_reset.py::test_prom_registry_reset",
+        description="State hygiene resets Redis/tmp directories and Prometheus CollectorRegistry",
+        default_evidence="tests/obs/test_prom_registry_reset.py::test_registry_fresh_between_tests",
     ),
-    "observability": SpecRequirement(
-        axis="security",
-        description="Prometheus retry/exhaustion counters & masked JSON logs",
-        default_evidence="tests/obs/test_metrics_format_label_ci.py::test_json_logs_masking",
+    "chunking_filenames": SpecRequirement(
+        axis="excel",
+        description="Chunking size 50k with deterministic filenames export_{profile}_{year}-{centerOrALL}_{timestamp}_{seq3}",
+        default_evidence="tests/exports/test_sabt_core.py::test_chunking_and_naming_determinism",
     ),
     "excel_safety": SpecRequirement(
         axis="excel",
-        description="Excel digit folding, NFKC, Persian ی/ک unify, formula guard",
-        default_evidence="tests/exports/test_excel_safety_ci.py::test_formula_guard",
+        description="Excel safety (quotes, formula guard, CRLF, BOM, digit folding)",
+        default_evidence="tests/exports/test_excel_safety_ci.py::test_quotes_formula_guard_crlf_bom",
     ),
-    "atomic_io": SpecRequirement(
-        axis="excel",
-        description="Atomic write (.part → fsync → rename) enforcement",
-        default_evidence="tests/readiness/test_atomic_io.py::test_atomic_write_and_rename",
-    ),
-    "performance_budgets": SpecRequirement(
+    "snapshot_delta": SpecRequirement(
         axis="performance",
-        description="p95 orchestrator overhead <200ms and memory <200MB",
-        default_evidence="tests/perf/test_ci_overhead.py::test_orchestrator_overhead",
+        description="Snapshot/delta window by (created_at,id) without gaps or overlaps",
+        default_evidence="tests/exports/test_delta_window.py::test_delta_no_gap_overlap",
     ),
-    "persian_errors": SpecRequirement(
+    "atomic_finalize": SpecRequirement(
+        axis="excel",
+        description="Atomic finalize writes files then manifest with sha256",
+        default_evidence="tests/exports/test_manifest.py::test_atomic_manifest_after_files",
+    ),
+    "counter_year_code": SpecRequirement(
+        axis="performance",
+        description="Counter prefix by gender and AcademicYearProvider derived year code",
+        default_evidence="tests/counter/test_counter_rules.py::test_regex_and_gender_prefix",
+    ),
+    "security_access": SpecRequirement(
         axis="security",
-        description="Deterministic Persian end-user error envelopes",
-        default_evidence="tests/logging/test_persian_errors.py::test_error_envelopes",
+        description="Security guard: metrics token + signed URL HMAC with TTL",
+        default_evidence="tests/security/test_metrics_and_downloads.py::test_token_and_signed_url",
     ),
-    "counter_rules": SpecRequirement(
+    "observability_metrics": SpecRequirement(
+        axis="security",
+        description="Observability metrics exported with correct labels and protection",
+        default_evidence="tests/obs/test_export_metrics.py::test_export_metrics_labels_and_token_guard",
+    ),
+    "slo_baseline": SpecRequirement(
         axis="performance",
-        description="SSOT counter prefix + regex validation",
-        default_evidence="tests/obs_e2e/test_metrics_labels.py::test_retry_exhaustion_counters",
+        description="100k row export p95<15s and memory<150MB",
+        default_evidence="tests/perf/test_export_100k.py::test_p95_and_mem_budget",
     ),
-    "normalization": SpecRequirement(
-        axis="excel",
-        description="Phase-1 normalization (enums, phone regex, digit folding)",
-        default_evidence="tests/ci/test_strict_score_guard.py::test_parse_pytest_summary_extended_handles_persian_digits",
-    ),
-    "export_streaming": SpecRequirement(
-        axis="excel",
-        description="Phase-6 exporter streaming, chunking, CRLF safety",
-        default_evidence="tests/exports/test_excel_safety_ci.py::test_formula_guard",
-    ),
-    "release_artifacts": SpecRequirement(
+    "quality_gates": SpecRequirement(
         axis="performance",
-        description="Release artefacts include SBOM/lock/perf baselines",
-        default_evidence="tests/ci/test_ci_pytest_runner.py::test_strict_mode",
-    ),
-    "academic_year_provider": SpecRequirement(
-        axis="performance",
-        description="AcademicYearProvider injects year code without wall-clock",
-        default_evidence="tests/ci/test_ci_pytest_runner.py::test_strict_mode",
+        description="Quality gates enforce warnings=0 and strict evidence parsing",
+        default_evidence="tests/ci/test_strict_score_guard.py::test_summary_parse_and_evidence",
     ),
 }
 
 
 FEATURE_MAP_FROM_SPEC: Dict[str, Tuple[str, ...]] = {
     "state_hygiene": ("state_cleanup", "concurrent_safety"),
-    "observability": ("debug_helpers",),
-    "middleware_order": ("middleware_order", "rate_limit_awareness"),
-    "deterministic_clock": ("timing_controls",),
-    "performance_budgets": ("retry_mechanism",),
-    "excel_safety": (),
-    "atomic_io": (),
-    "persian_errors": (),
-    "counter_rules": (),
-    "normalization": (),
-    "export_streaming": (),
-    "release_artifacts": (),
-    "academic_year_provider": (),
+    "chunking_filenames": ("concurrent_safety",),
+    "snapshot_delta": ("timing_controls",),
+    "security_access": ("rate_limit_awareness",),
+    "observability_metrics": ("debug_helpers",),
+    "slo_baseline": ("retry_mechanism",),
+    "quality_gates": ("state_cleanup",),
 }
 
 

@@ -17,6 +17,7 @@ from phase6_import_to_sabt.app.observability import build_metrics
 from phase6_import_to_sabt.app.probes import AsyncProbe, ProbeResult
 from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
 from phase6_import_to_sabt.app.timing import DeterministicTimer
+from phase6_import_to_sabt.metrics import reset_registry
 
 
 @pytest.fixture
@@ -53,10 +54,7 @@ def prom_registry_reset() -> List[CollectorRegistry]:
     registries: List[CollectorRegistry] = []
     yield registries
     for registry in registries:
-        if hasattr(registry, "_names_to_collectors"):
-            registry._names_to_collectors.clear()  # type: ignore[attr-defined]
-        if hasattr(registry, "_collector_to_names"):
-            registry._collector_to_names.clear()  # type: ignore[attr-defined]
+        reset_registry(registry)
 
 
 @pytest.fixture

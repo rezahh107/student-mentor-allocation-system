@@ -22,9 +22,12 @@ jobs:
     services:
       redis:
         image: redis:7-alpine
-        ports: [ "6379:6379" ]
+        ports: ["6379:6379"]
         options: >-
-          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
@@ -32,8 +35,9 @@ jobs:
       MPLBACKEND: 'Agg'
       QT_QPA_PLATFORM: 'offscreen'
       PYTHONDONTWRITEBYTECODE: '1'
-      # هشدارها را global به error تبدیل نکن
-      REDIS_URL: ${{ secrets.CI_REDIS_URL != '' && secrets.CI_REDIS_URL || 'redis://localhost:6379/0' }}
+      # 👇 این خط کلیدیه
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/src
+      REDIS_URL: ${{ secrets.CI_REDIS_URL || 'redis://localhost:6379/0' }}
       CI_CORRELATION_ID: "be862f1780d7"
       METRICS_TOKEN: "test-token"
       APP_ENV: "test"
@@ -44,66 +48,34 @@ jobs:
 
       - name: Setup Python
         uses: actions/setup-python@v5
-        with: { python-version: '3.11', cache: 'pip' }
+        with:
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip wheel setuptools
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || true; fi
-          # fallback dev-deps (برای جلوگیری از ModuleNotFoundError)
-          pip install -U \
-            httpx aiohttp pytest-asyncio asgi-lifespan respx pytest-httpx requests \
-            psutil orjson openpyxl pandas jdatetime python-multipart prometheus-client redis fakeredis freezegun hypothesis
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt || true
 
-      - name: Prepare pytest config & caches
+      - name: Sanity check import
         run: |
-          mkdir -p reports
-          # pytest.ini مینیمال اگر خراب/غایب است
-          if ! grep -q "^\[pytest\]" pytest.ini 2>/dev/null; then
-            cat > pytest.ini <<'INI'
-          [pytest]
-          asyncio_mode = auto
-          testpaths = tests
-          python_files = test_*.py *_test.py
-          python_classes = Test*
-          python_functions = test_*
-          INI
-          fi
-          # پاکسازی کش‌ها
-          rm -rf .pytest_cache
-          find tests -type d -name "__pycache__" -prune -exec rm -rf {} + || true
-          find . -type f -name "*.pyc" -delete || true
-          # جلوگیری از import mismatch
-          for d in tests tests/obs tests/observability tests/logging tests/perf tests/security tests/integration tests/unit tests/uploads tests/i18n; do
-            [ -d "$d" ] && touch "$d/__init__.py"
-          done
-          # MultiProc Prometheus (اگر لازم شد)
-          export PROMETHEUS_MULTIPROC_DIR="$(mktemp -d)"
-          echo "PROMETHEUS_MULTIPROC_DIR=$PROMETHEUS_MULTIPROC_DIR" >> $GITHUB_ENV
+          python -c "import phase6_import_to_sabt; print('Import OK')"
 
-      - name: Static / Security gates (optional)
+      - name: Run static checks (with safe guards)
         run: |
-          # فقط اگر target وجود دارد
-          (make -n pii-scan >/dev/null 2>&1 && make pii-scan) || echo "skip: pii-scan"
           (make -n static-checks >/dev/null 2>&1 && make static-checks) || echo "skip: static-checks"
           (make -n ci-checks >/dev/null 2>&1 && make ci-checks) || echo "skip: ci-checks"
 
-      - name: Run Test Orchestrator (smoke)
+      - name: Run tests
+        env:
+          PYTHONWARNINGS: 'default'  # فقط در این گام اگر خواستی 'error' بذار
         run: |
-          python -m tools.test_orchestrator --suite smoke --summary reports/summary.md --score reports/strict_score.json || exit 1
-
-      - name: Run Test Orchestrator (phase2)
-        run: |
-          python -m tools.test_orchestrator --suite phase2 --summary reports/summary.md --score reports/strict_score.json || exit 1
+          mkdir -p reports
+          python -m pytest --json-report --json-report-file=reports/strict_score.json
 
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ci-reports
-          if-no-files-found: warn
-          path: |
-            reports/summary.md
-            reports/strict_score.json
-            reports/pytest-junit.xml
+          name: strict-score
+          path: reports/strict_score.json

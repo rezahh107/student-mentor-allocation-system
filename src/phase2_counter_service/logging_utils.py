@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, Mapping
 
 from .types import HashFunc, LoggerLike
@@ -51,3 +53,13 @@ def make_hash_fn(salt: str) -> HashFunc:
         return digest.hexdigest()
 
     return _hash
+
+
+def atomic_debug_dump(path: Path, payload: Mapping[str, Any]) -> Path:
+    temp_path = path.with_suffix(path.suffix + ".part")
+    with temp_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp_path, path)
+    return path

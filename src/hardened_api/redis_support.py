@@ -82,6 +82,14 @@ class RedisNamespaces:
     def jwt_deny(self, jti: str) -> str:
         return f"{self.base}:jwt_deny:{jti}"
 
+    # Phase 2 counter namespaces -------------------------------------------------
+
+    def counter_sequence(self, year_code: str, gender: int) -> str:
+        return f"{self.base}:counter:seq:{year_code}:{gender}"
+
+    def counter_student(self, year_code: str, student_id: str) -> str:
+        return f"{self.base}:counter:student:{year_code}:{student_id}"
+
 
 class RedisOperationError(RuntimeError):
     """Domain specific Redis error after retries are exhausted."""

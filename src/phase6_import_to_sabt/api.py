@@ -191,6 +191,7 @@ class ExportAPI:
         readiness_gate: ReadinessGate | None = None,
         redis_probe: Callable[[], Awaitable[bool]] | None = None,
         db_probe: Callable[[], Awaitable[bool]] | None = None,
+        duration_clock: Callable[[], float] | None = None,
     ) -> None:
         self.runner = runner
         self.signer = signer
@@ -203,6 +204,7 @@ class ExportAPI:
         self._redis_breaker = CircuitBreaker(clock=time.monotonic, failure_threshold=2, reset_timeout=5.0)
         self._db_breaker = CircuitBreaker(clock=time.monotonic, failure_threshold=2, reset_timeout=5.0)
         self._probe_timeout = 2.5
+        self._duration_clock = duration_clock or time.perf_counter
 
     def create_router(self) -> APIRouter:
         router = APIRouter()
@@ -281,6 +283,7 @@ class ExportAPI:
                 raise HTTPException(status_code=404, detail="یافت نشد")
             files = []
             if job.manifest:
+                start = self._duration_clock()
                 for file in job.manifest.files:
                     signed = self.signer.sign(str(Path(self.runner.exporter.output_dir) / file.name))
                     files.append(
@@ -292,6 +295,9 @@ class ExportAPI:
                             "url": signed,
                         }
                     )
+                elapsed = self._duration_clock() - start
+                if elapsed >= 0:
+                    self.metrics.observe_duration("sign_links", elapsed, job.manifest.format)
                 manifest_payload = {
                     "total_rows": job.manifest.total_rows,
                     "generated_at": job.manifest.generated_at.isoformat(),
@@ -449,6 +455,7 @@ def create_export_api(
     readiness_gate: ReadinessGate | None = None,
     redis_probe: Callable[[], Awaitable[bool]] | None = None,
     db_probe: Callable[[], Awaitable[bool]] | None = None,
+    duration_clock: Callable[[], float] | None = None,
 ) -> FastAPI:
     api = FastAPI()
     export_api = ExportAPI(
@@ -460,6 +467,7 @@ def create_export_api(
         readiness_gate=readiness_gate,
         redis_probe=redis_probe,
         db_probe=db_probe,
+        duration_clock=duration_clock,
     )
     api.include_router(export_api.create_router())
     return api

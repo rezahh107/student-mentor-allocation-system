@@ -7,7 +7,7 @@ from phase6_import_to_sabt.models import ExportDeltaWindow, ExportFilters, Expor
 from tests.export.helpers import build_exporter, make_row
 
 
-def test_delta_no_gap_no_overlap(tmp_path) -> None:
+def test_delta_no_gap_overlap(tmp_path) -> None:
     base = datetime(2023, 7, 1, 12, 0, tzinfo=timezone.utc)
     rows = [
         make_row(idx=1, created_at=base - timedelta(hours=1)),

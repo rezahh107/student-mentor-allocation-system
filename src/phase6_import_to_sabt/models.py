@@ -126,6 +126,18 @@ class ExportManifest:
     excel_safety: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class ExportExecutionStats:
+    """Collects timing information for an export execution."""
+
+    phase_durations: dict[str, float] = field(default_factory=dict)
+
+    def add_duration(self, phase: str, duration: float) -> None:
+        if duration < 0:
+            duration = 0.0
+        self.phase_durations[phase] = self.phase_durations.get(phase, 0.0) + duration
+
+
 class ExportJobStatus(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -142,6 +154,7 @@ class ExportJob:
     snapshot: ExportSnapshot
     namespace: str
     correlation_id: str
+    queued_at: datetime
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     manifest: Optional[ExportManifest] = None

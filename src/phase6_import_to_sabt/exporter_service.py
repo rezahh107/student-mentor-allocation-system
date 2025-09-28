@@ -4,14 +4,16 @@ import csv
 import hashlib
 import os
 import re
+import time
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any, Callable, Iterable, Iterator, Sequence
 
 from .models import (
     COUNTER_PREFIX,
+    ExportExecutionStats,
     ExportFilters,
     ExportManifest,
     ExportManifestFile,
@@ -42,12 +44,15 @@ class ImportToSabtExporter:
         roster: SpecialSchoolsRoster,
         output_dir: Path,
         profile: ExportProfile = SABT_V1_PROFILE,
+        duration_clock: Callable[[], float] | None = None,
     ) -> None:
         self.data_source = data_source
         self.roster = roster
         self.output_dir = output_dir
         self.profile = profile
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._duration_clock = duration_clock or time.perf_counter
+        self._last_stats: ExportExecutionStats | None = None
         self._cleanup_partials()
 
     def _cleanup_partials(self) -> None:
@@ -64,14 +69,18 @@ class ImportToSabtExporter:
         options: ExportOptions,
         snapshot: ExportSnapshot,
         clock_now: datetime,
+        stats: ExportExecutionStats | None = None,
     ) -> ExportManifest:
         if options.chunk_size <= 0:
             raise ExportValidationError("EXPORT_VALIDATION_ERROR:chunk_size")
-        rows = list(self.data_source.fetch_rows(filters, snapshot))
-        if not rows:
-            raise ExportValidationError("EXPORT_EMPTY")
-        normalized_rows = [self._normalize_row(row, filters) for row in rows]
-        sorted_rows = self._sort_rows(normalized_rows)
+        stats = stats or ExportExecutionStats()
+        self._cleanup_partials()
+        with self._measure_phase(stats, "query"):
+            rows = list(self.data_source.fetch_rows(filters, snapshot))
+            if not rows:
+                raise ExportValidationError("EXPORT_EMPTY")
+            normalized_rows = [self._normalize_row(row, filters) for row in rows]
+            sorted_rows = self._sort_rows(normalized_rows)
         timestamp = clock_now.strftime("%Y%m%d%H%M%S")
         format_label = options.output_format
 
@@ -81,6 +90,7 @@ class ImportToSabtExporter:
                 rows=sorted_rows,
                 options=options,
                 timestamp=timestamp,
+                stats=stats,
             )
         else:
             files, total_rows, excel_safety = self._write_xlsx_export(
@@ -88,6 +98,7 @@ class ImportToSabtExporter:
                 rows=sorted_rows,
                 options=options,
                 timestamp=timestamp,
+                stats=stats,
             )
 
         manifest = ExportManifest(
@@ -107,41 +118,43 @@ class ImportToSabtExporter:
             excel_safety=excel_safety,
         )
         manifest_path = self.output_dir / "export_manifest.json"
-        with atomic_writer(manifest_path) as fh:
-            import json
+        with self._measure_phase(stats, "finalize"):
+            with atomic_writer(manifest_path) as fh:
+                import json
 
-            filters_payload: dict[str, object] = {"year": filters.year, "center": filters.center}
-            if filters.delta:
-                filters_payload["delta"] = {
-                    "created_at_watermark": filters.delta.created_at_watermark.isoformat(),
-                    "id_watermark": filters.delta.id_watermark,
-                }
-            payload = {
-                "profile": self.profile.full_name,
-                "filters": filters_payload,
-                "snapshot": {
-                    "marker": snapshot.marker,
-                    "created_at": snapshot.created_at.isoformat(),
-                },
-                "generated_at": clock_now.isoformat(),
-                "total_rows": total_rows,
-                "files": [
-                    {
-                        **asdict(file),
-                        "sheets": [list(item) for item in file.sheets] if file.sheets else [],
+                filters_payload: dict[str, object] = {"year": filters.year, "center": filters.center}
+                if filters.delta:
+                    filters_payload["delta"] = {
+                        "created_at_watermark": filters.delta.created_at_watermark.isoformat(),
+                        "id_watermark": filters.delta.id_watermark,
                     }
-                    for file in files
-                ],
-                "metadata": manifest.metadata,
-                "format": format_label,
-                "excel_safety": excel_safety,
-            }
-            if filters.delta:
-                payload["delta_window"] = {
-                    "created_at_watermark": filters.delta.created_at_watermark.isoformat(),
-                    "id_watermark": filters.delta.id_watermark,
+                payload = {
+                    "profile": self.profile.full_name,
+                    "filters": filters_payload,
+                    "snapshot": {
+                        "marker": snapshot.marker,
+                        "created_at": snapshot.created_at.isoformat(),
+                    },
+                    "generated_at": clock_now.isoformat(),
+                    "total_rows": total_rows,
+                    "files": [
+                        {
+                            **asdict(file),
+                            "sheets": [list(item) for item in file.sheets] if file.sheets else [],
+                        }
+                        for file in files
+                    ],
+                    "metadata": manifest.metadata,
+                    "format": format_label,
+                    "excel_safety": excel_safety,
                 }
-            json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+                if filters.delta:
+                    payload["delta_window"] = {
+                        "created_at_watermark": filters.delta.created_at_watermark.isoformat(),
+                        "id_watermark": filters.delta.id_watermark,
+                    }
+                json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        self._last_stats = stats
         return manifest
 
     def _write_csv_exports(
@@ -151,6 +164,7 @@ class ImportToSabtExporter:
         rows: Sequence[dict[str, str]],
         options: ExportOptions,
         timestamp: str,
+        stats: ExportExecutionStats,
     ) -> tuple[list[ExportManifestFile], int, dict[str, Any]]:
         files: list[ExportManifestFile] = []
         total_rows = 0
@@ -164,8 +178,9 @@ class ImportToSabtExporter:
         for index, chunk in enumerate(_chunk(rows, options.chunk_size), start=1):
             filename = self._build_filename(filters, timestamp, index, extension="csv")
             path = self.output_dir / filename
-            byte_size = self._write_chunk(path, chunk, options)
-            sha256 = _sha256_file(path)
+            with self._measure_phase(stats, "write_chunk"):
+                byte_size = self._write_chunk(path, chunk, options)
+                sha256 = _sha256_file(path)
             files.append(
                 ExportManifestFile(
                     name=filename,
@@ -184,11 +199,13 @@ class ImportToSabtExporter:
         rows: Sequence[dict[str, str]],
         options: ExportOptions,
         timestamp: str,
+        stats: ExportExecutionStats,
     ) -> tuple[list[ExportManifestFile], int, dict[str, Any]]:
         writer = XLSXStreamWriter(chunk_size=options.chunk_size)
         filename = self._build_filename(filters, timestamp, 1, extension="xlsx")
         path = self.output_dir / filename
-        artifact = writer.write(rows, path, format_label="xlsx")
+        with self._measure_phase(stats, "write_chunk"):
+            artifact = writer.write(rows, path, format_label="xlsx")
         sheets = tuple(sorted(artifact.row_counts.items()))
         total_rows = sum(count for _, count in sheets)
         manifest_file = ExportManifestFile(
@@ -199,6 +216,22 @@ class ImportToSabtExporter:
             sheets=sheets,
         )
         return [manifest_file], total_rows, artifact.excel_safety
+
+    def _measure_phase(self, stats: ExportExecutionStats, phase: str):
+        @contextmanager
+        def _ctx() -> Iterator[None]:
+            start = self._duration_clock()
+            try:
+                yield
+            finally:
+                elapsed = self._duration_clock() - start
+                stats.add_duration(phase, elapsed)
+
+        return _ctx()
+
+    @property
+    def last_stats(self) -> ExportExecutionStats | None:
+        return self._last_stats
 
     def _normalize_row(self, row: NormalizedStudentRow, filters: ExportFilters) -> dict[str, str]:
         school_code = row.school_code
@@ -240,20 +273,21 @@ class ImportToSabtExporter:
         return record
 
     def _sort_rows(self, rows: Sequence[dict[str, str]]) -> list[dict[str, str]]:
-        def _school_key(value: str | None) -> str:
-            if value in ("", None):
-                return "999999"
+        def _int_key(value: str | None, default: int = 0) -> int:
             try:
-                return f"{int(value):06d}"
+                return int(value)  # type: ignore[arg-type]
             except (TypeError, ValueError):
-                return "999999"
+                return default
+
+        def _school_key(value: str | None) -> int:
+            return _int_key(value, default=999_999)
 
         return sorted(
             rows,
             key=lambda r: (
-                r["year_code"],
-                r["reg_center"],
-                r["group_code"],
+                str(r["year_code"]),
+                _int_key(r.get("reg_center")),
+                _int_key(r.get("group_code")),
                 _school_key(r.get("school_code")),
                 r["national_id"],
             ),

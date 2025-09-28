@@ -18,11 +18,11 @@ def _build_evidence_missing(key_to_skip: str) -> EvidenceMatrix:
 
 
 def test_missing_spec_triggers_deduction() -> None:
-    evidence = _build_evidence_missing("observability")
+    evidence = _build_evidence_missing("observability_metrics")
     features: Dict[str, bool] = _feature_flags()
     engine = ScoreEngine(gui_in_scope=features["gui_scope"], evidence=evidence)
     statuses = engine.apply_evidence_matrix()
-    assert not statuses["observability"], "observability evidence should be missing"
+    assert not statuses["observability_metrics"], "observability evidence should be missing"
     engine.apply_feature_flags(features)
     engine.apply_todo_count(0)
     engine.apply_pytest_result(

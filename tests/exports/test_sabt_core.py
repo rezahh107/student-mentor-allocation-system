@@ -17,7 +17,7 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(reader)
 
 
-def test_sorted_chunked_export_basics(tmp_path: Path) -> None:
+def test_stable_sort_order(tmp_path: Path) -> None:
     base_time = datetime(2024, 1, 1, 9, 0, tzinfo=timezone.utc)
     rows = [
         make_row(idx=3, center=2, group_code=20, school_code=None),

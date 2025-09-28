@@ -51,3 +51,24 @@ class ExporterMetrics:
 
     def inc_error(self, error_type: str, format_label: str) -> None:
         self.errors_total.labels(type=error_type, format=format_label).inc()
+
+
+def reset_registry(registry: CollectorRegistry) -> None:
+    """Completely clear a CollectorRegistry between tests.
+
+    The prometheus_client Registry keeps internal mappings that need explicit
+    teardown to avoid metric name collisions across parametrized test runs.
+    """
+
+    collectors = list(getattr(registry, "_collector_to_names", {}).keys())
+    for collector in collectors:
+        try:
+            registry.unregister(collector)
+        except KeyError:
+            continue
+    names = getattr(registry, "_names_to_collectors", None)
+    if isinstance(names, dict):
+        names.clear()
+
+
+__all__ = ["ExporterMetrics", "reset_registry"]

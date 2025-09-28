@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tools.strict_score_core import EvidenceMatrix, ScoreEngine
 from tools.strict_score_reporter import (
     StrictMetadata,
     StrictScoreLogger,
@@ -103,19 +104,17 @@ def test_guard_with_full_evidence_scores_100(tmp_path: Path) -> None:
     target = tmp_path / "reports" / "strict_score.json"
     evidence_file = tmp_path / "evidence.md"
     evidence_entries = [
-        "- middleware_order: tests/mw/test_order_with_xlsx_ci.py::test_middleware_order",
-        "- deterministic_clock: tests/time/test_clock_tz_ci.py::test_tehran_clock_injection",
-        "- state_hygiene: tests/hygiene/test_registry_reset.py::test_prom_registry_reset",
-        "- observability: tests/obs/test_metrics_format_label_ci.py::test_json_logs_masking",
-        "- excel_safety: tests/exports/test_excel_safety_ci.py::test_formula_guard",
-        "- atomic_io: tests/readiness/test_atomic_io.py::test_atomic_write_and_rename",
-        "- performance_budgets: tests/perf/test_ci_overhead.py::test_orchestrator_overhead",
-        "- persian_errors: tests/logging/test_persian_errors.py::test_error_envelopes",
-        "- counter_rules: tests/obs_e2e/test_metrics_labels.py::test_retry_exhaustion_counters",
-        "- normalization: tests/ci/test_strict_score_guard.py::test_parse_pytest_summary_extended_handles_persian_digits",
-        "- export_streaming: tests/exports/test_excel_safety_ci.py::test_formula_guard",
-        "- release_artifacts: tests/ci/test_ci_pytest_runner.py::test_strict_mode",
-        "- academic_year_provider: tests/ci/test_ci_pytest_runner.py::test_strict_mode",
+        "- state_hygiene: tests/obs/test_prom_registry_reset.py::test_registry_fresh_between_tests",
+        "- stable_sort_keys: tests/exports/test_sabt_core.py::test_stable_sort_order",
+        "- chunking_filenames: tests/exports/test_sabt_core.py::test_chunking_and_naming_determinism",
+        "- excel_safety: tests/exports/test_excel_safety_ci.py::test_quotes_formula_guard_crlf_bom",
+        "- snapshot_delta: tests/exports/test_delta_window.py::test_delta_no_gap_overlap",
+        "- atomic_finalize: tests/exports/test_manifest.py::test_atomic_manifest_after_files",
+        "- counter_year_code: tests/counter/test_counter_rules.py::test_regex_and_gender_prefix",
+        "- security_access: tests/security/test_metrics_and_downloads.py::test_token_and_signed_url",
+        "- observability_metrics: tests/obs/test_export_metrics.py::test_export_metrics_labels_and_token_guard",
+        "- slo_baseline: tests/perf/test_export_100k.py::test_p95_and_mem_budget",
+        "- quality_gates: tests/ci/test_no_warnings_gate.py::test_warnings_are_errors",
     ]
     evidence_file.write_text("\n".join(evidence_entries), encoding="utf-8")
     summary_block = "=================\n= 8 passed, 0 failed, 0 skipped, 0 xfailed, 0 warnings =\n================="
@@ -185,3 +184,14 @@ def test_guard_synth_report_matches_payload(tmp_path: Path) -> None:
     synth_reason = next((cap["reason"] for cap in payload.get("caps", []) if cap.get("reason")), "")
     assert synth_reason, "expected synth cap reason present"
     assert any(synth_reason in line for line in human_lines if "cap=" in line)
+
+
+def test_summary_parse_and_evidence() -> None:
+    summary = "=================\n= 5 passed, 0 failed, 0 skipped, 0 xfailed, 0 warnings =\n================="
+    counts, found = parse_pytest_summary_extended(summary)
+    assert found and counts["warnings"] == 0
+    matrix = EvidenceMatrix()
+    matrix.add("quality_gates", "tests/ci/test_no_warnings_gate.py::test_warnings_are_errors")
+    engine = ScoreEngine(gui_in_scope=False, evidence=matrix)
+    statuses = engine.apply_evidence_matrix()
+    assert statuses["quality_gates"], "quality gates evidence should be recognized"

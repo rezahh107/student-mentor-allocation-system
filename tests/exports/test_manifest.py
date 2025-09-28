@@ -10,7 +10,7 @@ from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSna
 from tests.export.helpers import build_exporter, make_row
 
 
-def test_atomic_finalize_and_manifest_sha256(tmp_path: Path) -> None:
+def test_atomic_manifest_after_files(tmp_path: Path) -> None:
     rows = [make_row(idx=i) for i in range(1, 4)]
     exporter = build_exporter(tmp_path, rows)
     snapshot = ExportSnapshot(marker="snapshot", created_at=datetime(2023, 7, 1, tzinfo=timezone.utc))

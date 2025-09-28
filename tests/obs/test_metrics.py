@@ -15,6 +15,7 @@ def test_export_metrics(tmp_path):
         options=ExportOptions(chunk_size=2),
         idempotency_key="metrics",
         namespace="metrics",
+        correlation_id="metrics",
     )
     runner.await_completion(job.id)
     output = generate_latest(metrics.registry).decode()

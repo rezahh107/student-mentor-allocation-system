@@ -72,6 +72,13 @@ class ExportOptions:
     include_bom: bool = False
     newline: str = "\r\n"
     excel_mode: bool = True
+    output_format: str = "csv"
+
+    def __post_init__(self) -> None:
+        normalized = (self.output_format or "csv").lower()
+        if normalized not in {"csv", "xlsx"}:
+            raise ValueError(f"unsupported_format:{self.output_format}")
+        object.__setattr__(self, "output_format", normalized)
 
 
 @dataclass(frozen=True)
@@ -102,6 +109,7 @@ class ExportManifestFile:
     sha256: str
     row_count: int
     byte_size: int
+    sheets: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -114,6 +122,8 @@ class ExportManifest:
     files: tuple[ExportManifestFile, ...]
     delta_window: Optional[ExportDeltaWindow] = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    format: str = "csv"
+    excel_safety: dict[str, Any] = field(default_factory=dict)
 
 
 class ExportJobStatus(str, Enum):
@@ -131,6 +141,7 @@ class ExportJob:
     options: ExportOptions
     snapshot: ExportSnapshot
     namespace: str
+    correlation_id: str
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     manifest: Optional[ExportManifest] = None
@@ -181,5 +192,17 @@ class StorageBackend:
 
 
 class SignedURLProvider:
+    """Abstraction for generating and validating download URLs."""
+
     def sign(self, file_path: str, expires_in: int = 3600) -> str:
+        raise NotImplementedError
+
+    def verify(self, url: str, *, now: datetime | None = None) -> bool:
+        """Validate that a signed URL remains usable.
+
+        Concrete providers may raise if the url is malformed.  The default
+        implementation simply rejects all URLs which keeps previous
+        subclasses, if any, explicit about their capabilities.
+        """
+
         raise NotImplementedError

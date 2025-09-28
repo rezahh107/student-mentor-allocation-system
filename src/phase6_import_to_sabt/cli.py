@@ -50,6 +50,7 @@ def run_cli(runner: ExportJobRunner, argv: Sequence[str] | None = None) -> int:
         options=options,
         idempotency_key=f"cli-{args.year}-{args.center or 'all'}",
         namespace="cli",
+        correlation_id="cli",
     )
     runner.await_completion(job.id)
     job = runner.get_job(job.id)

@@ -102,6 +102,7 @@ class ExportJobRunner:
         options: ExportOptions,
         idempotency_key: str,
         namespace: str,
+        correlation_id: str,
     ) -> ExportJob:
         redis_key = f"phase6:exports:{namespace}:{idempotency_key}"
         if not self.redis.setnx(redis_key, "RUNNING", ex=86_400):
@@ -119,6 +120,7 @@ class ExportJobRunner:
             options=options,
             snapshot=snapshot,
             namespace=namespace,
+            correlation_id=correlation_id,
         )
         with self._lock:
             self.jobs[job_id] = job
@@ -141,6 +143,7 @@ class ExportJobRunner:
     # internal
     def _run_job(self, job_id: str, redis_key: str) -> None:
         start_time = self.clock()
+        format_label = self.jobs[job_id].options.output_format
         self._update_job(job_id, status=ExportJobStatus.RUNNING, started_at=start_time)
         self.redis.hset(redis_key, {"status": ExportJobStatus.RUNNING.value})
         attempt = 0
@@ -154,11 +157,11 @@ class ExportJobRunner:
                     clock_now=self.clock(),
                 )
                 duration = (self.clock() - start_time).total_seconds()
-                self.metrics.observe_duration("export", duration)
+                self.metrics.observe_duration("export", duration, format_label)
                 for file in manifest.files:
-                    self.metrics.observe_file_bytes(file.byte_size)
-                    self.metrics.observe_rows(file.row_count)
-                self.metrics.inc_job(ExportJobStatus.SUCCESS.value)
+                    self.metrics.observe_file_bytes(file.byte_size, format_label)
+                    self.metrics.observe_rows(file.row_count, format_label)
+                self.metrics.inc_job(ExportJobStatus.SUCCESS.value, format_label)
                 self._update_job(
                     job_id,
                     status=ExportJobStatus.SUCCESS,
@@ -176,11 +179,12 @@ class ExportJobRunner:
                     operation="export",
                     rows=manifest.total_rows,
                     last_error="",
+                    correlation_id=self.jobs[job_id].correlation_id,
                 )
                 break
             except ExportValidationError as exc:
-                self.metrics.inc_error("validation")
-                self.metrics.inc_job(ExportJobStatus.FAILED.value)
+                self.metrics.inc_error("validation", format_label)
+                self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
                 self._update_job(
                     job_id,
                     status=ExportJobStatus.FAILED,
@@ -197,12 +201,13 @@ class ExportJobRunner:
                     snapshot=self.jobs[job_id].snapshot.marker,
                     operation="export",
                     last_error=str(exc),
+                    correlation_id=self.jobs[job_id].correlation_id,
                 )
                 break
             except TRANSIENT_ERRORS as exc:
-                self.metrics.inc_error("transient")
+                self.metrics.inc_error("transient", format_label)
                 if attempt >= self.max_retries:
-                    self.metrics.inc_job(ExportJobStatus.FAILED.value)
+                    self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
                     self._update_job(
                         job_id,
                         status=ExportJobStatus.FAILED,
@@ -222,14 +227,15 @@ class ExportJobRunner:
                         snapshot=self.jobs[job_id].snapshot.marker,
                         operation="export",
                         last_error=str(exc),
+                        correlation_id=self.jobs[job_id].correlation_id,
                     )
                     break
                 delay = deterministic_jitter(0.1, attempt, job_id)
                 time.sleep(delay)
                 continue
             except Exception as exc:  # pragma: no cover - defensive logging
-                self.metrics.inc_error("unknown")
-                self.metrics.inc_job(ExportJobStatus.FAILED.value)
+                self.metrics.inc_error("unknown", format_label)
+                self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
                 self._update_job(
                     job_id,
                     status=ExportJobStatus.FAILED,
@@ -249,6 +255,7 @@ class ExportJobRunner:
                     snapshot=self.jobs[job_id].snapshot.marker,
                     operation="export",
                     last_error=str(exc),
+                    correlation_id=self.jobs[job_id].correlation_id,
                 )
                 break
 

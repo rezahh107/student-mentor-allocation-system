@@ -46,6 +46,7 @@ def sanitize_text(value: Optional[str]) -> str:
         normalized = normalized.replace(zw, "")
     normalized = normalized.replace("\r", " ").replace("\n", " ")
     normalized = CONTROL_RE.sub("", normalized)
+    normalized = fold_digits(normalized)
     return normalized.strip()
 
 

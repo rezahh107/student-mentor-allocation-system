@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Iterator, Sequence
+from typing import Any, Iterable, Iterator, Sequence
 
 from .models import (
     COUNTER_PREFIX,
@@ -24,6 +24,7 @@ from .models import (
     SpecialSchoolsRoster,
 )
 from .sanitization import guard_formula, sanitize_phone, sanitize_text
+from .xlsx.writer import XLSXStreamWriter
 
 PHONE_RE = re.compile(r"^09\d{9}$")
 COUNTER_RE = re.compile(r"^\d{2}(357|373)\d{4}$")
@@ -72,22 +73,23 @@ class ImportToSabtExporter:
         normalized_rows = [self._normalize_row(row, filters) for row in rows]
         sorted_rows = self._sort_rows(normalized_rows)
         timestamp = clock_now.strftime("%Y%m%d%H%M%S")
-        files: list[ExportManifestFile] = []
-        total_rows = 0
-        for index, chunk in enumerate(_chunk(sorted_rows, options.chunk_size), start=1):
-            filename = self._build_filename(filters, timestamp, index)
-            path = self.output_dir / filename
-            byte_size = self._write_chunk(path, chunk, options)
-            sha256 = _sha256_file(path)
-            files.append(
-                ExportManifestFile(
-                    name=filename,
-                    sha256=sha256,
-                    row_count=len(chunk),
-                    byte_size=byte_size,
-                )
+        format_label = options.output_format
+
+        if format_label == "csv":
+            files, total_rows, excel_safety = self._write_csv_exports(
+                filters=filters,
+                rows=sorted_rows,
+                options=options,
+                timestamp=timestamp,
             )
-            total_rows += len(chunk)
+        else:
+            files, total_rows, excel_safety = self._write_xlsx_export(
+                filters=filters,
+                rows=sorted_rows,
+                options=options,
+                timestamp=timestamp,
+            )
+
         manifest = ExportManifest(
             profile=self.profile,
             filters=filters,
@@ -96,9 +98,15 @@ class ImportToSabtExporter:
             total_rows=total_rows,
             files=tuple(files),
             delta_window=filters.delta,
-            metadata={"timestamp": timestamp},
+            metadata={
+                "timestamp": timestamp,
+                "files_order": [file.name for file in files],
+                "chunk_size": options.chunk_size,
+            },
+            format=format_label,
+            excel_safety=excel_safety,
         )
-        manifest_path = self.output_dir / f"manifest_{self.profile.full_name}_{timestamp}.json"
+        manifest_path = self.output_dir / "export_manifest.json"
         with atomic_writer(manifest_path) as fh:
             import json
 
@@ -111,11 +119,22 @@ class ImportToSabtExporter:
             payload = {
                 "profile": self.profile.full_name,
                 "filters": filters_payload,
-                "snapshot": {"marker": snapshot.marker, "created_at": snapshot.created_at.isoformat()},
+                "snapshot": {
+                    "marker": snapshot.marker,
+                    "created_at": snapshot.created_at.isoformat(),
+                },
                 "generated_at": clock_now.isoformat(),
                 "total_rows": total_rows,
-                "files": [asdict(file) for file in files],
+                "files": [
+                    {
+                        **asdict(file),
+                        "sheets": [list(item) for item in file.sheets] if file.sheets else [],
+                    }
+                    for file in files
+                ],
                 "metadata": manifest.metadata,
+                "format": format_label,
+                "excel_safety": excel_safety,
             }
             if filters.delta:
                 payload["delta_window"] = {
@@ -124,6 +143,62 @@ class ImportToSabtExporter:
                 }
             json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
         return manifest
+
+    def _write_csv_exports(
+        self,
+        *,
+        filters: ExportFilters,
+        rows: Sequence[dict[str, str]],
+        options: ExportOptions,
+        timestamp: str,
+    ) -> tuple[list[ExportManifestFile], int, dict[str, Any]]:
+        files: list[ExportManifestFile] = []
+        total_rows = 0
+        excel_safety = {
+            "normalized": True,
+            "digit_folded": True,
+            "formula_guard": bool(options.excel_mode),
+            "always_quote": True,
+            "sensitive_columns": list(self.profile.sensitive_columns),
+        }
+        for index, chunk in enumerate(_chunk(rows, options.chunk_size), start=1):
+            filename = self._build_filename(filters, timestamp, index, extension="csv")
+            path = self.output_dir / filename
+            byte_size = self._write_chunk(path, chunk, options)
+            sha256 = _sha256_file(path)
+            files.append(
+                ExportManifestFile(
+                    name=filename,
+                    sha256=sha256,
+                    row_count=len(chunk),
+                    byte_size=byte_size,
+                )
+            )
+            total_rows += len(chunk)
+        return files, total_rows, excel_safety
+
+    def _write_xlsx_export(
+        self,
+        *,
+        filters: ExportFilters,
+        rows: Sequence[dict[str, str]],
+        options: ExportOptions,
+        timestamp: str,
+    ) -> tuple[list[ExportManifestFile], int, dict[str, Any]]:
+        writer = XLSXStreamWriter(chunk_size=options.chunk_size)
+        filename = self._build_filename(filters, timestamp, 1, extension="xlsx")
+        path = self.output_dir / filename
+        artifact = writer.write(rows, path, format_label="xlsx")
+        sheets = tuple(sorted(artifact.row_counts.items()))
+        total_rows = sum(count for _, count in sheets)
+        manifest_file = ExportManifestFile(
+            name=filename,
+            sha256=artifact.sha256,
+            row_count=total_rows,
+            byte_size=artifact.byte_size,
+            sheets=sheets,
+        )
+        return [manifest_file], total_rows, artifact.excel_safety
 
     def _normalize_row(self, row: NormalizedStudentRow, filters: ExportFilters) -> dict[str, str]:
         school_code = row.school_code
@@ -165,20 +240,28 @@ class ImportToSabtExporter:
         return record
 
     def _sort_rows(self, rows: Sequence[dict[str, str]]) -> list[dict[str, str]]:
+        def _school_key(value: str | None) -> str:
+            if value in ("", None):
+                return "999999"
+            try:
+                return f"{int(value):06d}"
+            except (TypeError, ValueError):
+                return "999999"
+
         return sorted(
             rows,
             key=lambda r: (
                 r["year_code"],
                 r["reg_center"],
                 r["group_code"],
-                r["school_code"] or "999999",
+                _school_key(r.get("school_code")),
                 r["national_id"],
             ),
         )
 
-    def _build_filename(self, filters: ExportFilters, timestamp: str, seq: int) -> str:
+    def _build_filename(self, filters: ExportFilters, timestamp: str, seq: int, *, extension: str) -> str:
         center_part = str(filters.center) if filters.center is not None else "ALL"
-        return f"export_{self.profile.full_name}_{filters.year}-{center_part}_{timestamp}_{seq:03d}.csv"
+        return f"export_{self.profile.full_name}_{filters.year}-{center_part}_{timestamp}_{seq:03d}.{extension}"
 
     def _write_chunk(
         self,
@@ -216,9 +299,9 @@ class ImportToSabtExporter:
             )
             writer.writeheader()
             for row in rows:
-                prepared = dict(row)
+                prepared = {column: str(row.get(column, "")) for column in columns}
                 if options.excel_mode:
-                    for column in self.profile.excel_risky_columns:
+                    for column in columns:
                         prepared[column] = guard_formula(prepared[column])
                 writer.writerow(prepared)
         total_bytes = path.stat().st_size

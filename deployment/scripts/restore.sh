@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PG_HOST=${PG_HOST:-localhost}
-PG_PORT=${PG_PORT:-5432}
-PG_USER=${PG_USER:-alloc}
-PG_DB=${PG_DB:-alloc}
-IN=${1:-backup.sql.gz}
+if [[ $# -ne 2 ]]; then
+  echo "usage: $0 <manifest> <destination-dir>" >&2
+  exit 64
+fi
 
-gunzip -c "$IN" | psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB"
-echo "Restore completed from $IN"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+
+exec python -m phase7_release.cli restore --manifest "$1" --destination "$2"

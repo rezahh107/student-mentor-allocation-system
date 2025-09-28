@@ -4,43 +4,85 @@ from __future__ import annotations
 import io
 import json
 import os
+import platform
 import tarfile
+import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence
+from zoneinfo import ZoneInfo
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 
-from .atomic import atomic_write, atomic_write_lines
+from .alerts import AlertCatalog
+from .atomic import atomic_write
 from .hashing import sha256_bytes, sha256_file
 from .lockfiles import snapshot_environment
+from .perf_harness import PerfBaseline, PerfHarness
 from .sbom import generate_sbom
 from .versioning import resolve_build_version
 
+_BAKU_TZ = ZoneInfo("Asia/Baku")
 
-def _ensure_utc(dt: datetime) -> datetime:
+
+def _ensure_baku(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=_BAKU_TZ)
+    return dt.astimezone(_BAKU_TZ)
 
 
 @dataclass(frozen=True)
-class ReleaseArtifacts:
-    wheel_path: Path
-    lockfile_path: Path
-    constraints_path: Path
-    sbom_path: Path
-    release_manifest: Path
-    container_tar: Path
-    systemd_unit: Path
-    procfile: Path
-    prometheus_rules: Path
-    runbook: Path
-    vulnerability_report: Path
+class ReleaseBundle:
+    """Container for generated release artifacts."""
+
+    root: Path
+    wheel: Path
+    lockfile: Path
+    constraints: Path
+    sbom: Path
+    deps_audit: Path
+    manifest: Path
+    perf_report: Path
+    container: Path | None
+    slo_rules: Path
+    error_rules: Path
+    alertmanager: Path
+
+    @property
+    def wheel_path(self) -> Path:
+        return self.wheel
+
+    @property
+    def lockfile_path(self) -> Path:
+        return self.lockfile
+
+    @property
+    def constraints_path(self) -> Path:
+        return self.constraints
+
+    @property
+    def sbom_path(self) -> Path:
+        return self.sbom
+
+    @property
+    def release_manifest(self) -> Path:
+        return self.manifest
+
+    @property
+    def vulnerability_report(self) -> Path:
+        return self.deps_audit
+
+    @property
+    def container_tar(self) -> Path | None:
+        return self.container
+
+    @property
+    def prometheus_rules(self) -> Path:
+        return self.slo_rules
 
 
 class ReleaseBuilder:
-    """Coordinate release artifact generation."""
+    """Coordinate reproducible release artifact generation."""
 
     def __init__(
         self,
@@ -48,93 +90,100 @@ class ReleaseBuilder:
         project_root: Path,
         env: Mapping[str, str] | None = None,
         clock: Callable[[], datetime],
+        sleep: Callable[[float], None] | None = None,
+        perf_harness: PerfHarness | None = None,
     ) -> None:
         self._project_root = Path(project_root)
         self._env = dict(env or os.environ)
         self._clock = clock
+        self._sleep = sleep or time.sleep
+        self._perf_harness = perf_harness
 
-    def build(self, output_dir: Path) -> ReleaseArtifacts:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+    def build(self, output_dir: Path) -> ReleaseBundle:
+        release_dir = Path(output_dir)
+        release_dir.mkdir(parents=True, exist_ok=True)
 
         git_sha = self._env.get("GIT_SHA", "unknown")
         build_tag = self._env.get("BUILD_TAG")
         version = resolve_build_version(build_tag, git_sha)
-        build_time = _ensure_utc(self._clock())
+        build_time = _ensure_baku(self._clock())
 
-        wheel_path = output_dir / f"importtosabt-{version}-py3-none-any.whl"
+        wheel_path = release_dir / f"importtosabt-{version}-py3-none-any.whl"
         self._build_wheel(wheel_path=wheel_path, version=version)
 
-        lockfile_path = output_dir / "requirements.lock"
-        locked = snapshot_environment(
-            lock_path=lockfile_path,
-            constraints_path=output_dir / "constraints.txt",
-        )
+        lockfile_path = release_dir / "requirements.lock"
+        constraints_path = release_dir / "constraints.txt"
+        locked = snapshot_environment(lock_path=lockfile_path, constraints_path=constraints_path)
 
-        constraints_path = output_dir / "constraints.txt"
-        if not constraints_path.exists():
-            atomic_write_lines(constraints_path, [f"{item.name}=={item.version}" for item in locked])
-
-        sbom_path = output_dir / "sbom.json"
+        sbom_path = release_dir / "sbom.json"
         generate_sbom(sbom_path, clock=lambda: build_time)
 
-        reports_dir = output_dir / "reports"
-        reports_dir.mkdir(parents=True, exist_ok=True)
-        vulnerability_report = reports_dir / "deps_audit.json"
+        deps_audit_path = release_dir / "deps_audit.json"
         self._generate_pip_audit_stub(
-            vulnerability_report,
+            deps_audit_path,
             locked_names=[item.name for item in locked],
             generated_at=build_time,
         )
 
-        container_tar = output_dir / "container.tar"
+        prom_dir = release_dir / "prom"
+        prom_dir.mkdir(parents=True, exist_ok=True)
+        alerts = AlertCatalog(clock=lambda: build_time)
+        slo_rules = prom_dir / "rules_slo.yml"
+        error_rules = prom_dir / "rules_errors.yml"
+        alertmanager = prom_dir / "alertmanager.yml"
+        alerts.write_slo_rules(slo_rules)
+        alerts.write_error_rules(error_rules)
+        alerts.write_alertmanager_config(alertmanager)
+
+        reports_dir = release_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        perf_harness = self._perf_harness or PerfHarness()
+        perf_report_path = reports_dir / "perf_baseline.json"
+        baseline = perf_harness.run(report_path=perf_report_path)
+
+        container_tar = release_dir / "container.tar"
         self._build_container_tar(container_tar, wheel_path=wheel_path, version=version)
+        if container_tar.stat().st_size == 0:
+            container_tar.unlink(missing_ok=True)
+            container_reference: Path | None = None
+        else:
+            container_reference = container_tar
 
-        systemd_unit = output_dir / "importtosabt.service"
-        self._write_systemd_unit(systemd_unit, version=version)
-
-        procfile = output_dir / "Procfile"
-        self._write_procfile(procfile, version=version)
-
-        prometheus_rules = output_dir / "prometheus_alerts.yaml"
-        self._write_prometheus_rules(prometheus_rules, version=version)
-
-        runbook = output_dir / "runbook.md"
-        self._write_runbook(runbook, version=version)
-
-        manifest_path = output_dir / "release.json"
+        manifest_path = release_dir / "release.json"
         self._write_manifest(
             manifest_path,
             version=version,
             git_sha=git_sha,
             build_tag=build_tag,
             build_time=build_time,
+            baseline=baseline,
             artifacts=[
                 wheel_path,
                 lockfile_path,
                 constraints_path,
                 sbom_path,
-                container_tar,
-                systemd_unit,
-                procfile,
-                prometheus_rules,
-                runbook,
-                vulnerability_report,
-            ],
+                deps_audit_path,
+                slo_rules,
+                error_rules,
+                alertmanager,
+                perf_report_path,
+            ]
+            + ([container_reference] if container_reference else []),
         )
 
-        return ReleaseArtifacts(
-            wheel_path=wheel_path,
-            lockfile_path=lockfile_path,
-            constraints_path=constraints_path,
-            sbom_path=sbom_path,
-            release_manifest=manifest_path,
-            container_tar=container_tar,
-            systemd_unit=systemd_unit,
-            procfile=procfile,
-            prometheus_rules=prometheus_rules,
-            runbook=runbook,
-            vulnerability_report=vulnerability_report,
+        return ReleaseBundle(
+            root=release_dir,
+            wheel=wheel_path,
+            lockfile=lockfile_path,
+            constraints=constraints_path,
+            sbom=sbom_path,
+            deps_audit=deps_audit_path,
+            manifest=manifest_path,
+            perf_report=perf_report_path,
+            container=container_reference,
+            slo_rules=slo_rules,
+            error_rules=error_rules,
+            alertmanager=alertmanager,
         )
 
     # ------------------------------- helpers ---------------------------------
@@ -214,7 +263,13 @@ class ReleaseBuilder:
 
     def _build_container_tar(self, target: Path, *, wheel_path: Path, version: str) -> None:
         with tarfile.open(target, "w") as tar:
-            data = f"#!/bin/sh\nset -euo pipefail\nexec python -m importtosabt.api --version {version}\n".encode("utf-8")
+            data = (
+                "#!/bin/sh\n"
+                "set -euo pipefail\n"
+                "exec python -m importtosabt.api --version "
+                + version
+                + "\n"
+            ).encode("utf-8")
             script_info = tarfile.TarInfo(name="app/entrypoint.sh")
             script_info.mode = 0o755
             script_info.size = len(data)
@@ -227,74 +282,6 @@ class ReleaseBuilder:
             with wheel_path.open("rb") as fh:
                 tar.addfile(wheel_info, fh)
 
-    def _write_systemd_unit(self, path: Path, *, version: str) -> None:
-        unit = [
-            "[Unit]",
-            "Description=ImportToSabt API",
-            "After=network.target",
-            "[Service]",
-            "Type=notify",
-            "Environment=PYTHONUNBUFFERED=1",
-            f"ExecStart=/usr/bin/python -m importtosabt.api --version {version}",
-            "Restart=on-failure",
-            "TimeoutStopSec=45",
-            "[Install]",
-            "WantedBy=multi-user.target",
-        ]
-        atomic_write_lines(path, unit)
-
-    def _write_procfile(self, path: Path, *, version: str) -> None:
-        atomic_write_lines(path, [f"web: python -m importtosabt.api --version {version}"])
-
-    def _write_prometheus_rules(self, path: Path, *, version: str) -> None:
-        rules = "\n".join(
-            [
-                "groups:",
-                "  - name: importtosabt-exporter",
-                "    interval: 30s",
-                "    rules:",
-                "      - alert: SabtExporterLatencyHigh",
-                "        expr: histogram_quantile(0.95, sum(rate(export_job_latency_seconds_bucket[5m])) by (le)) > 15",
-                "        for: 5m",
-                "        labels:",
-                "          severity: critical",
-                "        annotations:",
-                "          summary: 'تاخیر زیاد در خروجی سامانه'",
-                "          description: 'زمان تکمیل صادرات از آستانه عبور کرده است'",
-                "      - alert: SabtExporterRetriesExhausted",
-                "        expr: increase(export_job_retry_exhausted_total[10m]) > 0",
-                "        for: 1m",
-                "        labels:",
-                "          severity: warning",
-                "        annotations:",
-                "          summary: 'تعداد تلاش مجدد زیاد'",
-                "          description: 'تعداد تلاش مجدد فراتر از انتظار است'",
-                "      - alert: ImportToSabtHealthLatency",
-                "        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{path='/healthz'}[5m])) by (le)) > 0.2",
-                "        for: 2m",
-                "        labels:",
-                "          severity: warning",
-                "        annotations:",
-                "          summary: 'پاسخ سلامت کند است'",
-                "          description: 'نسخه='" + version + "'",
-            ]
-        )
-        atomic_write(path, rules.encode("utf-8"))
-
-    def _write_runbook(self, path: Path, *, version: str) -> None:
-        content = "\n".join(
-            [
-                f"# ImportToSabt Release {version}",
-                "## سناریوهای رایج",
-                "- برای قطعیت انتشار، از script `deploy_zero_downtime.py` استفاده کنید.",
-                "- در صورت نیاز به بازگردانی، از دستور `python -m phase7_release.rollback` بهره ببرید.",
-                "## حالت‌های بحرانی",
-                "- HEALTH_FAIL: بررسی اتصال پایگاه داده و Redis",
-                "- RELEASE_DEP_MISMATCH: اجرای مجدد build با محیط پاک",
-            ]
-        )
-        atomic_write(path, content.encode("utf-8"))
-
     def _write_manifest(
         self,
         path: Path,
@@ -303,16 +290,20 @@ class ReleaseBuilder:
         git_sha: str,
         build_tag: str | None,
         build_time: datetime,
+        baseline: PerfBaseline,
         artifacts: Iterable[Path],
     ) -> None:
         base_dir = path.parent
         entries = []
-        for artifact in sorted(artifacts, key=lambda p: str(p.relative_to(base_dir))):
+        for artifact in sorted(artifacts, key=lambda p: p.relative_to(base_dir).as_posix()):
+            if artifact is None:
+                continue
             relative = artifact.relative_to(base_dir)
+            digest = _digest_with_retry(artifact, sleep=self._sleep)
             entries.append(
                 {
                     "name": relative.as_posix(),
-                    "sha256": sha256_file(artifact),
+                    "sha256": digest,
                     "size": artifact.stat().st_size,
                 }
             )
@@ -320,9 +311,15 @@ class ReleaseBuilder:
             "version": version,
             "git_sha": git_sha,
             "build_tag": build_tag,
-            "built_at": build_time.isoformat(),
+            "build_ts": build_time.isoformat(),
+            "build_inputs": {
+                "python": platform.python_version(),
+                "lock": "requirements.lock",
+                "constraints": "constraints.txt",
+            },
             "artifacts": entries,
             "artifact_ids": [entry["sha256"] for entry in entries],
+            "perf_baseline": baseline.to_dict(),
         }
         atomic_write(
             path,
@@ -335,6 +332,24 @@ class ReleaseBuilder:
         )
 
 
+def _digest_with_retry(path: Path, *, attempts: int = 4, sleep: Callable[[float], None]) -> str:
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return sha256_file(path)
+        except OSError as exc:  # pragma: no cover - rare FS flake
+            last_error = exc
+            delay = 0.05 * attempt + _deterministic_jitter(path.name, attempt)
+            sleep(delay)
+    raise RuntimeError(f"DIGEST_FAILED: path={path}; last_error={last_error}")
+
+
+def _deterministic_jitter(key: str, attempt: int) -> float:
+    seed = sha256_bytes(f"{key}:{attempt}".encode("utf-8"))
+    fraction = int(seed[:12], 16) / float(0xFFFFFFFFFFFF)
+    return fraction * 0.02
+
+
 def _zip_info(name: str, date_time: tuple[int, int, int, int, int, int]) -> ZipInfo:
     info = ZipInfo(name)
     info.date_time = date_time
@@ -342,4 +357,7 @@ def _zip_info(name: str, date_time: tuple[int, int, int, int, int, int]) -> ZipI
     return info
 
 
-__all__ = ["ReleaseBuilder", "ReleaseArtifacts"]
+ReleaseArtifacts = ReleaseBundle
+
+
+__all__ = ["ReleaseBuilder", "ReleaseBundle", "ReleaseArtifacts"]

@@ -196,6 +196,26 @@ class ZeroDowntimeHandoff:
             atomic_write(handoff_state, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
         return HandoffResult(build_id=build_id, previous_target=previous_target, current_target=source)
 
+    def rollback(self) -> HandoffResult:
+        handoff_state = self._releases_dir / "handoff.json"
+        current_symlink = self._releases_dir / "current"
+        previous_symlink = self._releases_dir / "previous"
+        with file_lock(self._lock_file, clock=self._clock, sleep=self._sleep):
+            if not previous_symlink.exists():
+                raise RuntimeError("ROLLBACK_UNAVAILABLE")
+            previous_target = current_symlink.resolve() if current_symlink.exists() else None
+            target = previous_symlink.resolve()
+            _atomic_symlink_swap(current_symlink, previous_symlink, target)
+            payload = {
+                "build_id": target.name,
+                "source": str(target),
+                "rollback": True,
+                "timestamp": self._clock(),
+                "rid": sha256_bytes(str(target).encode("utf-8"))[:12],
+            }
+            atomic_write(handoff_state, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+            return HandoffResult(build_id=target.name, previous_target=previous_target, current_target=target)
+
 
 def _atomic_symlink_swap(current: Path, previous: Path, target: Path) -> None:
     target = Path(target)

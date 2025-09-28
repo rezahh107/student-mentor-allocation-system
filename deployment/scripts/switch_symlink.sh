@@ -10,4 +10,4 @@ if [[ -n "${DEPLOY_LOCK_FILE:-}" ]]; then
   args+=("--lock-file" "${DEPLOY_LOCK_FILE}")
 fi
 
-exec python -m phase7_release.cli rollback "${args[@]}"
+exec python -m phase7_release.cli switch "${args[@]}"

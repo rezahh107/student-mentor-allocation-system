@@ -5,9 +5,4 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 
-args=("$@")
-if [[ -n "${DEPLOY_LOCK_FILE:-}" ]]; then
-  args+=("--lock-file" "${DEPLOY_LOCK_FILE}")
-fi
-
-exec python -m phase7_release.cli rollback "${args[@]}"
+exec python -m phase7_release.cli warmup "$@"

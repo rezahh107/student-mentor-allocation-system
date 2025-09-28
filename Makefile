@@ -1,7 +1,7 @@
 .PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard \
-	    ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke \
-	    security-fix security-scan security test test-coverage test-coverage-summary test-legacy \
-	    automation-audit
+            ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke \
+            security-fix security-scan security test test-coverage test-coverage-summary test-legacy \
+            automation-audit pii-scan
 
 PYTHON ?= python3
 PROJECT_ROOT := $(CURDIR)
@@ -38,9 +38,10 @@ security-dashboard:
 # Phase 2 counter service hardening gates
 
 ci-checks:
-	    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest \
-	            -p pytest_cov \
-	            --cov=src.phase2_counter_service \
+	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.ci_no_pii_scan
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest \
+            -p pytest_cov \
+            --cov=src.phase2_counter_service \
 	            --cov-report=term-missing \
 	            --cov-fail-under=$(COV_MIN) \
 	            -q tests/phase2_counter_service
@@ -53,9 +54,10 @@ fault-tests:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest tests/phase2_counter_service/test_faults.py -q
 
 static-checks:
+	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.ci_no_pii_scan
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest \
-		tests/phase2_counter_service/test_excel_safe.py \
-		tests/phase2_counter_service/test_cli.py \
+                tests/phase2_counter_service/test_excel_safe.py \
+                tests/phase2_counter_service/test_cli.py \
 		tests/phase2_counter_service/test_operator_panel_logging.py \
 		tests/security/test_bandit_gate.py -q
 	
@@ -83,9 +85,12 @@ validate-artifacts:
 	$(PYTHON) -m scripts.validate_artifacts
 
 security-scan:
-	PYTHONPATH=$(PROJECT_ROOT) BANDIT_FAIL_LEVEL=$(BANDIT_FAIL_LEVEL) $(PYTHON) -m scripts.run_bandit_gate
+        PYTHONPATH=$(PROJECT_ROOT) BANDIT_FAIL_LEVEL=$(BANDIT_FAIL_LEVEL) $(PYTHON) -m scripts.run_bandit_gate
 
 security: security-scan
+
+pii-scan:
+        PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.ci_no_pii_scan
 
 automation-audit:
 	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m automation_audit.cli --csv

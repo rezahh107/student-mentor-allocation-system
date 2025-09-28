@@ -5,7 +5,7 @@ import json
 import random
 import re
 import unicodedata
-from typing import Optional
+from typing import BinaryIO, Iterable, Optional, Union
 
 ZERO_WIDTH = {"\u200c", "\u200d", "\ufeff"}
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -31,6 +31,51 @@ PERSIAN_DIGITS = {
     "٨": "8",
     "٩": "9",
 }
+
+
+ByteChunk = Union[bytes, bytearray, memoryview]
+StreamSource = Union[str, ByteChunk, Iterable[Union[str, ByteChunk]], BinaryIO]
+
+
+def _normalize_chunk(chunk: Union[str, ByteChunk]) -> bytes:
+    if isinstance(chunk, str):
+        return chunk.encode("utf-8")
+    if isinstance(chunk, memoryview):
+        return chunk.tobytes()
+    if isinstance(chunk, (bytes, bytearray)):
+        return bytes(chunk)
+    raise TypeError("Unsupported chunk type for secure_digest")
+
+
+def secure_digest(source: StreamSource) -> str:
+    """Compute a SHA-256 hex digest for arbitrary byte/stream inputs."""
+
+    hasher = hashlib.sha256()
+
+    def update_from(chunk: Union[str, ByteChunk]) -> None:
+        hasher.update(_normalize_chunk(chunk))
+
+    if isinstance(source, (str, bytes, bytearray, memoryview)):
+        update_from(source)
+        return hasher.hexdigest()
+
+    if hasattr(source, "read"):
+        reader = source  # type: ignore[assignment]
+        while True:
+            chunk = reader.read(8192)
+            if chunk in (b"", ""):
+                break
+            update_from(chunk)  # type: ignore[arg-type]
+        return hasher.hexdigest()
+
+    try:
+        iterator = iter(source)  # type: ignore[arg-type]
+    except TypeError as exc:  # pragma: no cover - defensive branch
+        raise TypeError("Unsupported source type for secure_digest") from exc
+
+    for chunk in iterator:
+        update_from(chunk)  # type: ignore[arg-type]
+    return hasher.hexdigest()
 
 
 def fold_digits(value: str) -> str:
@@ -79,12 +124,14 @@ def hash_national_id(national_id: Optional[str]) -> str:
     if not national_id:
         return ""
     normalized = sanitize_text(national_id)
-    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    digest = secure_digest(normalized)
     return digest[:10]
 
 
 def deterministic_jitter(base_delay: float, attempt: int, seed: str) -> float:
-    rnd = random.Random(hashlib.md5(f"{seed}:{attempt}".encode()).digest())
+    digest = secure_digest(f"{seed}:{attempt}")
+    rnd_seed = int(digest, 16)
+    rnd = random.Random(rnd_seed)
     return base_delay * (2 ** (attempt - 1)) * (1 + rnd.random() * 0.1)
 
 

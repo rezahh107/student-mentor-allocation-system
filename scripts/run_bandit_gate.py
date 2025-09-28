@@ -1,14 +1,22 @@
-"""اجرای Bandit با پیام‌های فارسی و گزارش JSON پایدار."""
+"""اجرای Bandit با پیام‌های فارسی، تکرارپذیر و قابل‌اعتماد."""
 from __future__ import annotations
 
 import json
+import logging
 import os
+import random
 import subprocess  # اجرای کنترل‌شده Bandit. # nosec B404
 import sys
+import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Tuple
+
+from prometheus_client import CollectorRegistry
+
+from scripts.security_tools import retry_config_from_env, run_with_retry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = PROJECT_ROOT / "reports" / "bandit.json"
@@ -16,6 +24,16 @@ REPORT_ALIAS = PROJECT_ROOT / "reports" / "bandit-report.json"
 VALID_LEVELS: Tuple[str, ...] = ("LOW", "MEDIUM", "HIGH")
 DEFAULT_LEVEL = "MEDIUM"
 SEVERITY_ORDER = {"LOW": 1, "MEDIUM": 2, "HIGH": 3}
+
+LOGGER = logging.getLogger("scripts.run_bandit_gate")
+_RETRY_REGISTRY: CollectorRegistry | None = None
+_SLEEPER = time.sleep
+_RANDOMIZER = random.random
+_MONOTONIC = time.monotonic
+
+
+def _registry() -> CollectorRegistry | None:
+    return _RETRY_REGISTRY
 
 
 @dataclass(frozen=True)
@@ -89,6 +107,19 @@ def _run_bandit() -> subprocess.CompletedProcess[str]:
         raise SystemExit(2) from exc
 
 
+def _execute_bandit() -> subprocess.CompletedProcess[str]:
+    return run_with_retry(
+        _run_bandit,
+        tool_name="bandit",
+        config=retry_config_from_env(logger=LOGGER),
+        registry=_registry(),
+        sleeper=_SLEEPER,
+        randomizer=_RANDOMIZER,
+        monotonic=_MONOTONIC,
+        logger=LOGGER,
+    )
+
+
 def _load_report() -> Dict[str, Any]:
     """خواندن گزارش تولیدشده توسط Bandit."""
 
@@ -128,11 +159,29 @@ def _summarize(payload: Dict[str, Any]) -> BanditOutcome:
     return BanditOutcome(payload=payload, max_severity=highest, severity_counts=counts)
 
 
+def _atomic_write(target: Path, data: str) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=target.parent,
+        delete=False,
+    ) as tmp_file:
+        tmp_file.write(data)
+        tmp_file.flush()
+        os.fsync(tmp_file.fileno())
+        tmp_path = Path(tmp_file.name)
+    try:
+        os.replace(tmp_path, target)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
 def _write_raw_report(payload: Dict[str, Any]) -> None:
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     data = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     for target in (REPORT_PATH, REPORT_ALIAS):
-        target.write_text(data, encoding="utf-8")
+        _atomic_write(target, data)
 
 
 def _write_report(outcome: BanditOutcome) -> None:
@@ -145,7 +194,7 @@ def main() -> None:
     """نقطهٔ ورود CLI."""
 
     fail_level = _resolve_fail_level(os.environ.get("BANDIT_FAIL_LEVEL"))
-    process = _run_bandit()
+    process = _execute_bandit()
     stderr_text = process.stderr or ""
     missing_bandit = "No module named bandit" in stderr_text
     if missing_bandit and not REPORT_PATH.exists():

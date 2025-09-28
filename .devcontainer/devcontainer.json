@@ -1,0 +1,13 @@
+{
+  "name": "CI Orchestrator",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "containerEnv": {
+    "CI_INSTALL_CMD": "python -m pip --version",
+    "CI_TEST_CMD": "python -m pytest --version"
+  },
+  "postCreateCommand": "python -m ci_orchestrator.main install",
+  "postStartCommand": "python -m ci_orchestrator.main test"
+}

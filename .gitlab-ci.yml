@@ -42,3 +42,13 @@ pytest:
     name: student-mentor-allocation-system-strict-score
     paths:
       - reports/strict_score.json
+
+ci_orchestrator_lite:
+  stage: test
+  image: python:3.11-slim
+  variables:
+    CI_INSTALL_CMD: "python -m pip --version"
+    CI_TEST_CMD: "python -m pytest --version"
+  script:
+    - python -m pip install --upgrade pip
+    - python -m ci_orchestrator.main all

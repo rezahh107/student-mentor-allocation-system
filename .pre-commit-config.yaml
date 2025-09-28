@@ -18,3 +18,10 @@ repos:
           - "-q"
           - "-c"
           - ".bandit"
+  - repo: local
+    hooks:
+      - id: weak-hash-guard
+        name: weak-hash-guard
+        entry: python -m scripts.check_no_weak_hashes
+        language: system
+        pass_filenames: false

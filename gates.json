@@ -1,4 +1,8 @@
-﻿{
+{
   "pytest": {},
-  "performance": {}
+  "performance": {
+    "api_p95_ms": 200,
+    "excel_p95_ms": 200,
+    "memory_mb": 300
+  }
 }

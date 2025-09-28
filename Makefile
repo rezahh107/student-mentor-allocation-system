@@ -1,6 +1,6 @@
 .PHONY: test-quick test-standard test-deep test-security test-full dashboard security-dashboard \
-        ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke \
-        security-fix security-scan security test test-coverage test-coverage-summary test-legacy
+	ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke \
+	security-fix security-scan security test test-coverage test-coverage-summary test-legacy
 
 PYTHON ?= python3
 PROJECT_ROOT := $(CURDIR)
@@ -37,15 +37,15 @@ security-dashboard:
 # Phase 2 counter service hardening gates
 
 ci-checks:
-        PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest \
-                -p pytest_cov \
-                --cov=src.phase2_counter_service \
-                --cov-report=term-missing \
-                --cov-fail-under=$(COV_MIN) \
-                -q tests/phase2_counter_service
-        PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
-        $(PYTHON) -m bandit -r src/phase2_counter_service
-        $(PYTHON) -m scripts.post_migration_checks
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest \
+		-p pytest_cov \
+		--cov=src.phase2_counter_service \
+		--cov-report=term-missing \
+		--cov-fail-under=$(COV_MIN) \
+		-q tests/phase2_counter_service
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m mypy --strict --explicit-package-bases --follow-imports=skip --namespace-packages src/phase2_counter_service scripts/post_migration_checks.py scripts/validate_artifacts.py
+	$(PYTHON) -m bandit -r src/phase2_counter_service
+	$(PYTHON) -m scripts.post_migration_checks
 	$(PYTHON) -m scripts.validate_artifacts
 
 fault-tests:
@@ -90,15 +90,15 @@ test:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -q
 
 test-coverage:
-        PYTHONPATH=$(PROJECT_ROOT) LEGACY_TEST_PATTERN="$(LEGACY_TEST_PATTERN)" \
-        $(PYTHON) -m scripts.coverage_gate $(if $(LEGACY_TARGETS),$(LEGACY_TARGETS),) --pytest-args "$(PYTEST_ARGS)"
+	PYTHONPATH=$(PROJECT_ROOT) LEGACY_TEST_PATTERN="$(LEGACY_TEST_PATTERN)" \
+	$(PYTHON) -m scripts.coverage_gate $(if $(LEGACY_TARGETS),$(LEGACY_TARGETS),) --pytest-args "$(PYTEST_ARGS)"
 
 test-coverage-summary:
-        PYTHONPATH=$(PROJECT_ROOT) LEGACY_TEST_PATTERN="$(LEGACY_TEST_PATTERN)" \
-        $(PYTHON) -m scripts.coverage_gate $(if $(LEGACY_TARGETS),$(LEGACY_TARGETS),) --pytest-args "$(PYTEST_ARGS)" --summary
+	PYTHONPATH=$(PROJECT_ROOT) LEGACY_TEST_PATTERN="$(LEGACY_TEST_PATTERN)" \
+	$(PYTHON) -m scripts.coverage_gate $(if $(LEGACY_TARGETS),$(LEGACY_TARGETS),) --pytest-args "$(PYTEST_ARGS)" --summary
 
 test-legacy:
-        PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -q tests/legacy -k "not gui" && echo "✅ Legacy tests passed"
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -q tests/legacy -k "not gui" && echo "✅ Legacy tests passed"
 
 # == Strict CI targets (autogen) ==
 .PHONY: ci ci-json ci-local-redis

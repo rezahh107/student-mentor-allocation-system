@@ -1,0 +1,38 @@
+jobs:
+  strict-ci:
+    runs-on: ubuntu-latest
+    env:
+      STRICT_SCORE_JSON: reports/strict_score.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        env:
+          PYTHONWARNINGS: default
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run orchestrator tests
+        env:
+          PYTHONWARNINGS: error
+        run: |
+          python -m tools.ci_test_orchestrator --json "${STRICT_SCORE_JSON}"
+      - name: Synthesize strict score when missing
+        if: always()
+        env:
+          PYTHONWARNINGS: default
+        run: |
+          python -m tools.strict_score_guard \
+            --phase synthesize \
+            --if-missing \
+            --json "${STRICT_SCORE_JSON}" \
+            --summary-file logs/pytest-tail.log
+      - name: Upload strict score
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-score
+          if-no-files-found: ignore
+          path: "${{ env.STRICT_SCORE_JSON }}"

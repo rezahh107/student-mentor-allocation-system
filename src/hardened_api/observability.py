@@ -117,6 +117,11 @@ _metrics_registry = {
         "Total Redis retry attempts by outcome",
         ["op", "outcome"],
     ),
+    "metrics_scrape_total": Counter(
+        "metrics_scrape_total",
+        "Metrics endpoint scrape outcomes",
+        ["outcome"],
+    ),
     "redis_operation_latency_seconds": Histogram(
         "redis_operation_latency_seconds",
         "Redis operation latency",

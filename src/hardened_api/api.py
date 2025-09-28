@@ -18,6 +18,12 @@ from fastapi.routing import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from src.phase3_allocation.allocation_tx import AtomicAllocator, AllocationRequest
+from src.phase2_counter_service.academic_year import AcademicYearProvider
+from src.phase2_counter_service.counter_runtime import (
+    CounterRuntime,
+    CounterRuntimeError,
+)
+from src.phase2_counter_service.runtime_metrics import CounterRuntimeMetrics
 
 from .middleware import (
     AuthConfig,
@@ -245,6 +251,13 @@ class APISettings(BaseModel):
     redis_base_delay_ms: float = 50.0
     redis_max_delay_ms: float = 400.0
     redis_jitter_ms: float = 50.0
+    counter_hash_salt: str = "counter-runtime-salt"
+    counter_placeholder_ttl_ms: int = 5000
+    counter_retry_attempts: int = 5
+    counter_retry_base_ms: int = 20
+    counter_retry_max_ms: int = 200
+    counter_max_serial: int = 9999
+    counter_year_map: dict[str, str] = Field(default_factory=dict)
 
 
 class APIState:
@@ -256,12 +269,18 @@ class APIState:
         logger: StructuredLogger,
         namespaces: RedisNamespaces,
         redis_client,
+        counter_runtime: CounterRuntime,
+        counter_metrics: CounterRuntimeMetrics,
+        year_provider: AcademicYearProvider,
     ) -> None:
         self.allocator = allocator
         self.settings = settings
         self.logger = logger
         self.redis_client = redis_client
         self.namespaces = namespaces
+        self.counter_runtime = counter_runtime
+        self.counter_metrics = counter_metrics
+        self.year_provider = year_provider
 
     async def reset(self) -> None:
         await self.redis_client.flushdb()
@@ -280,16 +299,29 @@ ERROR_MAP = {
 }
 
 
+def _counter_status(code: str) -> int:
+    return {
+        "COUNTER_VALIDATION_ERROR": 400,
+        "COUNTER_EXHAUSTED": 409,
+        "COUNTER_RETRY_EXHAUSTED": 503,
+        "COUNTER_STATE_ERROR": 500,
+    }.get(code, 500)
+
+
 async def _metrics_endpoint(request: Request, state: APIState, middleware_state: MiddlewareState) -> Response:
     client_ip = get_client_ip(request)
+    scrape_metric = get_metric("metrics_scrape_total")
     if middleware_state.metrics_token:
         header = request.headers.get("Authorization")
         if header != f"Bearer {middleware_state.metrics_token}":
+            scrape_metric.labels(outcome="token_denied").inc()
             raise HTTPException(status_code=401, detail="metrics unauthorized")
     if client_ip not in middleware_state.metrics_ip_allowlist:
+        scrape_metric.labels(outcome="ip_forbidden").inc()
         raise HTTPException(status_code=403, detail="ip not allowed")
     from prometheus_client import generate_latest
 
+    scrape_metric.labels(outcome="success").inc()
     return PlainTextResponse(generate_latest().decode("utf-8"), media_type="text/plain; version=0.0.4")
 
 
@@ -303,13 +335,6 @@ def create_app(
     logger = build_logger()
     redis_client = redis_client or create_redis_client(settings.redis_url)
     namespaces = RedisNamespaces(settings.redis_namespace)
-    api_state = APIState(
-        allocator=allocator,
-        settings=settings,
-        logger=logger,
-        namespaces=namespaces,
-        redis_client=redis_client,
-    )
     retry_config = RedisRetryConfig(
         attempts=max(1, settings.redis_max_retries),
         base_delay=max(0.001, settings.redis_base_delay_ms / 1000),
@@ -317,6 +342,31 @@ def create_app(
         jitter=max(0.0, settings.redis_jitter_ms / 1000),
     )
     redis_executor = RedisExecutor(config=retry_config, namespace=settings.redis_namespace)
+    counter_metrics = CounterRuntimeMetrics()
+    year_provider = AcademicYearProvider(settings.counter_year_map)
+    counter_runtime = CounterRuntime(
+        redis=redis_client,
+        namespaces=namespaces,
+        executor=redis_executor,
+        metrics=counter_metrics,
+        year_provider=year_provider,
+        hash_salt=settings.counter_hash_salt,
+        max_serial=settings.counter_max_serial,
+        placeholder_ttl_ms=settings.counter_placeholder_ttl_ms,
+        wait_attempts=settings.counter_retry_attempts,
+        wait_base_ms=settings.counter_retry_base_ms,
+        wait_max_ms=settings.counter_retry_max_ms,
+    )
+    api_state = APIState(
+        allocator=allocator,
+        settings=settings,
+        logger=logger,
+        namespaces=namespaces,
+        redis_client=redis_client,
+        counter_runtime=counter_runtime,
+        counter_metrics=counter_metrics,
+        year_provider=year_provider,
+    )
     jwt_deny = JWTDenyList(redis=redis_client, namespaces=namespaces, executor=redis_executor)
     auth_config.jwt_deny_list = jwt_deny
     app = FastAPI(title="Student Allocation API", version="4.0", default_response_class=JSONResponse)
@@ -340,6 +390,14 @@ def create_app(
             per_route={
                 "/allocations": RateLimitRule(settings.rate_limit_allocations, settings.rate_limit_window),
                 "/status": RateLimitRule(settings.rate_limit_status, settings.rate_limit_window),
+                "/counter/allocate": RateLimitRule(
+                    settings.rate_limit_allocations,
+                    settings.rate_limit_window,
+                ),
+                "/counter/preview": RateLimitRule(
+                    settings.rate_limit_status,
+                    settings.rate_limit_window,
+                ),
             },
             fail_open=settings.rate_limit_fail_open,
         ),
@@ -398,6 +456,110 @@ def create_app(
                 raise _http_error("INTERNAL", correlation_id, details=str(exc))
             finally:
                 enrich_span(span, status_code=200)
+
+    @router.post("/counter/allocate")
+    async def counter_allocate(request: Request, response: Response) -> dict[str, object]:
+        request.state._start_time = time.perf_counter()
+        correlation_id = getattr(request.state, "correlation_id", str(uuid.uuid4()))
+        with InFlightTracker(path="/counter/allocate", method="POST"):
+            span = start_trace(
+                TraceContext(
+                    correlation_id=correlation_id,
+                    consumer_id=getattr(request.state, "consumer_id", "anonymous"),
+                    path="/counter/allocate",
+                    method="POST",
+                )
+            )
+            try:
+                try:
+                    payload = await request.json()
+                except json.JSONDecodeError as exc:
+                    raise CounterRuntimeError(
+                        "COUNTER_VALIDATION_ERROR",
+                        "درخواست نامعتبر است؛ سال/جنسیت/مرکز را بررسی کنید.",
+                        details=str(exc),
+                    ) from exc
+                result = await api_state.counter_runtime.allocate(payload, correlation_id=correlation_id)
+                envelope: dict[str, object] = {
+                    "ok": True,
+                    "counter": result.counter,
+                    "year_code": result.year_code,
+                    "status": result.status,
+                    "message_fa": "شماره ثبت با موفقیت تخصیص یافت.",
+                    "correlation_id": correlation_id,
+                }
+                reservation = getattr(request.state, "idempotency_reservation", None)
+                if reservation:
+                    await reservation.commit(envelope)
+                remaining = getattr(request.state, "rate_limit_remaining", "0")
+                response.headers["X-RateLimit-Remaining"] = str(remaining)
+                response.headers["X-Correlation-ID"] = correlation_id
+                return envelope
+            except CounterRuntimeError as exc:
+                reservation = getattr(request.state, "idempotency_reservation", None)
+                if reservation:
+                    await reservation.abort()
+                status_code = _counter_status(exc.code)
+                response.status_code = status_code
+                response.headers["X-Correlation-ID"] = correlation_id
+                payload = {
+                    "ok": False,
+                    "code": exc.code,
+                    "message_fa": exc.message_fa,
+                    "correlation_id": correlation_id,
+                }
+                if exc.details:
+                    payload["details"] = exc.details
+                return payload
+            finally:
+                enrich_span(span, status_code=response.status_code)
+
+    @router.get("/counter/preview")
+    async def counter_preview(
+        request: Request,
+        response: Response,
+        year: str,
+        gender: str,
+        center: str,
+    ) -> dict[str, object]:
+        request.state._start_time = time.perf_counter()
+        correlation_id = getattr(request.state, "correlation_id", str(uuid.uuid4()))
+        with InFlightTracker(path="/counter/preview", method="GET"):
+            span = start_trace(
+                TraceContext(
+                    correlation_id=correlation_id,
+                    consumer_id=getattr(request.state, "consumer_id", "anonymous"),
+                    path="/counter/preview",
+                    method="GET",
+                )
+            )
+            try:
+                payload = {"year": year, "gender": gender, "center": center}
+                result = await api_state.counter_runtime.preview(payload)
+                response.headers["X-Correlation-ID"] = correlation_id
+                return {
+                    "ok": True,
+                    "counter": result.counter,
+                    "year_code": result.year_code,
+                    "status": result.status,
+                    "message_fa": "پیش‌نمایش شمارهٔ بعدی.",
+                    "correlation_id": correlation_id,
+                }
+            except CounterRuntimeError as exc:
+                status_code = _counter_status(exc.code)
+                response.status_code = status_code
+                response.headers["X-Correlation-ID"] = correlation_id
+                payload = {
+                    "ok": False,
+                    "code": exc.code,
+                    "message_fa": exc.message_fa,
+                    "correlation_id": correlation_id,
+                }
+                if exc.details:
+                    payload["details"] = exc.details
+                return payload
+            finally:
+                enrich_span(span, status_code=response.status_code)
 
     @router.get("/status", response_model=StatusResponseDTO)
     async def status(request: Request, response: Response) -> StatusResponseDTO:
@@ -565,9 +727,12 @@ def create_app(
             await finalize_response(request, response, logger=logger, status_code=response.status_code, outcome="success")
             return response
 
+    async def metrics_handler(request: Request) -> Response:
+        return await _metrics_endpoint(request, api_state, rate_limit_state)
+
     app.add_api_route(
         "/metrics",
-        lambda request, state=api_state, middleware_state=rate_limit_state: _metrics_endpoint(request, state, middleware_state),
+        metrics_handler,
         methods=["GET"],
         include_in_schema=False,
     )

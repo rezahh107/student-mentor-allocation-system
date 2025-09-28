@@ -1,4 +1,5 @@
 import asyncio
+import asyncio
 import json
 import time
 import uuid
@@ -141,6 +142,57 @@ class FakeRedis:
                 if decoded.get("status") == "completed":
                     return cached
                 return "wait"
+        stripped = script.lstrip()
+        if stripped.startswith("-- counter_allocate"):
+            student_key, sequence_key = keys
+            placeholder, year_code, prefix, center, gender, seq_max, ttl_ms = args
+            seq_max = int(seq_max)
+            ttl = int(ttl_ms) / 1000.0
+            async with self._lock:
+                await self._cleanup(student_key)
+                await self._cleanup(sequence_key)
+                existing = self._data.get(student_key)
+                if existing:
+                    try:
+                        decoded = json.loads(existing)
+                    except json.JSONDecodeError:
+                        decoded = {"status": "PENDING"}
+                    status = decoded.get("status")
+                    if status == "PENDING":
+                        return json.dumps({"status": "PENDING"})
+                    if status == "ASSIGNED":
+                        return json.dumps(
+                            {
+                                "status": "REUSED",
+                                "counter": decoded.get("counter"),
+                                "serial": decoded.get("serial"),
+                            }
+                        )
+                self._data[student_key] = placeholder
+                self._expiry[student_key] = await self._now() + ttl
+                current_raw = self._data.get(sequence_key)
+                current = int(current_raw) if current_raw else 0
+                current += 1
+                self._data[sequence_key] = str(current)
+                if current > seq_max:
+                    self._data.pop(student_key, None)
+                    self._expiry.pop(student_key, None)
+                    return json.dumps({"status": "EXHAUSTED"})
+                serial = f"{current:04d}"
+                counter = f"{year_code}{prefix}{serial}"
+                payload = json.dumps(
+                    {
+                        "status": "ASSIGNED",
+                        "counter": counter,
+                        "center": center,
+                        "gender": gender,
+                        "serial": serial,
+                        "year_code": year_code,
+                    }
+                )
+                self._data[student_key] = payload
+                self._expiry.pop(student_key, None)
+                return json.dumps({"status": "NEW", "counter": counter, "serial": serial})
         if "ZRANGE" in script:
             key = keys[0]
             async with self._lock:
@@ -185,6 +237,48 @@ class FakeAllocator:
                 "error_code": None,
             },
         )()
+
+
+def build_counter_app(
+    namespace: str | None = None,
+    *,
+    metrics_token: str | None = None,
+    metrics_ip_allowlist: list[str] | None = None,
+    redis_client: Any | None = None,
+    allocator: FakeAllocator | None = None,
+    auth_config: AuthConfig | None = None,
+    settings_overrides: dict[str, Any] | None = None,
+) -> tuple[Any, Any]:
+    redis_backend = redis_client or FakeRedis()
+    allocator_impl = allocator or FakeAllocator()
+    salt = "testsalt"
+    raw_key = "STATICKEY1234567890"
+    repository = InMemoryAPIKeyRepository(
+        [APIKeyRecord(name="fixture", key_hash=hash_national_id(raw_key, salt=salt))]
+    )
+    auth = auth_config or AuthConfig(
+        bearer_secret="secret-key",
+        api_key_salt=salt,
+        accepted_audience={"alloc"},
+        accepted_issuers={"issuer"},
+        allow_plain_tokens={"TESTTOKEN1234567890"},
+        api_key_repository=repository,
+    )
+    settings_kwargs: dict[str, Any] = {
+        "redis_namespace": namespace or f"test-{uuid.uuid4()}",
+        "metrics_token": metrics_token,
+        "metrics_ip_allowlist": metrics_ip_allowlist or ["127.0.0.1"],
+    }
+    if settings_overrides:
+        settings_kwargs.update(settings_overrides)
+    settings = APISettings(**settings_kwargs)
+    app = create_app(
+        allocator=allocator_impl,
+        settings=settings,
+        auth_config=auth,
+        redis_client=redis_backend,
+    )
+    return app, redis_backend
 
 
 def _extract_rate_limit_config(app: Any) -> RateLimitConfig:
@@ -324,12 +418,21 @@ async def assert_clean_final_state(app_or_client: Any) -> None:
     await application.state.api_state.reset()  # type: ignore[attr-defined]
 
 
-def get_debug_context(app: Any, redis_client: FakeRedis | None = None) -> dict[str, Any]:
-    application = getattr(app, "app", app)
-    ctx = {
-        "middleware": [mw.cls.__name__ for mw in application.user_middleware],
-        "timestamp": time.time(),
-    }
-    if redis_client:
+def get_debug_context(
+    app: Any | None = None,
+    *,
+    redis_client: FakeRedis | None = None,
+    rate_limit_state: RateLimitConfig | None = None,
+) -> dict[str, Any]:
+    ctx = {"timestamp": time.time()}
+    if app is not None:
+        application = getattr(app, "app", app)
+        ctx["middleware"] = [mw.cls.__name__ for mw in application.user_middleware]
+    if redis_client is not None:
         ctx["redis_keys"] = list(redis_client._data.keys())  # noqa: SLF001 - debug helper
+    if rate_limit_state is not None:
+        ctx["rate_limit_default"] = {
+            "requests": rate_limit_state.default_rule.requests,
+            "window": rate_limit_state.default_rule.window_seconds,
+        }
     return ctx

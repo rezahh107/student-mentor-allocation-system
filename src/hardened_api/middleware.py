@@ -347,7 +347,7 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         self._state = state
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        if request.method != "POST" or request.url.path != "/allocations":
+        if request.method != "POST" or request.url.path not in {"/allocations", "/counter/allocate"}:
             return await call_next(request)
         header = request.headers.get("Idempotency-Key")
         if not header:

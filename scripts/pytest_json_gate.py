@@ -214,8 +214,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     # Ensure the resolved JSON path lives under the reports directory to avoid
     # accidental writes outside the expected tree.
-    if not str(json_path).startswith(str(reports_dir)):
-        json_path = reports_dir / json_path.name
+    try:
+        json_path.relative_to(reports_dir)
+    except ValueError:
+        json_path = (reports_dir / json_path.name).resolve()
 
     _emit_structured_log(
         correlation_id=correlation_id,

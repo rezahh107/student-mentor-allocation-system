@@ -231,6 +231,36 @@ def test_atomic():
     _assert_clean_final_state(harness)
 
 
+def test_json_report_path_outside_reports_dir_is_sanitized(clean_state: GateHarness) -> None:
+    harness = clean_state
+    verify_middleware_order()
+    test_path = harness.make_test(
+        "escape",
+        """
+def test_escape():
+    assert True
+""",
+    )
+
+    reports_dir = harness.workdir / "reports"
+    escape_target = reports_dir.with_name("reports_backup") / "escape.json"
+
+    result = harness._run(
+        [f"--json-report-file={escape_target}", str(test_path)],
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    sanitized = reports_dir / "escape.json"
+    assert sanitized.exists(), f"Expected sanitized report at {sanitized}"
+    assert not escape_target.exists(), f"Unexpected report outside sandbox: {escape_target}"
+
+    payload = json.loads(sanitized.read_text(encoding="utf-8"))
+    assert payload["exitcode"] == 0, payload
+
+    _assert_clean_final_state(harness)
+
+
 def test_concurrent_runs_distinct_targets(clean_state: GateHarness) -> None:
     harness = clean_state
     verify_middleware_order()

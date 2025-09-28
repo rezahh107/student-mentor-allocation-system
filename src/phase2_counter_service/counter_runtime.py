@@ -6,7 +6,7 @@ import logging
 import unicodedata
 from dataclasses import dataclass
 from hashlib import blake2s
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from src.core.normalize import normalize_digits
 from src.hardened_api.redis_support import RedisExecutor, RedisLike, RedisNamespaces
@@ -44,6 +44,15 @@ def _normalize_int_field(value: Any, *, field: str, allowed: set[int]) -> int:
     if parsed not in allowed:
         raise ValueError(f"{field} نامعتبر است")
     return parsed
+
+
+def _normalize_year_field(value: Any) -> str:
+    text = "" if value is None else str(value)
+    normalized = normalize_digits(unicodedata.normalize("NFKC", text))
+    normalized = _strip_controls(normalized).strip()
+    if not normalized:
+        raise ValueError("سال نامعتبر است")
+    return normalized
 
 
 def _hash_student(student_id: str, *, salt: str) -> str:
@@ -141,10 +150,10 @@ class CounterRuntime:
 
     async def preview(self, payload: Mapping[str, Any]) -> CounterResult:
         try:
-            year = payload.get("year")
+            year_text = _normalize_year_field(payload.get("year"))
             gender = _normalize_int_field(payload.get("gender"), field="جنسیت", allowed={0, 1})
             center = _normalize_int_field(payload.get("center"), field="مرکز", allowed={0, 1, 2})
-            year_code = self._year_provider.code_for(year)
+            year_code = self._year_provider.code_for(year_text)
         except ValueError as exc:
             raise CounterRuntimeError(
                 "COUNTER_VALIDATION_ERROR",
@@ -183,13 +192,12 @@ class CounterRuntime:
         return CounterResult(counter=counter, year_code=year_code, status="preview")
 
     def _normalize_payload(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        year = payload.get("year")
+        year_text = _normalize_year_field(payload.get("year"))
         gender = _normalize_int_field(payload.get("gender"), field="جنسیت", allowed={0, 1})
         center = _normalize_int_field(payload.get("center"), field="مرکز", allowed={0, 1, 2})
         student_id = _normalize_identifier(payload.get("student_id"))
-        year_code = self._year_provider.code_for(year)
-        normalized_year = normalize_digits(unicodedata.normalize("NFKC", str(year)))
-        normalized_year = _strip_controls(normalized_year).strip()
+        year_code = self._year_provider.code_for(year_text)
+        normalized_year = year_text
         return {
             "year": normalized_year,
             "year_code": year_code,
@@ -208,7 +216,7 @@ class CounterRuntime:
         sequence_key = self._namespaces.counter_sequence(normalized["year_code"], normalized["gender"])
 
         async def _run_script() -> str:
-            return await self._redis.eval(
+            response = await self._redis.eval(
                 _ALLOCATE_SCRIPT,
                 2,
                 student_key,
@@ -221,6 +229,7 @@ class CounterRuntime:
                 str(self._max_serial),
                 str(self._placeholder_ttl),
             )
+            return cast(str, response)
 
         backoff = self._wait_base / 1000.0
         attempts = 0

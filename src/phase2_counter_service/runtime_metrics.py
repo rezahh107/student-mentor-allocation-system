@@ -1,6 +1,8 @@
 """Prometheus metrics for the counter runtime."""
 from __future__ import annotations
 
+from typing import cast
+
 from prometheus_client import CollectorRegistry, Counter, REGISTRY
 
 
@@ -32,10 +34,12 @@ class CounterRuntimeMetrics:
         try:
             return Counter(name, documentation, labelnames, registry=self._registry)
         except ValueError:
-            collector = self._registry._names_to_collectors.get(name)  # type: ignore[attr-defined]
+            collectors = getattr(self._registry, "_names_to_collectors", {})
+            collector_map = cast(dict[str, Counter], collectors)
+            collector = collector_map.get(name)
             if collector is None:
                 raise
-            return collector  # type: ignore[return-value]
+            return collector
 
     @property
     def registry(self) -> CollectorRegistry:

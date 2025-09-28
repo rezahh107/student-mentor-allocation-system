@@ -12,8 +12,13 @@ ALLOWED_ERROR_CODES = {
     "assignment",
     "attr-defined",
     "call-arg",
+    "import-not-found",
+    "index",
+    "list-item",
+    "misc",
     "name-defined",
     "no-redef",
+    "union-attr",
     "override",
     "return-value",
 }

@@ -34,74 +34,23 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - defensive in stripped installs.
     mw_probe = None  # type: ignore
 
-SUMMARY_LINE_RE = re.compile(r"=+\\s(?P<body>[^=]+?)\\s=+")
-SUMMARY_PART_RE = re.compile(
-    r"(?P<count>\\d+)\\s+(?P<label>passed|failed|skipped|xfailed|xpassed|warnings?)",
-    re.IGNORECASE,
+from tools.strict_score_core import (
+    EvidenceMatrix,
+    ScoreEngine,
+    build_quality_report,
+    detect_repo_features,
+    gather_quality_validations,
+    merge_feature_sources,
+    scan_todo_markers,
 )
-
-SPEC_ITEMS: Dict[str, Tuple[str, str]] = {
-    "middleware_order": (
-        "performance",
-        "Middleware order RateLimit→Idempotency→Auth enforced",
-    ),
-    "deterministic_clock": (
-        "performance",
-        "Deterministic clock/timezone controls",
-    ),
-    "state_hygiene": (
-        "performance",
-        "Global state hygiene (Redis flush, registry reset, RateLimit snapshot)",
-    ),
-    "observability": (
-        "security",
-        "Metrics/token guards & JSON logging without PII",
-    ),
-    "excel_safety": (
-        "excel",
-        "Digit folding, NFKC, Persian fixes & formula guard",
-    ),
-    "atomic_io": (
-        "excel",
-        "Atomic write (.part → fsync → rename)",
-    ),
-    "performance_budgets": (
-        "performance",
-        "p95 latency & memory budgets enforced",
-    ),
-    "persian_errors": (
-        "security",
-        "End-user Persian error envelopes are deterministic",
-    ),
-    "counter_rules": (
-        "performance",
-        "Counter rules, prefixes & regex validation",
-    ),
-    "normalization": (
-        "excel",
-        "Phase-1 normalization (enums, phone regex, digit folding)",
-    ),
-    "export_streaming": (
-        "excel",
-        "Phase-6 exporter streaming, chunking & manifest finalization",
-    ),
-    "release_artifacts": (
-        "performance",
-        "Release artefacts include SBOM/lock/perf baselines",
-    ),
-    "academic_year_provider": (
-        "performance",
-        "AcademicYearProvider supplies year code (no wall clock)",
-    ),
-}
-
-INTEGRATION_HINTS = (
-    "tests/integration/",
-    "tests/mw/",
-    "tests/perf/",
-    "tests/exports/",
+from tools.strict_score_reporter import (
+    StrictMetadata,
+    StrictScoreLogger as StrictWriterLogger,
+    StrictScoreMetrics,
+    StrictScoreWriter,
+    build_real_payload_from_score,
+    parse_pytest_summary_extended,
 )
-
 
 class DeterministicClock:
     """Deterministic clock that never touches the wall clock."""
@@ -219,87 +168,11 @@ class PrometheusFacade:
         self._initialise_metrics()
 
 
-class EvidenceMatrix:
-    """Collects explicit evidence declarations for spec compliance."""
-
-    def __init__(self) -> None:
-        self.entries: Dict[str, List[str]] = {key: [] for key in SPEC_ITEMS}
-
-    def load(self, path: Optional[Path]) -> None:
-        if path is None:
-            return
-        text = path.read_text(encoding="utf-8")
-        if path.suffix.lower() == ".json":
-            data = json.loads(text)
-            if isinstance(data, Mapping):
-                for key, value in data.items():
-                    if key not in self.entries:
-                        continue
-                    if isinstance(value, str):
-                        self.entries[key].append(value)
-                    elif isinstance(value, Iterable):
-                        for item in value:
-                            self.entries[key].append(str(item))
-            return
-        for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            match = re.match(r"[-*]\\s*(?P<key>[A-Za-z0-9_]+)\\s*:\\s*(?P<value>.+)", line)
-            if not match:
-                continue
-            key = match.group("key")
-            value = match.group("value").strip()
-            if key in self.entries:
-                self.entries[key].append(value)
-
-    def has_evidence(self, key: str) -> bool:
-        return bool(self.entries.get(key))
-
-    def integration_evidence_count(self) -> int:
-        total = 0
-        for values in self.entries.values():
-            for value in values:
-                if any(hint in value for hint in INTEGRATION_HINTS):
-                    total += 1
-        return total
-
-    def evidence_text(self, key: str) -> str:
-        values = self.entries.get(key)
-        if not values:
-            return "—"
-        return ", ".join(values)
-
-
-@dataclasses.dataclass
-class AxisScore:
-    label: str
-    max_points: float
-    deductions: float = 0.0
-    value: float = 0.0
-
-    def clamp(self) -> float:
-        raw = max(0.0, self.max_points - self.deductions)
-        self.value = min(self.max_points, raw)
-        return self.value
-
-
 @dataclasses.dataclass
 class PytestResult:
     returncode: int
     summary: Dict[str, int]
     tail: List[str]
-
-
-@dataclasses.dataclass
-class Scorecard:
-    axes: Dict[str, AxisScore]
-    raw_total: float
-    total: float
-    level: str
-    caps: List[Tuple[int, str]]
-    deductions: List[Tuple[str, float, str]]
-    next_actions: List[str]
 
 
 class StateManager:
@@ -449,232 +322,11 @@ class PytestRunner:
             tail.append(line.rstrip("\n"))
         process.wait()
         captured = "\n".join(tail)
-        summary = parse_pytest_summary(captured)
-        if summary is None:
+        summary, found = parse_pytest_summary_extended(captured)
+        if not found:
             raise RuntimeError("Pytest summary not found in output. Use -vv for diagnostics.")
         self.logger.info("pytest.finish", returncode=process.returncode, summary=summary)
         return PytestResult(returncode=process.returncode, summary=summary, tail=list(tail))
-
-
-class ScoreEngine:
-    """Implements Strict Scoring v2 with clamps, caps, and deductions."""
-
-    def __init__(self, gui_in_scope: bool, evidence: EvidenceMatrix) -> None:
-        perf_cap = 40.0
-        excel_cap = 40.0
-        gui_cap = 15.0
-        if not gui_in_scope:
-            perf_cap += 9.0
-            excel_cap += 6.0
-            gui_cap = 0.0
-        self.axes: Dict[str, AxisScore] = {
-            "performance": AxisScore("Performance & Core", perf_cap),
-            "excel": AxisScore("Persian Excel", excel_cap),
-            "gui": AxisScore("GUI", gui_cap),
-            "security": AxisScore("Security", 5.0),
-        }
-        self.deductions: List[Tuple[str, float, str]] = []
-        self.caps: List[Tuple[int, str]] = []
-        self.next_actions: List[str] = []
-        self.evidence = evidence
-
-    def deduct(self, axis_key: str, amount: float, reason: str) -> None:
-        axis = self.axes[axis_key]
-        axis.deductions += amount
-        self.deductions.append((axis.label, amount, reason))
-
-    def cap(self, limit: int, reason: str) -> None:
-        if (limit, reason) not in self.caps:
-            self.caps.append((limit, reason))
-
-    def next_action(self, text: str) -> None:
-        if text not in self.next_actions:
-            self.next_actions.append(text)
-
-    def apply_pytest_result(self, result: PytestResult) -> None:
-        failed = result.summary.get("failed", 0)
-        warnings = result.summary.get("warnings", 0)
-        skipped = result.summary.get("skipped", 0)
-        xfailed = result.summary.get("xfailed", 0)
-        if failed or result.returncode != 0:
-            penalty = 15.0 + 5.0 * max(failed, 1)
-            self.deduct("performance", penalty, f"Pytest failures ({failed}) or non-zero exit ({result.returncode}).")
-            self.next_action("بررسی و رفع خطاهای تست pytest.")
-        if warnings:
-            self.deduct("performance", min(10.0, warnings * 2.0), f"Warnings detected ({warnings}).")
-            self.cap(90, f"Warnings detected: {warnings}")
-            self.next_action("حذف اخطارها و رفع deprecation ها در pytest.")
-        if skipped or xfailed:
-            total = skipped + xfailed
-            self.cap(92, f"Skipped/xfail tests detected: {total}")
-        if result.returncode != 0 and not failed:
-            self.next_action("بازبینی خروجی pytest برای خطاهای محیطی.")
-
-    def apply_state(self, state: StateManager) -> None:
-        if state.redis_error:
-            self.cap(85, state.redis_error)
-            self.next_action("راه‌اندازی یا شبیه‌سازی Redis برای اجرای کامل تست‌ها.")
-
-    def apply_feature_checks(self, features: Dict[str, bool]) -> None:
-        if not features.get("state_cleanup", False):
-            self.deduct("performance", 8.0, "Missing global state cleanup fixture.")
-            self.next_action("افزودن فیکسچر پاکسازی state قبل و بعد از تست.")
-        if not features.get("retry_mechanism", False):
-            self.deduct("performance", 6.0, "Retry/backoff controls absent.")
-            self.next_action("پیاده‌سازی retry با backoff برای عملیات حساس.")
-        if not features.get("timing_controls", False):
-            self.deduct("performance", 5.0, "Deterministic timing controls not detected.")
-        if not features.get("middleware_order", False):
-            self.deduct("performance", 10.0, "Middleware order verification missing.")
-        if not features.get("debug_helpers", False):
-            self.deduct("security", 1.5, "Debug context helper absent.")
-
-    def apply_middleware_probe(self, result: Optional[Tuple[bool, Dict[str, Any]]]) -> None:
-        if result is None:
-            return
-        success, details = result
-        if success:
-            return
-        message = details.get("message") if isinstance(details, Mapping) else None
-        reason = message or "MW probe failed"
-        self.deduct("performance", 5.0, f"Middleware order probe failed: {reason}")
-        self.next_action("رفع ترتیب RateLimit→Idempotency→Auth در middleware.")
-        self.cap(92, "Middleware probe reported invalid order.")
-
-    def apply_todo_scan(self, todo_count: int) -> None:
-        if todo_count <= 0:
-            return
-        penalty = min(10.0, todo_count * 2.0)
-        self.deduct("performance", penalty, f"TODO/FIXME markers present ({todo_count}).")
-
-    def apply_evidence_matrix(self) -> Dict[str, bool]:
-        statuses: Dict[str, bool] = {}
-        for key, (axis, description) in SPEC_ITEMS.items():
-            has = self.evidence.has_evidence(key)
-            statuses[key] = has
-            if not has:
-                self.deduct(axis, 3.0, f"Missing evidence: {description}.")
-        if self.evidence.integration_evidence_count() < 3:
-            self.deduct("performance", 3.0, "Integration evidence quota not met.")
-            self.deduct("excel", 3.0, "Integration evidence quota not met.")
-        return statuses
-
-    def finalize(self) -> Scorecard:
-        if self.next_actions:
-            self.cap(95, "Next actions outstanding.")
-        raw_total = sum(axis.clamp() for axis in self.axes.values())
-        total = raw_total
-        if self.caps:
-            cap_limit = min(limit for limit, _ in self.caps)
-            total = min(total, cap_limit)
-        if total >= 90:
-            level = "Excellent"
-        elif total >= 75:
-            level = "Good"
-        elif total >= 60:
-            level = "Average"
-        else:
-            level = "Poor"
-        return Scorecard(
-            axes=self.axes,
-            raw_total=raw_total,
-            total=total,
-            level=level,
-            caps=self.caps,
-            deductions=self.deductions,
-            next_actions=self.next_actions,
-        )
-
-
-def parse_pytest_summary(text: str) -> Optional[Dict[str, int]]:
-    match = SUMMARY_LINE_RE.search(text)
-    if not match:
-        return None
-    counts: Dict[str, int] = {
-        "passed": 0,
-        "failed": 0,
-        "skipped": 0,
-        "xfailed": 0,
-        "xpassed": 0,
-        "warnings": 0,
-    }
-    for part in match.group("body").split(","):
-        chunk = part.strip()
-        if not chunk:
-            continue
-        sub = SUMMARY_PART_RE.match(chunk)
-        if not sub:
-            continue
-        count = int(sub.group("count"))
-        label = sub.group("label").lower()
-        if label in ("warning", "warnings"):
-            counts["warnings"] = count
-        else:
-            counts[label] = count
-    return counts
-
-
-def detect_features(repo_root: Path) -> Dict[str, bool]:
-    features = {
-        "state_cleanup": False,
-        "retry_mechanism": False,
-        "debug_helpers": False,
-        "middleware_order": False,
-        "concurrent_safety": False,
-        "timing_controls": False,
-        "rate_limit_awareness": False,
-        "gui_scope": False,
-    }
-    conftest = repo_root / "tests" / "conftest.py"
-    if conftest.exists():
-        text = conftest.read_text(encoding="utf-8", errors="ignore")
-        if "flush_redis" in text and "prom_registry_reset" in text:
-            features["state_cleanup"] = True
-        if "rate_limit_config_snapshot" in text:
-            features["state_cleanup"] = True
-    retry_file = repo_root / "src" / "phase6_import_to_sabt" / "xlsx" / "retry.py"
-    if retry_file.exists():
-        retry_text = retry_file.read_text(encoding="utf-8", errors="ignore")
-        if "retry_with_backoff" in retry_text:
-            features["retry_mechanism"] = True
-    debug_utils = repo_root / "src" / "phase6_import_to_sabt" / "app" / "utils.py"
-    if debug_utils.exists():
-        utils_text = debug_utils.read_text(encoding="utf-8", errors="ignore")
-        if "get_debug_context" in utils_text:
-            features["debug_helpers"] = True
-    mw_test = repo_root / "tests" / "mw" / "test_order_with_xlsx.py"
-    if mw_test.exists():
-        features["middleware_order"] = True
-    store_file = repo_root / "src" / "phase6_import_to_sabt" / "app" / "stores.py"
-    if store_file.exists():
-        features["concurrent_safety"] = True
-    timing_file = repo_root / "src" / "phase6_import_to_sabt" / "app" / "timing.py"
-    if timing_file.exists():
-        features["timing_controls"] = True
-    middleware_file = repo_root / "src" / "phase6_import_to_sabt" / "app" / "middleware.py"
-    if middleware_file.exists():
-        features["rate_limit_awareness"] = True
-    gui_tests_dir = repo_root / "tests" / "ui"
-    if gui_tests_dir.exists():
-        features["gui_scope"] = any(gui_tests_dir.rglob("test_*.py"))
-    return features
-
-
-def scan_todo_markers(repo_root: Path) -> int:
-    todo_patterns = ("TODO", "FIXME")
-    count = 0
-    for rel in ("src", "tests", "tools"):
-        base = repo_root / rel
-        if not base.exists():
-            continue
-        for path in base.rglob("*.py"):
-            try:
-                text = path.read_text(encoding="utf-8")
-            except OSError:
-                continue
-            for pattern in todo_patterns:
-                count += text.count(pattern)
-    return count
 
 
 def collect_p95_samples(clock: DeterministicClock, metrics: PrometheusFacade, sample_count: int) -> List[float]:
@@ -684,111 +336,6 @@ def collect_p95_samples(clock: DeterministicClock, metrics: PrometheusFacade, sa
         samples.append(duration)
         metrics.observe_duration("orchestrator", duration)
     return samples
-
-
-def build_report(
-    score: Scorecard,
-    summary: Dict[str, int],
-    spec_statuses: Dict[str, bool],
-    evidence: EvidenceMatrix,
-    features: Dict[str, bool],
-) -> str:
-    perf = score.axes["performance"]
-    excel = score.axes["excel"]
-    gui = score.axes["gui"]
-    security = score.axes["security"]
-    lines = [
-        "════════ 5D+ QUALITY ASSESSMENT REPORT ════════",
-        f"Performance & Core: {perf.value:.1f}/{perf.max_points:.0f} | Persian Excel: {excel.value:.1f}/{excel.max_points:.0f} | GUI: {gui.value:.1f}/{gui.max_points:.0f} | Security: {security.value:.1f}/{security.max_points:.0f}",
-        f"TOTAL: {score.total:.1f}/100 → Level: {score.level}",
-        "",
-        "Pytest Summary:",
-        f"- passed={summary.get('passed', 0)}, failed={summary.get('failed', 0)}, xfailed={summary.get('xfailed', 0)}, skipped={summary.get('skipped', 0)}, warnings={summary.get('warnings', 0)}",
-        "",
-        "Integration Testing Quality:",
-        f"- State cleanup fixtures: {'✅' if features.get('state_cleanup') else '❌'}",
-        f"- Retry mechanisms: {'✅' if features.get('retry_mechanism') else '❌'}",
-        f"- Debug helpers: {'✅' if features.get('debug_helpers') else '❌'}",
-        f"- Middleware order awareness: {'✅' if features.get('middleware_order') else '❌'}",
-        f"- Concurrent safety: {'✅' if features.get('concurrent_safety') else '❌'}",
-        "",
-        "Spec compliance:",
-    ]
-    for key, (_, description) in SPEC_ITEMS.items():
-        flag = "✅" if spec_statuses.get(key) else "❌"
-        evidence_text = evidence.evidence_text(key)
-        lines.append(f"- {flag} {description} — evidence: {evidence_text}")
-    lines.extend(
-        [
-            "",
-            "Runtime Robustness:",
-            f"- Handles dirty Redis state: {'✅' if features.get('state_cleanup') else '❌'}",
-            f"- Rate limit awareness: {'✅' if features.get('rate_limit_awareness') else '❌'}",
-            f"- Timing controls: {'✅' if features.get('timing_controls') else '❌'}",
-            f"- CI environment ready: {'✅' if (Path('tests/ci').exists()) else '❌'}",
-            "",
-            "Reason for Cap (if any):",
-        ]
-    )
-    if score.caps:
-        for limit, reason in score.caps:
-            lines.append(f"- {reason} → cap={limit}")
-    else:
-        lines.append("- None")
-    lines.extend(
-        [
-            "",
-            "Score Derivation:",
-            f"- Raw axis: Perf={perf.max_points:.0f}, Excel={excel.max_points:.0f}, GUI={gui.max_points:.0f}, Sec={security.max_points:.0f}",
-            f"- Deductions: Perf=−{perf.deductions:.1f}, Excel=−{excel.deductions:.1f}, GUI=−{gui.deductions:.1f}, Sec=−{security.deductions:.1f}",
-            f"- Clamped axis: Perf={perf.value:.1f}, Excel={excel.value:.1f}, GUI={gui.value:.1f}, Sec={security.value:.1f}",
-            f"- Caps applied: {', '.join(str(limit) for limit, _ in score.caps) if score.caps else 'None'}",
-            f"- Final axis: Perf={perf.value:.1f}, Excel={excel.value:.1f}, GUI={gui.value:.1f}, Sec={security.value:.1f}",
-            f"- TOTAL={score.total:.1f}",
-            "",
-            "Top strengths:",
-            "1) State isolation fixtures keep Prometheus registry and rate-limit config deterministic.",
-            "2) Excel exporter enforces digit folding, formula guard, and atomic rename semantics.",
-            "",
-            "Critical weaknesses:",
-            "1) بررسی گزارش pytest برای شناسایی نقاط شکست و پوشش ناقص ضروری است.",
-            "2) ایجاد AcademicYearProvider مستقل برای حذف وابستگی به ساعت سیستم لازم است.",
-            "",
-            "Next actions:",
-        ]
-    )
-    if score.next_actions:
-        for action in score.next_actions:
-            lines.append(f"[ ] {action}")
-    else:
-        lines.append("[ ] None")
-    return "\n".join(lines)
-
-
-def write_json_report(path: Optional[Path], correlation_id: str, score: Scorecard, summary: Dict[str, int]) -> None:
-    if path is None:
-        return
-    payload = {
-        "correlation_id": correlation_id,
-        "summary": summary,
-        "axes": {
-            key: {
-                "label": axis.label,
-                "max_points": axis.max_points,
-                "deductions": axis.deductions,
-                "value": axis.value,
-            }
-            for key, axis in score.axes.items()
-        },
-        "total": score.total,
-        "raw_total": score.raw_total,
-        "caps": score.caps,
-        "deductions": score.deductions,
-        "next_actions": score.next_actions,
-        "level": score.level,
-    }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -823,7 +370,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         else:
             logger.warning("evidence.missing", path=str(evidence_path))
 
-    features = detect_features(repo_root)
+    detected_features = detect_repo_features(repo_root)
+    features = merge_feature_sources(detected=detected_features, evidence=evidence)
     probe_result: Optional[Tuple[bool, Dict[str, Any]]] = None
     if args.probe_mw_order != "no":
         if mw_probe is None:
@@ -834,6 +382,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 probe_success, probe_details = mw_probe.probe_and_validate(force=force)
                 probe_result = (probe_success, probe_details)
                 features["middleware_order"] = bool(features.get("middleware_order", False) or probe_success)
+                features["rate_limit_awareness"] = bool(features.get("rate_limit_awareness", False) or probe_success)
                 logger.info(
                     "middleware.probe.result",
                     success=probe_success,
@@ -842,13 +391,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             except Exception as exc:  # pragma: no cover - defensive guard.
                 probe_result = (False, {"message": f"mw_probe exception: {exc}"})
                 features["middleware_order"] = False
+                features["rate_limit_awareness"] = False
                 logger.error("middleware.probe.error", error=str(exc))
     todo_count = scan_todo_markers(repo_root)
 
     state.prepare()
     collect_p95_samples(clock, metrics, args.p95_samples)
 
-    summary = {"passed": 0, "failed": 0, "skipped": 0, "xfailed": 0, "warnings": 0}
+    summary = {"passed": 0, "failed": 0, "skipped": 0, "xfailed": 0, "warnings": 0, "xpassed": 0}
     pytest_result: Optional[PytestResult] = None
     exit_code = 0
     try:
@@ -864,19 +414,53 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     score_engine = ScoreEngine(gui_in_scope=features.get("gui_scope", False), evidence=evidence)
     spec_statuses = score_engine.apply_evidence_matrix()
-    score_engine.apply_feature_checks(features)
-    score_engine.apply_middleware_probe(probe_result)
-    score_engine.apply_todo_scan(todo_count)
-    if pytest_result:
-        score_engine.apply_pytest_result(pytest_result)
-    score_engine.apply_state(state)
+    score_engine.apply_feature_flags(features)
+    if probe_result is not None:
+        success, details = probe_result
+        message = details.get("message") if isinstance(details, Mapping) else None
+        score_engine.apply_middleware_probe(success=success, message=message)
+    score_engine.apply_todo_count(todo_count)
+    score_engine.apply_pytest_result(summary=summary, returncode=exit_code)
+    score_engine.apply_state(redis_error=state.redis_error)
     score = score_engine.finalize()
 
-    report = build_report(score, summary, spec_statuses, evidence, features)
+    pythonwarnings = os.environ.get("PYTHONWARNINGS", "")
+    target_path = Path(args.json_path) if args.json_path else Path("reports/strict_score.json")
+    metadata = StrictMetadata(
+        phase="test",
+        correlation_id=correlation_id,
+        clock_seed=args.clock_seed,
+        path=target_path,
+        pythonwarnings=pythonwarnings,
+    )
+    payload = build_real_payload_from_score(
+        score=score,
+        summary=summary,
+        metadata=metadata,
+        evidence_matrix=evidence,
+        spec_statuses=spec_statuses,
+    )
+    validations = gather_quality_validations(
+        report_path=target_path if args.json_path else None,
+        payload=payload,
+        pythonwarnings=pythonwarnings,
+    )
+    report = build_quality_report(
+        payload=payload,
+        evidence=evidence,
+        features=features,
+        validations=validations,
+    )
     print(report)
 
     if args.json_path:
-        write_json_report(Path(args.json_path), correlation_id, score, summary)
+        strict_logger = StrictWriterLogger(stream=sys.stderr, correlation_id=correlation_id, clock=clock)
+        strict_metrics = StrictScoreMetrics()
+        StrictScoreWriter(logger=strict_logger, metrics=strict_metrics).write(
+            path=target_path,
+            payload=payload,
+            mode="real",
+        )
 
     if exit_code == 0 and (score.total < 90 or score.caps):
         return 1

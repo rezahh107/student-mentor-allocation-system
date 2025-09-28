@@ -26,6 +26,13 @@ pipeline {
         sh "PYTHONWARNINGS=default pip install -r requirements.txt -r requirements-dev.txt"
       }
     }
+    stage('CI Orchestrator Smoke') {
+      steps {
+        withEnv(['CI_INSTALL_CMD=python -m pip --version', 'CI_TEST_CMD=python -m pytest --version']) {
+          sh 'python3 -m ci_orchestrator.main all'
+        }
+      }
+    }
     stage('Test') {
       steps {
         sh '''

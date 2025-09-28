@@ -56,6 +56,12 @@ jobs:
         run: |
           make static-checks
           make ci-checks
+      - name: Python orchestrator smoke
+        env:
+          CI_INSTALL_CMD: "python -m pip --version"
+          CI_TEST_CMD: "python -m pytest --version"
+        run: |
+          python -m ci_orchestrator.main all
       - name: اجرای ارکستریتور تست‌ها
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'

@@ -12,9 +12,10 @@ from typing import Iterable, List
 
 import typer
 
+from .atomic import atomic_write
 from .backup import BackupManager
 from .deploy import ReadinessGate, ZeroDowntimeHandoff
-from .atomic import atomic_write
+
 
 app = typer.Typer(help="ImportToSabt operational utilities")
 

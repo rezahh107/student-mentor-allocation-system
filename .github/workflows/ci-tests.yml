@@ -59,9 +59,6 @@ jobs:
           install_if_exists requirements-advanced.txt
           install_if_exists requirements-ml.txt
           install_if_exists requirements-security.txt
-          if [ -f setup.py ]; then
-            python -m pip install --no-input -e .
-          fi
 
       - name: Prepare parser artifacts directory
         run: |
@@ -181,9 +178,6 @@ jobs:
           install_if_exists requirements-advanced.txt
           install_if_exists requirements-ml.txt
           install_if_exists requirements-security.txt
-          if [ -f setup.py ]; then
-            python -m pip install --no-input -e .
-          fi
 
       - name: Prepare directories
         run: |
@@ -359,9 +353,6 @@ jobs:
           install_if_exists requirements-advanced.txt
           install_if_exists requirements-ml.txt
           install_if_exists requirements-security.txt
-          if [ -f setup.py ]; then
-            python -m pip install --no-input -e .
-          fi
 
       - name: Prepare directories
         run: |

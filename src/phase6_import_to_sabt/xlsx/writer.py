@@ -137,10 +137,19 @@ class XLSXStreamWriter:
 
     def _sort_key(self, row: dict[str, Any]) -> tuple[str, str, str, str, str]:
         prepared = self.prepare_row(row)
+
+        def _school_key(value: str | None) -> str:
+            if value in (None, ""):
+                return "999999"
+            try:
+                return f"{int(value):06d}"
+            except (TypeError, ValueError):
+                return "999999"
+
         return (
             prepared.get("year_code", ""),
             prepared.get("reg_center", ""),
-            prepared.get("national_id", ""),
             prepared.get("group_code", ""),
-            prepared.get("school_code", "999999"),
+            _school_key(prepared.get("school_code")),
+            prepared.get("national_id", ""),
         )

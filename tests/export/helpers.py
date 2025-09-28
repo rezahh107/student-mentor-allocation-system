@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, List
+from typing import Callable, Iterable, List
 
 from prometheus_client import CollectorRegistry
 
@@ -62,11 +62,16 @@ def build_exporter(tmp_path: Path, rows: Iterable[NormalizedStudentRow]) -> Impo
     return exporter
 
 
-def build_job_runner(tmp_path: Path, rows: Iterable[NormalizedStudentRow]):
+def build_job_runner(
+    tmp_path: Path,
+    rows: Iterable[NormalizedStudentRow],
+    *,
+    clock: Callable[[], datetime] | None = None,
+):
     exporter = build_exporter(tmp_path, rows)
     redis = DeterministicRedis()
     registry = CollectorRegistry()
     metrics = ExporterMetrics(registry)
-    clock = lambda: datetime(2023, 7, 2, 10, 0, tzinfo=timezone.utc)
-    runner = ExportJobRunner(exporter=exporter, redis=redis, metrics=metrics, clock=clock)
+    runner_clock = clock or (lambda: datetime(2023, 7, 2, 10, 0, tzinfo=timezone.utc))
+    runner = ExportJobRunner(exporter=exporter, redis=redis, metrics=metrics, clock=runner_clock)
     return runner, metrics

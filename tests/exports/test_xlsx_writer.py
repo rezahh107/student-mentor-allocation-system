@@ -44,7 +44,7 @@ def test_multi_sheet_chunking_stable_sort(tmp_path: Path) -> None:
         assert sheet_names == ["Sheet_001", "Sheet_002"]
         first_sheet = wb[sheet_names[0]]
         values = [row[0].value for row in first_sheet.iter_rows(min_row=2)]
-        assert values == ["001", "003"]
+        assert values == ["003", "001"]
     finally:
         wb.close()
 

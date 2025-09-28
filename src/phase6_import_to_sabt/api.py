@@ -4,15 +4,17 @@ import hmac
 import os
 import time
 from hashlib import sha256
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import asyncio
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from dateutil import parser
 from prometheus_client import generate_latest
+from uuid import uuid4
 
 from src.phase7_release.deploy import CircuitBreaker, ReadinessGate, get_debug_context
 
@@ -36,6 +38,7 @@ class ExportRequest(BaseModel):
     chunk_size: int | None = None
     bom: bool | None = None
     excel_mode: bool | None = None
+    format: str | None = Field(default="csv")
 
 
 class ExportResponse(BaseModel):
@@ -51,16 +54,83 @@ class ExportStatusResponse(BaseModel):
     manifest: dict[str, Any] | None = None
 
 
-class HMACSignedURLProvider(SignedURLProvider):
-    def __init__(self, secret: str, base_url: str = "https://files.local/export") -> None:
-        self.secret = secret.encode("utf-8")
+class DualKeyHMACSignedURLProvider(SignedURLProvider):
+    """Generate and validate signed URLs using dual rotating keys."""
+
+    def __init__(
+        self,
+        *,
+        active: tuple[str, str],
+        next_: tuple[str, str] | None = None,
+        base_url: str = "https://files.local/export",
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
         self.base_url = base_url.rstrip("/")
+        self._active_kid, active_secret = active
+        self._next_kid: str | None = None
+        self._secrets: dict[str, bytes] = {self._active_kid: active_secret.encode("utf-8")}
+        if next_ is not None:
+            next_kid, next_secret = next_
+            self._next_kid = next_kid
+            self._secrets[next_kid] = next_secret.encode("utf-8")
 
     def sign(self, file_path: str, expires_in: int = 3600) -> str:
-        payload = f"{file_path}:{expires_in}"
-        digest = hmac.new(self.secret, payload.encode("utf-8"), sha256).hexdigest()
+        if expires_in <= 0:
+            raise ValueError("expires_in must be positive")
+        now = self._clock()
+        expires_at = int(now.timestamp()) + int(expires_in)
         filename = Path(file_path).name
-        return f"{self.base_url}/{filename}?expires={expires_in}&sig={digest}"
+        payload = self._payload(filename, expires_at, self._active_kid)
+        digest = hmac.new(self._secrets[self._active_kid], payload, sha256).hexdigest()
+        query = urlencode({"kid": self._active_kid, "exp": str(expires_at), "sig": digest})
+        return f"{self.base_url}/{filename}?{query}"
+
+    def verify(self, url: str, *, now: datetime | None = None) -> bool:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        kid = query.get("kid", [None])[0]
+        exp = query.get("exp", [None])[0]
+        sig = query.get("sig", [None])[0]
+        if not kid or not exp or not sig:
+            return False
+        if kid not in self._secrets:
+            return False
+        try:
+            expires_at = int(exp)
+        except ValueError:
+            return False
+        now = now or self._clock()
+        if int(now.timestamp()) > expires_at:
+            return False
+        payload = self._payload(Path(parsed.path).name, expires_at, kid)
+        expected = hmac.new(self._secrets[kid], payload, sha256).hexdigest()
+        return hmac.compare_digest(expected, sig)
+
+    def rotate(self, *, active: tuple[str, str], next_: tuple[str, str] | None = None) -> None:
+        self._active_kid, active_secret = active
+        self._secrets[self._active_kid] = active_secret.encode("utf-8")
+        self._next_kid = None
+        if next_ is not None:
+            next_kid, next_secret = next_
+            self._next_kid = next_kid
+            self._secrets[next_kid] = next_secret.encode("utf-8")
+
+    def _payload(self, resource: str, expires_at: int, kid: str) -> bytes:
+        return f"{resource}:{expires_at}:{kid}".encode("utf-8")
+
+
+class HMACSignedURLProvider(DualKeyHMACSignedURLProvider):
+    """Compatibility shim that exposes the legacy single-secret API."""
+
+    def __init__(
+        self,
+        secret: str,
+        *,
+        base_url: str = "https://files.local/export",
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        super().__init__(active=("legacy", secret), next_=None, base_url=base_url, clock=clock)
 
 
 def rate_limit_dependency(request: Request) -> None:
@@ -148,6 +218,8 @@ class ExportAPI:
             role, center_scope = auth
             if role == "MANAGER" and payload.center != center_scope:
                 raise HTTPException(status_code=403, detail="اجازه دسترسی ندارید")
+            if (payload.delta_created_at is None) ^ (payload.delta_id is None):
+                raise self._validation_error({"delta": "هر دو مقدار پنجره دلتا الزامی است."})
             delta = None
             if payload.delta_created_at and payload.delta_id is not None:
                 delta = ExportDeltaWindow(
@@ -159,13 +231,33 @@ class ExportAPI:
                 center=payload.center,
                 delta=delta,
             )
-            options = ExportOptions(
-                chunk_size=payload.chunk_size or 50_000,
-                include_bom=payload.bom or False,
-                excel_mode=payload.excel_mode if payload.excel_mode is not None else True,
-            )
-            namespace = f"{role}:{center_scope or 'ALL'}:{payload.year}"
-            correlation_id = request.headers.get("X-Request-ID", "-")
+            fmt = (payload.format or "csv").lower()
+            chunk_size = payload.chunk_size or 50_000
+            if chunk_size <= 0:
+                raise self._validation_error({"chunk_size": "اندازه قطعه باید بزرگتر از صفر باشد."})
+            try:
+                options = ExportOptions(
+                    chunk_size=chunk_size,
+                    include_bom=payload.bom or False,
+                    excel_mode=payload.excel_mode if payload.excel_mode is not None else True,
+                    output_format=fmt,
+                )
+            except ValueError as exc:
+                if "unsupported_format" in str(exc):
+                    raise self._validation_error({"format": "فرمت فایل پشتیبانی نمی‌شود."}) from exc
+                raise self._validation_error({"options": str(exc)}) from exc
+            namespace_components = [
+                role,
+                str(center_scope or "ALL"),
+                str(payload.year),
+                options.output_format,
+            ]
+            if filters.delta:
+                namespace_components.append(
+                    f"delta:{filters.delta.created_at_watermark.isoformat()}:{filters.delta.id_watermark}"
+                )
+            namespace = ":".join(namespace_components)
+            correlation_id = request.headers.get("X-Request-ID") or str(uuid4())
             try:
                 self.readiness_gate.assert_post_allowed(correlation_id=correlation_id)
             except RuntimeError as exc:
@@ -177,6 +269,7 @@ class ExportAPI:
                 options=options,
                 idempotency_key=idempotency_key,
                 namespace=namespace,
+                correlation_id=correlation_id,
             )
             chain = getattr(request.state, "middleware_chain", [])
             return ExportResponse(job_id=job.id, status=job.status, middleware_chain=chain)
@@ -190,10 +283,37 @@ class ExportAPI:
             if job.manifest:
                 for file in job.manifest.files:
                     signed = self.signer.sign(str(Path(self.runner.exporter.output_dir) / file.name))
-                    files.append({"name": file.name, "rows": file.row_count, "url": signed})
+                    files.append(
+                        {
+                            "name": file.name,
+                            "rows": file.row_count,
+                            "sha256": file.sha256,
+                            "sheets": [list(item) for item in file.sheets] if file.sheets else [],
+                            "url": signed,
+                        }
+                    )
                 manifest_payload = {
                     "total_rows": job.manifest.total_rows,
                     "generated_at": job.manifest.generated_at.isoformat(),
+                    "format": job.manifest.format,
+                    "excel_safety": job.manifest.excel_safety,
+                    "delta_window": (
+                        {
+                            "created_at_watermark": job.manifest.delta_window.created_at_watermark.isoformat(),
+                            "id_watermark": job.manifest.delta_window.id_watermark,
+                        }
+                        if job.manifest.delta_window
+                        else None
+                    ),
+                    "files": [
+                        {
+                            "name": file.name,
+                            "sha256": file.sha256,
+                            "row_count": file.row_count,
+                            "sheets": [list(item) for item in file.sheets] if file.sheets else [],
+                        }
+                        for file in job.manifest.files
+                    ],
                 }
             else:
                 manifest_payload = None
@@ -306,6 +426,17 @@ class ExportAPI:
             return True
 
         return _probe
+
+    @staticmethod
+    def _validation_error(details: dict[str, Any]) -> HTTPException:
+        return HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "EXPORT_VALIDATION_ERROR",
+                "message": "درخواست نامعتبر است.",
+                "details": details,
+            },
+        )
 
 
 def create_export_api(

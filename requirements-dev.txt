@@ -13,3 +13,7 @@ types-PyYAML>=6.0.12
 fastapi>=0.110
 redis>=5.0
 fakeredis>=2.19
+freezegun>=1.2
+python-multipart>=0.0.6
+typer>=0.9
+SQLAlchemy>=1.4

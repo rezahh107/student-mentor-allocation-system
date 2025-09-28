@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="utf-8" />
+    <title>بارگذاری پرونده ROSTER</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-TODO" crossorigin="anonymous"></script>
+    <style>
+        body { font-family: Tahoma, sans-serif; margin: 2rem; background: #f8f9fa; }
+        form { background: #fff; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+        label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+        input, select { width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 0.25rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: right; }
+        caption { font-weight: bold; margin-bottom: 0.5rem; }
+        .messages { color: #d63384; margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+    <h1>سامانه بارگذاری پرونده مدرسه</h1>
+    <div class="messages">
+        {% for message in messages %}
+            <div>{{ message }}</div>
+        {% endfor %}
+    </div>
+    <form hx-post="/uploads" hx-target="#preview" hx-swap="innerHTML" enctype="multipart/form-data">
+        <label for="profile">نوع پرونده</label>
+        <select name="profile" id="profile" required>
+            <option value="">انتخاب کنید…</option>
+            <option value="ROSTER_V1">ROSTER_V1</option>
+        </select>
+        <label for="year">سال تحصیلی</label>
+        <input name="year" id="year" type="number" required />
+        <label for="file">انتخاب فایل CSV یا ZIP</label>
+        <input name="file" id="file" type="file" accept=".csv,.zip" required />
+        <button type="submit">بارگذاری</button>
+    </form>
+    <div id="preview">
+        <h2 class="preview-title">پیش‌نمایش</h2>
+        {% if preview_rows %}
+        <table>
+            <caption>پیش‌نمایش</caption>
+            <thead>
+                <tr>
+                    {% for column in preview_rows[0].keys() %}
+                    <th>{{ column }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in preview_rows %}
+                <tr>
+                    {% for value in row.values() %}
+                    <td>{{ value }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="preview-empty">هیچ داده‌ای برای نمایش موجود نیست.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -14,3 +14,4 @@ fastapi>=0.110
 redis>=5.0
 fakeredis>=2.19
 httpx>=0.24,<1.0
+jdatetime>=4,<5

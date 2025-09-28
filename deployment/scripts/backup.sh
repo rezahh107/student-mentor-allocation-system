@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PG_HOST=${PG_HOST:-localhost}
-PG_PORT=${PG_PORT:-5432}
-PG_USER=${PG_USER:-alloc}
-PG_DB=${PG_DB:-alloc}
-OUT=${1:-backup_$(date +%Y%m%d_%H%M).sql.gz}
+if [[ $# -lt 2 ]]; then
+  echo "usage: $0 <destination-dir> <file> [file...]" >&2
+  exit 64
+fi
 
-pg_dump -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" | gzip > "$OUT"
-echo "Backup written to $OUT"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+
+DESTINATION="$1"
+shift
+
+exec python -m phase7_release.cli backup --destination "${DESTINATION}" "$@"

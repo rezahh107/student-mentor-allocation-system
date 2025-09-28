@@ -6,7 +6,7 @@ import os
 import shutil
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -28,6 +28,22 @@ class BackupBundle:
     directory: Path
     manifest: Path
     entries: Sequence[BackupEntry]
+
+
+@dataclass(frozen=True)
+class RetentionDecision:
+    path: Path
+    action: str
+    reason: str
+    size: int
+    age_days: int
+
+
+@dataclass(frozen=True)
+class RetentionPlan:
+    decisions: Sequence[RetentionDecision]
+    freed_bytes: int
+    kept_bytes: int
 
 
 class BackupManager:
@@ -66,26 +82,51 @@ class BackupManager:
             sha = entry["sha256"]
             source_file = bundle_dir / name
             if not source_file.exists():
-                raise RuntimeError(f"BACKUP_VERIFY_FAILED: فایل {name} وجود ندارد")
+                raise RuntimeError(f"«بازیابی نامعتبر است؛ فایل پیدا نشد: {name}»")
             if sha256_file(source_file) != sha:
-                raise RuntimeError(f"BACKUP_VERIFY_FAILED: هش {name} ناسازگار است")
+                raise RuntimeError("«بازیابی نامعتبر است؛ تطبیق هش انجام نشد.»")
             target = Path(destination) / name
             _copy_with_hash(source_file, target)
 
-    def apply_retention(self, *, root: Path, max_items: int, max_total_bytes: int) -> None:
-        snapshots = sorted(
-            (path for path in Path(root).iterdir() if path.is_dir()),
-            key=lambda p: p.name,
-        )
-        total = 0
-        kept: list[Path] = []
-        for snapshot in reversed(snapshots):
+    def plan_retention(
+        self,
+        *,
+        root: Path,
+        max_age_days: int,
+        max_total_bytes: int,
+    ) -> RetentionPlan:
+        now = self._clock().replace(tzinfo=timezone.utc)
+        total_bytes = 0
+        kept_bytes = 0
+        freed_bytes = 0
+        decisions: list[RetentionDecision] = []
+        snapshots = sorted((path for path in Path(root).iterdir() if path.is_dir()), key=lambda p: p.name)
+        for snapshot in snapshots:
             size = _dir_size(snapshot)
-            if len(kept) >= max_items or total + size > max_total_bytes:
-                shutil.rmtree(snapshot, ignore_errors=True)
-                continue
-            kept.append(snapshot)
-            total += size
+            age_seconds = max(0.0, (now - _snapshot_ts(snapshot.name, now)).total_seconds())
+            age_days = int(age_seconds // 86400)
+            total_bytes += size
+            keep = age_days <= max_age_days
+            reason = "age" if not keep else "within-policy"
+            if keep and kept_bytes + size <= max_total_bytes:
+                kept_bytes += size
+                decisions.append(
+                    RetentionDecision(path=snapshot, action="keep", reason=reason, size=size, age_days=age_days)
+                )
+            else:
+                freed_bytes += size
+                action = "remove"
+                if keep and kept_bytes + size > max_total_bytes:
+                    reason = "capacity"
+                decisions.append(
+                    RetentionDecision(path=snapshot, action=action, reason=reason, size=size, age_days=age_days)
+                )
+        return RetentionPlan(decisions=decisions, freed_bytes=freed_bytes, kept_bytes=kept_bytes)
+
+    def apply_retention(self, *, plan: RetentionPlan, enforce: bool) -> None:
+        for decision in plan.decisions:
+            if decision.action == "remove" and enforce:
+                shutil.rmtree(decision.path, ignore_errors=True)
 
 
 def _copy_with_hash(source: Path, target: Path) -> tuple[str, int]:
@@ -123,4 +164,17 @@ def _dir_size(path: Path) -> int:
     return total
 
 
-__all__ = ["BackupManager", "BackupBundle", "BackupEntry"]
+def _snapshot_ts(name: str, fallback: datetime) -> datetime:
+    try:
+        return datetime.strptime(name, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return fallback
+
+
+__all__ = [
+    "BackupManager",
+    "BackupBundle",
+    "BackupEntry",
+    "RetentionPlan",
+    "RetentionDecision",
+]

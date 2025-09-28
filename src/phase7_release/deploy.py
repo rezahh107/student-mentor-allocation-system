@@ -99,12 +99,20 @@ class ReadinessGate:
     def assert_post_allowed(self, *, correlation_id: str) -> None:
         if self.ready():
             return
+        pending = [name for name, healthy in sorted(self._state.dependencies.items()) if not healthy]
+        if not self._state.cache_warm:
+            pending.insert(0, "cache")
+        context = {
+            "rid": correlation_id,
+            "op": "post_gate",
+            "namespace": "deploy.readiness",
+            "path": "/",
+            "pending": pending,
+            "last_error": {key: self._state.last_errors.get(key) for key in pending if key in self._state.last_errors},
+        }
         if self._clock() - self._started_at > self._timeout:
-            failed = ",".join(name for name, ok in sorted(self._state.dependencies.items()) if not ok) or "cache"
-            raise RuntimeError(
-                f"READINESS_TIMEOUT: درخواست POST رد شد؛ rid={correlation_id}; علت={failed}"
-            )
-        raise RuntimeError("خدمت آمادهٔ دریافت POST نیست")
+            raise RuntimeError(f"READINESS_TIMEOUT: {json.dumps(context, ensure_ascii=False)}")
+        raise RuntimeError(f"POST_BLOCKED: {json.dumps(context, ensure_ascii=False)}")
 
     def allow_get(self) -> bool:
         return True
@@ -133,18 +141,29 @@ class FileLockTimeout(RuntimeError):
 
 
 @contextmanager
-def file_lock(path: Path, *, clock: Callable[[], float], sleep: Callable[[float], None], timeout: float = 10.0) -> Iterator[None]:
+def file_lock(
+    path: Path,
+    *,
+    clock: Callable[[], float],
+    sleep: Callable[[float], None],
+    timeout: float = 10.0,
+) -> Iterator[None]:
     path = Path(path)
     deadline = clock() + timeout
+    attempt = 0
     while True:
         try:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             os.close(fd)
             break
         except FileExistsError:
+            attempt += 1
             if clock() > deadline:
                 raise FileLockTimeout(f"قفل فایل در {path} تمام شد")
-            sleep(0.05)
+            backoff = min(0.05 * (2 ** (attempt - 1)), 0.5)
+            jitter_seed = sha256_bytes(f"{path}:{attempt}".encode("utf-8"))
+            jitter = (int(jitter_seed[:8], 16) / float(0xFFFFFFFF)) * 0.05
+            sleep(backoff + jitter)
     try:
         yield
     finally:
@@ -195,6 +214,26 @@ class ZeroDowntimeHandoff:
             }
             atomic_write(handoff_state, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
         return HandoffResult(build_id=build_id, previous_target=previous_target, current_target=source)
+
+    def rollback(self) -> HandoffResult:
+        handoff_state = self._releases_dir / "handoff.json"
+        current_symlink = self._releases_dir / "current"
+        previous_symlink = self._releases_dir / "previous"
+        with file_lock(self._lock_file, clock=self._clock, sleep=self._sleep):
+            if not previous_symlink.exists():
+                raise RuntimeError("ROLLBACK_UNAVAILABLE")
+            previous_target = current_symlink.resolve() if current_symlink.exists() else None
+            target = previous_symlink.resolve()
+            _atomic_symlink_swap(current_symlink, previous_symlink, target)
+            payload = {
+                "build_id": target.name,
+                "source": str(target),
+                "rollback": True,
+                "timestamp": self._clock(),
+                "rid": sha256_bytes(str(target).encode("utf-8"))[:12],
+            }
+            atomic_write(handoff_state, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+            return HandoffResult(build_id=target.name, previous_target=previous_target, current_target=target)
 
 
 def _atomic_symlink_swap(current: Path, previous: Path, target: Path) -> None:

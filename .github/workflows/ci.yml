@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
   checks: read
 
 concurrency:
@@ -50,6 +50,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
+      - name: اجرای گیت‌های استاتیک و امنیتی
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+        run: |
+          make static-checks
+          make ci-checks
       - name: اجرای ارکستریتور تست‌ها
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'

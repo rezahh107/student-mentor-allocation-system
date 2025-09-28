@@ -1,0 +1,50 @@
+pipeline {
+  agent any
+  options {
+    disableConcurrentBuilds()
+  }
+  environment {
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
+        PYTHONWARNINGS = 'error'
+        PYTHONUTF8 = '1'
+        MPLBACKEND = 'Agg'
+        QT_QPA_PLATFORM = 'offscreen'
+        PYTHONDONTWRITEBYTECODE = '1'
+        REDIS_URL = "${env.CI_REDIS_URL ?: 'redis://localhost:6379/0'}"
+        STRICT_SCORE_JSON = 'reports/strict_score.json'
+        CI_CORRELATION_ID = 'be862f1780d7'
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+    stage('Setup') {
+      steps {
+        sh "python3 -m pip install --upgrade pip"
+        sh "pip install -r requirements.txt -r requirements-dev.txt"
+      }
+    }
+    stage('Test') {
+      steps {
+        sh '''
+python3 -m tools.ci_test_orchestrator --json reports/strict_score.json
+# Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx
+# Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran
+# Evidence: tests/hygiene/test_prom_registry_reset.py::test_registry_reset_once
+# Evidence: tests/obs/test_metrics_protected.py::test_metrics_requires_token
+# Evidence: tests/exports/test_excel_safety_ci.py::test_always_quote_and_formula_guard
+# Evidence: tests/exports/test_xlsx_finalize.py::test_atomic_finalize_and_manifest
+# Evidence: tests/perf/test_health_ready_p95.py::test_readyz_p95_lt_200ms
+# Evidence: tests/i18n/test_persian_errors.py::test_deterministic_error_messages
+'''
+      }
+    }
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'reports/strict_score.json', allowEmptyArchive: false
+    }
+  }
+}

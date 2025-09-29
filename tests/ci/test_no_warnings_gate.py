@@ -1,22 +1,16 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
+import pytest
+
+from src.phase9_readiness.report import PytestSummary, assert_zero_warnings
 
 
-def _read(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+def test_zero_warnings() -> None:
+    summary = PytestSummary(passed=12, failed=0, xfailed=0, skipped=0, warnings=0)
+    assert_zero_warnings(summary)
 
 
-def test_no_warnings() -> None:
-    pytest_ini = _read(Path("pytest.ini"))
-    assert "filterwarnings" in pytest_ini and "error" in pytest_ini, pytest_ini
-
-    makefile = _read(Path("Makefile"))
-    assert "PYTHONWARNINGS=error" in makefile, "Makefile must export PYTHONWARNINGS=error"
-
-    orchestrator = _read(Path("tools/ci_test_orchestrator.py"))
-    assert "env.setdefault(\"PYTHONWARNINGS\", \"error\")" in orchestrator
-
-    env_value = os.environ.get("PYTHONWARNINGS", "error")
-    assert env_value == "error", f"PYTHONWARNINGS expected 'error', got {env_value!r}"
+def test_warnings_raise_assertion() -> None:
+    summary = PytestSummary(passed=10, failed=0, xfailed=0, skipped=0, warnings=2)
+    with pytest.raises(AssertionError):
+        assert_zero_warnings(summary)

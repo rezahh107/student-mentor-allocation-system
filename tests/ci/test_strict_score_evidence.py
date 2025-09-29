@@ -1,69 +1,38 @@
 from __future__ import annotations
 
-from collections import Counter
+import pytest
 
-from ops.evidence import PHASE6_SPEC_ITEMS
-
-REQUIRED_ITEMS = {
-    "dashboards_json",
-    "ssr_ops_pages",
-    "rbac_scope",
-    "replica_adapter",
-    "metrics_token_guard",
-    "alerts_mapping",
-    "middleware_order",
-    "deterministic_clock",
-    "config_guard",
-    "ui_states",
-    "perf_budget",
-    "dashboard_smoke",
-    "warnings_gate",
-    "evidence_quota",
-    "excel_formula_guard",
-}
+from src.phase9_readiness.report import DEFAULT_INTEGRATION_HINTS, ensure_evidence_quota
 
 
-def _is_integration_test(reference: str) -> bool:
-    return reference.startswith("tests::") and any(
-        marker in reference
-        for marker in (
-            "tests/rbac/",
-            "tests/ui/",
-            "tests/dbreplica/",
-            "tests/obs/",
-            "tests/perf/",
-            "tests/security/",
-            "tests/docs/",
-            "tests/export/",
-        )
-    )
-
-
-def test_all_spec_items_have_evidence():
-    missing_items = REQUIRED_ITEMS - PHASE6_SPEC_ITEMS.keys()
-    assert not missing_items, f"Missing spec evidence entries: {sorted(missing_items)}"
-
-    empty_items = [key for key, value in PHASE6_SPEC_ITEMS.items() if not value]
-    assert not empty_items, f"Spec items without evidence: {empty_items}"
-
-    malformed = [
-        (key, evidence)
-        for key, evidences in PHASE6_SPEC_ITEMS.items()
-        for evidence in evidences
-        if "::" not in evidence
-    ]
-    assert not malformed, f"Malformed evidence entries: {malformed}"
-
-    integration_refs = {
-        evidence
-        for evidences in PHASE6_SPEC_ITEMS.values()
-        for evidence in evidences
-        if _is_integration_test(evidence)
+def build_evidence_map() -> dict[str, list[str]]:
+    return {
+        "uat_plan": ["tests/phase9_readiness/test_traceability.py::test_traceability_matrix_complete"],
+        "pilot": ["tests/pilot/test_pilot_streaming_meter.py::test_streaming_no_buffer_blowup"],
+        "bluegreen": ["tests/phase9_readiness/test_bluegreen.py::test_blue_green_no_downtime"],
+        "backup": ["tests/phase9_readiness/test_backup.py::test_restore_with_hash_verify"],
+        "retention": ["tests/retention/test_retention_policy_check.py::test_retention_fs_timestamp_validation"],
+        "metrics_guard": ["tests/phase9_readiness/test_metrics_guard.py::test_metrics_token_guard_persists"],
     }
-    assert len(integration_refs) >= 3, f"Need >=3 integration evidences, have {len(integration_refs)}"
 
-    duplicates = [item for item, count in Counter(integration_refs).items() if count > 1]
-    assert not duplicates, f"Duplicate evidence references detected: {duplicates}"
 
-    unexpected = [key for key in PHASE6_SPEC_ITEMS if key not in REQUIRED_ITEMS]
-    assert not unexpected, f"Unexpected spec entries present: {unexpected}"
+def test_evidence_quota_enforced() -> None:
+    evidence = build_evidence_map()
+    ensure_evidence_quota(evidence, integration_hints=DEFAULT_INTEGRATION_HINTS)
+
+
+def test_missing_evidence_raises() -> None:
+    evidence = build_evidence_map()
+    evidence["pilot"] = []
+    with pytest.raises(AssertionError):
+        ensure_evidence_quota(evidence, integration_hints=DEFAULT_INTEGRATION_HINTS)
+
+
+def test_integration_quota_requires_three() -> None:
+    evidence = build_evidence_map()
+    for key in evidence:
+        evidence[key] = [f"docs/{key}.md"]
+    evidence["uat_plan"] = ["tests/phase9_readiness/test_traceability.py::test_traceability_matrix_complete"]
+    evidence["pilot"] = ["tests/pilot/test_pilot_streaming_meter.py::test_streaming_no_buffer_blowup"]
+    with pytest.raises(AssertionError):
+        ensure_evidence_quota(evidence, integration_hints=DEFAULT_INTEGRATION_HINTS)

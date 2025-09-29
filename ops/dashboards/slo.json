@@ -1,0 +1,38 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "SLO",
+    "panels": [
+      {
+        "id": 1,
+        "title": "پایش سلامت",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(export_duration_seconds_bucket{phase=\"healthz\"}[5m])) by (le))"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "واکنش آماده‌سازی",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(export_duration_seconds_bucket{phase=\"ready\"}[5m])) by (le))"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "مصرف حافظه",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "avg(node_memory_MemAvailable_bytes)"
+          }
+        ]
+      }
+    ]
+  }
+}

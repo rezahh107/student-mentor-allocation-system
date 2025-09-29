@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import gc
+import resource
+import sys
 import tracemalloc
 from pathlib import Path
 
@@ -21,3 +24,19 @@ def test_memory_budget_under_load(tmp_path: Path):
     tracemalloc.stop()
     metrics.reset()
     assert peak < 150 * 1024 * 1024
+
+
+def test_process_memory_lt_300mb():
+    gc.collect()
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    if sys.platform == "darwin":  # pragma: no cover - macOS CI safeguard
+        peak_mb = usage.ru_maxrss / (1024 * 1024)
+    else:
+        peak_mb = usage.ru_maxrss / 1024
+    context = {
+        "ru_maxrss": usage.ru_maxrss,
+        "ru_ixrss": usage.ru_ixrss,
+        "ru_idrss": usage.ru_idrss,
+        "platform": sys.platform,
+    }
+    assert peak_mb < 300, context

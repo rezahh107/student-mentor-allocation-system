@@ -1,0 +1,24 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Uploads",
+    "panels": [
+      {
+        "id": 20,
+        "title": "صف بارگذاری",
+        "type": "stat",
+        "targets": [
+          {"expr": "sum(rate(export_jobs_total{status=\"queued\"}[5m]))"}
+        ]
+      },
+      {
+        "id": 21,
+        "title": "سرعت بارگذاری",
+        "type": "graph",
+        "targets": [
+          {"expr": "sum(rate(export_duration_seconds_count{phase=\"upload\"}[5m]))"}
+        ]
+      }
+    ]
+  }
+}

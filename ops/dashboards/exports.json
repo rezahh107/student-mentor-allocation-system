@@ -1,0 +1,32 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Exports",
+    "panels": [
+      {
+        "id": 10,
+        "title": "تعداد کارها",
+        "type": "stat",
+        "targets": [
+          {"expr": "sum(rate(export_jobs_total{status=\"completed\"}[15m]))"}
+        ]
+      },
+      {
+        "id": 11,
+        "title": "حجم فایل",
+        "type": "graph",
+        "targets": [
+          {"expr": "sum(rate(export_file_bytes_total{kind=\"zip\"}[15m]))"}
+        ]
+      },
+      {
+        "id": 12,
+        "title": "میانگین ردیف",
+        "type": "graph",
+        "targets": [
+          {"expr": "sum(rate(export_rows_total{type=\"sabt\"}[15m]))"}
+        ]
+      }
+    ]
+  }
+}

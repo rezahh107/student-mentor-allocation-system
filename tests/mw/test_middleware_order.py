@@ -115,3 +115,13 @@ def test_order_and_token_guard(tmp_path: Path) -> None:
 
     authorized = asyncio.run(_metrics("metrics-token"))
     assert authorized == 200
+
+
+def test_order_enforced() -> None:
+    from ops.middleware import MIDDLEWARE_CHAIN
+
+    assert MIDDLEWARE_CHAIN == (
+        "RateLimit",
+        "Idempotency",
+        "Auth",
+    ), "Middleware order must remain RateLimit → Idempotency → Auth"

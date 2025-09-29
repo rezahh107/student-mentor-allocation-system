@@ -11,6 +11,9 @@ from fastapi.templating import Jinja2Templates
 from prometheus_client import CollectorRegistry, CONTENT_TYPE_LATEST, generate_latest
 from redis import Redis
 
+from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from src.audit.service import AuditService
+
 from .clock import Clock, SystemClock
 from .config import DEFAULT_CONFIG, UploadsConfig
 from .errors import UploadError, envelope
@@ -27,6 +30,26 @@ def _ensure_templates() -> Jinja2Templates:
     return Jinja2Templates(directory=str(base))
 
 
+_FA_DIGIT_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
+
+
+def _resolve_role(value: str | None) -> AuditActorRole:
+    candidate = (value or "ADMIN").strip().upper()
+    try:
+        return AuditActorRole(candidate)
+    except ValueError:
+        return AuditActorRole.ADMIN
+
+
+def _resolve_center(value: str | None) -> str | None:
+    if value in (None, "", "0", "۰۰", "\u200c", "\u200f"):
+        return None
+    cleaned = value.translate(_FA_DIGIT_MAP).replace("\u200c", "").replace("\u200f", "").strip()
+    if not cleaned or cleaned == "0":
+        return None
+    return cleaned[:64]
+
+
 def create_app(
     *,
     config: UploadsConfig = DEFAULT_CONFIG,
@@ -34,6 +57,7 @@ def create_app(
     redis_client: Optional[Redis] = None,
     clock: Optional[Clock] = None,
     registry: Optional[CollectorRegistry] = None,
+    audit_service: Optional[AuditService] = None,
 ) -> FastAPI:
     config.ensure_directories()
     repository = repository or create_sqlite_repository()
@@ -65,6 +89,7 @@ def create_app(
     app.state.registry = registry
     app.state.config = config
     app.state.templates = _ensure_templates()
+    app.state.audit_service = audit_service
     app.add_middleware(AuthMiddleware)
     app.add_middleware(IdempotencyMiddleware)
     app.add_middleware(RateLimitMiddleware, redis=redis_client)
@@ -180,7 +205,44 @@ def create_app(
             namespace=namespace,
             idempotency_key=idempotency_key,
         )
-        record = service.upload(context, io.BytesIO(file_bytes))
+        actor_role = _resolve_role(request.headers.get("X-Role"))
+        center_scope = _resolve_center(request.headers.get("X-Center"))
+        audit = app.state.audit_service
+        try:
+            record = service.upload(context, io.BytesIO(file_bytes))
+        except UploadError as exc:
+            if audit is not None:
+                await audit.record_event(
+                    actor_role=actor_role,
+                    center_scope=center_scope,
+                    action=AuditAction.UPLOAD_CREATED,
+                    resource_type="upload",
+                    resource_id=filename,
+                    request_id=rid,
+                    outcome=AuditOutcome.ERROR,
+                    error_code=exc.envelope.code,
+                )
+            raise
+        if audit is not None:
+            await audit.record_event(
+                actor_role=actor_role,
+                center_scope=center_scope,
+                action=AuditAction.UPLOAD_CREATED,
+                resource_type="upload",
+                resource_id=record.id,
+                request_id=rid,
+                outcome=AuditOutcome.OK,
+            )
+            await audit.record_event(
+                actor_role=actor_role,
+                center_scope=center_scope,
+                action=AuditAction.UPLOAD_VALIDATED,
+                resource_type="upload",
+                resource_id=record.id,
+                request_id=rid,
+                outcome=AuditOutcome.OK,
+                artifact_sha256=record.sha256,
+            )
         manifest = record.manifest() or {}
         response = {"id": record.id, "manifest": manifest, "status": record.status}
         if request.headers.get("X-Debug-Middleware") == "1":
@@ -200,7 +262,35 @@ def create_app(
     ):
         rid = request.headers.get("X-Request-ID", uuid4().hex)
         namespace = request.headers.get("X-Namespace", service.config.namespace)
-        record = service.activate(upload_id, rid=rid, namespace=namespace)
+        actor_role = _resolve_role(request.headers.get("X-Role"))
+        center_scope = _resolve_center(request.headers.get("X-Center"))
+        audit = app.state.audit_service
+        try:
+            record = service.activate(upload_id, rid=rid, namespace=namespace)
+        except UploadError as exc:
+            if audit is not None:
+                await audit.record_event(
+                    actor_role=actor_role,
+                    center_scope=center_scope,
+                    action=AuditAction.UPLOAD_ACTIVATED,
+                    resource_type="upload",
+                    resource_id=upload_id,
+                    request_id=rid,
+                    outcome=AuditOutcome.ERROR,
+                    error_code=exc.envelope.code,
+                )
+            raise
+        if audit is not None:
+            await audit.record_event(
+                actor_role=actor_role,
+                center_scope=center_scope,
+                action=AuditAction.UPLOAD_ACTIVATED,
+                resource_type="upload",
+                resource_id=record.id,
+                request_id=rid,
+                outcome=AuditOutcome.OK,
+                artifact_sha256=record.sha256,
+            )
         return {"id": record.id, "status": record.status}
 
     @app.get("/metrics")

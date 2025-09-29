@@ -24,6 +24,7 @@ from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
 from src.core.datetime_utils import utc_now
+from src.audit.models import AuditEvent as _AuditEventTable
 
 
 Base = declarative_base()
@@ -165,4 +166,10 @@ class OutboxMessageModel(Base):
         ),
         Index("ix_outbox_dispatch", "status", "available_at"),
     )
+
+
+class AuditEventModel(Base):
+    """Re-export of the governance audit table for integration tests."""
+
+    __table__ = _AuditEventTable.__table__
 

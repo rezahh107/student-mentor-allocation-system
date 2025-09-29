@@ -4,11 +4,16 @@ import datetime as dt
 import uuid
 from collections.abc import AsyncIterator
 from typing import List
+from dataclasses import dataclass
+from datetime import datetime
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from prometheus_client import CollectorRegistry
 from starlette.testclient import TestClient
 import pytest_asyncio
+from sqlalchemy import create_engine
 
 from phase6_import_to_sabt.app import create_application
 from phase6_import_to_sabt.app.clock import FixedClock
@@ -18,6 +23,10 @@ from phase6_import_to_sabt.app.probes import AsyncProbe, ProbeResult
 from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
 from phase6_import_to_sabt.app.timing import DeterministicTimer
 from phase6_import_to_sabt.metrics import reset_registry
+from src.audit.exporter import AuditExporter
+from src.audit.release_manifest import ReleaseManifest
+from src.audit.repository import AuditRepository
+from src.audit.service import AuditService, build_metrics
 
 
 @pytest.fixture
@@ -169,3 +178,52 @@ async def async_client(async_app) -> AsyncIterator[AsyncTestClient]:
         yield client
     finally:
         await client.__aexit__(None, None, None)
+
+
+@dataclass(slots=True)
+class FrozenAuditClock:
+    timezone: ZoneInfo
+    _now: datetime
+
+    def now(self) -> datetime:
+        return self._now
+
+    def set(self, value: datetime) -> None:
+        self._now = value
+
+
+@pytest_asyncio.fixture
+async def audit_env(tmp_path):
+    db_path = tmp_path / "audit.db"
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    repository = AuditRepository(engine)
+    await repository.init()
+    start = datetime(2024, 1, 1, 8, 0, tzinfo=ZoneInfo("Asia/Baku"))
+    clock = FrozenAuditClock(timezone=ZoneInfo("Asia/Baku"), _now=start)
+    registry = CollectorRegistry()
+    metrics = build_metrics(registry=registry)
+    service = AuditService(repository, clock, metrics=metrics)
+    manifest_path = tmp_path / "release.json"
+    manifest = ReleaseManifest(manifest_path)
+    exporter = AuditExporter(service, manifest, metrics=metrics, exports_dir=tmp_path / "exports")
+
+    def debug_context() -> dict[str, object]:
+        return {
+            "db_path": str(db_path),
+            "manifest_exists": manifest_path.exists(),
+            "export_files": sorted([p.name for p in (tmp_path / "exports").glob("*")]),
+        }
+
+    yield SimpleNamespace(
+        repository=repository,
+        service=service,
+        exporter=exporter,
+        manifest=manifest,
+        clock=clock,
+        registry=registry,
+        tmp_path=tmp_path,
+        engine=engine,
+        debug_context=debug_context,
+    )
+
+    engine.dispose()

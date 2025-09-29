@@ -19,6 +19,10 @@ class ServiceMetrics:
     middleware: MiddlewareMetrics
     exporter_duration_seconds: Histogram
     exporter_bytes_total: Counter
+    auth_ok_total: Counter
+    auth_fail_total: Counter
+    download_signed_total: Counter
+    token_rotation_total: Counter
 
     def reset(self) -> None:
         if hasattr(self.registry, "_names_to_collectors"):
@@ -109,6 +113,30 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         "Total bytes written by exporter",
         registry=reg,
     )
+    auth_ok_total = Counter(
+        f"{namespace}_auth_ok_total",
+        "Authentication success count",
+        registry=reg,
+        labelnames=("role",),
+    )
+    auth_fail_total = Counter(
+        f"{namespace}_auth_fail_total",
+        "Authentication failures",
+        registry=reg,
+        labelnames=("reason",),
+    )
+    download_signed_total = Counter(
+        f"{namespace}_download_signed_total",
+        "Download signing events",
+        registry=reg,
+        labelnames=("outcome",),
+    )
+    token_rotation_total = Counter(
+        f"{namespace}_token_rotation_total",
+        "Token rotation actions",
+        registry=reg,
+        labelnames=("event",),
+    )
     return ServiceMetrics(
         registry=reg,
         request_latency=request_latency,
@@ -117,6 +145,10 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         middleware=middleware_metrics,
         exporter_duration_seconds=exporter_duration,
         exporter_bytes_total=exporter_bytes,
+        auth_ok_total=auth_ok_total,
+        auth_fail_total=auth_fail_total,
+        download_signed_total=download_signed_total,
+        token_rotation_total=token_rotation_total,
     )
 
 

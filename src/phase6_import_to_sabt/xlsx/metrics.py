@@ -16,6 +16,7 @@ class ImportExportMetrics:
     upload_rows_total: Counter
     retry_total: Counter
     retry_exhausted_total: Counter
+    download_signed_total: Counter
 
     def reset(self) -> None:
         if hasattr(self.registry, "_names_to_collectors"):
@@ -75,6 +76,12 @@ def build_import_export_metrics(registry: CollectorRegistry | None = None) -> Im
         labelnames=("operation", "format"),
         registry=reg,
     )
+    download_signed_total = Counter(
+        "download_signed_total",
+        "Signed download URL activity",
+        labelnames=("outcome",),
+        registry=reg,
+    )
     return ImportExportMetrics(
         registry=reg,
         export_jobs_total=export_jobs_total,
@@ -85,4 +92,5 @@ def build_import_export_metrics(registry: CollectorRegistry | None = None) -> Im
         upload_rows_total=upload_rows_total,
         retry_total=retry_total,
         retry_exhausted_total=retry_exhausted_total,
+        download_signed_total=download_signed_total,
     )

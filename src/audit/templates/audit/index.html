@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <title>گزارش حسابرسی</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body class="container">
+    <header>
+        <h1>حسابرسی رویدادها</h1>
+        <p class="muted">همه زمان‌ها بر اساس منطقه زمانی باکو هستند.</p>
+    </header>
+    <section>
+        <form hx-get="/audit" hx-target="#audit-table" hx-swap="innerHTML" class="grid" id="filters">
+            <div>
+                <label for="from">از تاریخ</label>
+                <input type="date" id="from" name="from" value="{{ filters.from_date }}">
+            </div>
+            <div>
+                <label for="to">تا تاریخ</label>
+                <input type="date" id="to" name="to" value="{{ filters.to_date }}">
+            </div>
+            <div>
+                <label for="action">اقدام</label>
+                <select id="action" name="action">
+                    <option value="">--</option>
+                    {% for action in ['UPLOAD_CREATED','UPLOAD_VALIDATED','UPLOAD_ACTIVATED','EXPORT_STARTED','EXPORT_FINALIZED','EXPORT_DOWNLOADED','AUTHN_OK','AUTHN_FAIL','CONFIG_REJECTED'] %}
+                    <option value="{{ action }}" {% if filters.action and filters.action.value == action %}selected{% endif %}>{{ action }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="outcome">نتیجه</label>
+                <select id="outcome" name="outcome">
+                    <option value="">--</option>
+                    <option value="OK" {% if filters.outcome and filters.outcome.value == 'OK' %}selected{% endif %}>موفق</option>
+                    <option value="ERROR" {% if filters.outcome and filters.outcome.value == 'ERROR' %}selected{% endif %}>خطا</option>
+                </select>
+            </div>
+            <div>
+                <label for="center">مرکز</label>
+                <input type="text" id="center" name="center" value="{{ filters.center or '' }}" maxlength="64">
+            </div>
+            <div>
+                <button type="submit">اعمال فیلتر</button>
+            </div>
+        </form>
+    </section>
+    <section id="audit-table">
+        <table role="grid">
+            <thead>
+                <tr>
+                    <th>زمان</th>
+                    <th>نقش</th>
+                    <th>اقدام</th>
+                    <th>مرکز</th>
+                    <th>شناسه منبع</th>
+                    <th>نتیجه</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in events %}
+                <tr>
+                    <td>{{ event.ts.isoformat() }}</td>
+                    <td>{{ event.actor_role.value }}</td>
+                    <td>{{ event.action.value }}</td>
+                    <td>{{ event.center_scope or '—' }}</td>
+                    <td>{{ event.resource_id }}</td>
+                    <td>{{ event.outcome.value }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6">داده‌ای موجود نیست</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <footer>
+        <p>لینک دانلود: <code>{{ signed_url }}</code></p>
+    </footer>
+</body>
+</html>

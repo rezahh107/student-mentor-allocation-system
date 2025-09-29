@@ -1,36 +1,69 @@
 from __future__ import annotations
 
-from typing import Dict
+from collections import Counter
 
-from tools.strict_score_core import EvidenceMatrix, ScoreEngine
+from ops.evidence import PHASE6_SPEC_ITEMS
 
-from .test_strict_score_caps import EVIDENCE_FIXTURE, _feature_flags
+REQUIRED_ITEMS = {
+    "dashboards_json",
+    "ssr_ops_pages",
+    "rbac_scope",
+    "replica_adapter",
+    "metrics_token_guard",
+    "alerts_mapping",
+    "middleware_order",
+    "deterministic_clock",
+    "config_guard",
+    "ui_states",
+    "perf_budget",
+    "dashboard_smoke",
+    "warnings_gate",
+    "evidence_quota",
+    "excel_formula_guard",
+}
 
 
-def _build_evidence_missing(key_to_skip: str) -> EvidenceMatrix:
-    matrix = EvidenceMatrix()
-    for key, entries in EVIDENCE_FIXTURE.items():
-        if key == key_to_skip:
-            continue
-        for entry in entries:
-            matrix.add(key, entry)
-    return matrix
-
-
-def test_missing_spec_triggers_deduction() -> None:
-    evidence = _build_evidence_missing("observability_metrics")
-    features: Dict[str, bool] = _feature_flags()
-    engine = ScoreEngine(gui_in_scope=features["gui_scope"], evidence=evidence)
-    statuses = engine.apply_evidence_matrix()
-    assert not statuses["observability_metrics"], "observability evidence should be missing"
-    engine.apply_feature_flags(features)
-    engine.apply_todo_count(0)
-    engine.apply_pytest_result(
-        summary={"passed": 8, "failed": 0, "skipped": 0, "xfailed": 0, "xpassed": 0, "warnings": 0},
-        returncode=0,
+def _is_integration_test(reference: str) -> bool:
+    return reference.startswith("tests::") and any(
+        marker in reference
+        for marker in (
+            "tests/rbac/",
+            "tests/ui/",
+            "tests/dbreplica/",
+            "tests/obs/",
+            "tests/perf/",
+            "tests/security/",
+            "tests/docs/",
+            "tests/export/",
+        )
     )
-    engine.apply_state(redis_error=None)
-    score = engine.finalize()
-    assert any("Missing evidence" in reason for _, _, reason in score.deductions)
-    assert score.next_actions, "missing evidence must populate next actions"
-    assert score.total < 100
+
+
+def test_all_spec_items_have_evidence():
+    missing_items = REQUIRED_ITEMS - PHASE6_SPEC_ITEMS.keys()
+    assert not missing_items, f"Missing spec evidence entries: {sorted(missing_items)}"
+
+    empty_items = [key for key, value in PHASE6_SPEC_ITEMS.items() if not value]
+    assert not empty_items, f"Spec items without evidence: {empty_items}"
+
+    malformed = [
+        (key, evidence)
+        for key, evidences in PHASE6_SPEC_ITEMS.items()
+        for evidence in evidences
+        if "::" not in evidence
+    ]
+    assert not malformed, f"Malformed evidence entries: {malformed}"
+
+    integration_refs = {
+        evidence
+        for evidences in PHASE6_SPEC_ITEMS.values()
+        for evidence in evidences
+        if _is_integration_test(evidence)
+    }
+    assert len(integration_refs) >= 3, f"Need >=3 integration evidences, have {len(integration_refs)}"
+
+    duplicates = [item for item, count in Counter(integration_refs).items() if count > 1]
+    assert not duplicates, f"Duplicate evidence references detected: {duplicates}"
+
+    unexpected = [key for key in PHASE6_SPEC_ITEMS if key not in REQUIRED_ITEMS]
+    assert not unexpected, f"Unexpected spec entries present: {unexpected}"

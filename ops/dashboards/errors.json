@@ -1,0 +1,24 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Errors",
+    "panels": [
+      {
+        "id": 30,
+        "title": "نرخ خطا",
+        "type": "graph",
+        "targets": [
+          {"expr": "sum(rate(upload_errors_total{type=\"fatal\"}[10m]))"}
+        ]
+      },
+      {
+        "id": 31,
+        "title": "هشدار خطای نرم",
+        "type": "graph",
+        "targets": [
+          {"expr": "sum(rate(upload_errors_total{type=\"soft\"}[10m]))"}
+        ]
+      }
+    ]
+  }
+}

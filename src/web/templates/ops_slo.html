@@ -1,0 +1,12 @@
+{% extends "ops_base.html" %}
+{% block content %}
+<section>
+    <h2>آستانه‌های SLO</h2>
+    <ul>
+        <li>سلامت p95: {{ thresholds.healthz_p95_ms }} میلی‌ثانیه</li>
+        <li>آمادگی p95: {{ thresholds.readyz_p95_ms }} میلی‌ثانیه</li>
+        <li>برون‌سپاری p95: {{ thresholds.export_p95_ms }} میلی‌ثانیه</li>
+        <li>بودجهٔ خطا: {{ thresholds.export_error_budget }}</li>
+    </ul>
+</section>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "ops_base.html" %}
+{% block content %}
+<section>
+    <p>این بخش برای تیم عملیات است و اطلاعات محرمانهٔ شخصی نمایش داده نمی‌شود.</p>
+    <div id="ops-nav" class="nav">
+        <a hx-get="/ui/ops/exports" hx-target="#ops-panel" hx-trigger="click">گزارش برون‌سپاری</a>
+        <a hx-get="/ui/ops/uploads" hx-target="#ops-panel" hx-trigger="click">وضعیت بارگذاری</a>
+        <a hx-get="/ui/ops/slo" hx-target="#ops-panel" hx-trigger="click">پایش SLO</a>
+    </div>
+    <div id="ops-panel" class="spinner">در حال بارگذاری...</div>
+</section>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "ops_base.html" %}
+{% block content %}
+<section>
+    {% if payload.error %}
+        <div class="error">{{ payload.error }}</div>
+    {% elif payload.rows|length == 0 %}
+        <div class="empty">هیچ بارگذاری فعالی ثبت نشده است.</div>
+    {% else %}
+        <table>
+            <thead>
+            <tr>
+                <th>مرکز</th>
+                <th>مرحله</th>
+                <th>نشان</th>
+                <th>حجم (مگابایت)</th>
+                <th>آخرین بروزرسانی</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in payload.rows %}
+                <tr>
+                    <td>{{ row.center_id }}</td>
+                    <td>{{ row.phase_label }}</td>
+                    <td><span class="badge">{{ row.phase_badge }}</span></td>
+                    <td>{{ row.size_mb }}</td>
+                    <td>{{ row.updated_at }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+</section>
+{% endblock %}

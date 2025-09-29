@@ -1,0 +1,33 @@
+{% extends "ops_base.html" %}
+{% block content %}
+<section>
+    {% if payload.error %}
+        <div class="error">{{ payload.error }}</div>
+    {% elif payload.rows|length == 0 %}
+        <div class="empty">هیچ برون‌سپاری معتبری ثبت نشده است.</div>
+    {% else %}
+        <table>
+            <thead>
+            <tr>
+                <th>مرکز</th>
+                <th>وضعیت</th>
+                <th>نشان</th>
+                <th>تعداد</th>
+                <th>آخرین بروزرسانی</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in payload.rows %}
+                <tr>
+                    <td>{{ row.center_id }}</td>
+                    <td>{{ row.status_label }}</td>
+                    <td><span class="badge">{{ row.status_badge }}</span></td>
+                    <td>{{ row.count }}</td>
+                    <td>{{ row.updated_at }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+</section>
+{% endblock %}

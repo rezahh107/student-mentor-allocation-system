@@ -1,6 +1,7 @@
 """Shared retry/backoff helpers for security tooling in CI."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import os
@@ -10,7 +11,7 @@ from dataclasses import dataclass
 from typing import Callable, Tuple, TypeVar
 from weakref import WeakKeyDictionary
 
-from prometheus_client import CollectorRegistry, Counter, REGISTRY
+from prometheus_client import CollectorRegistry, Counter, Histogram, REGISTRY
 
 LOGGER = logging.getLogger("scripts.security_tools")
 
@@ -37,7 +38,7 @@ class RetryConfig:
             raise ValueError("jitter_ratio must be non-negative")
 
 
-_METRICS: "WeakKeyDictionary[CollectorRegistry, Tuple[Counter, Counter]]" = WeakKeyDictionary()
+_METRICS: "WeakKeyDictionary[CollectorRegistry, Tuple[Counter, Counter, Histogram, Histogram]]" = WeakKeyDictionary()
 
 
 def retry_config_from_env(
@@ -75,7 +76,7 @@ def _resolve_registry(registry: CollectorRegistry | None) -> CollectorRegistry:
 
 def _get_metrics(
     *, registry: CollectorRegistry | None = None,
-) -> Tuple[Counter, Counter]:
+) -> Tuple[Counter, Counter, Histogram, Histogram]:
     resolved = _resolve_registry(registry)
     try:
         return _METRICS[resolved]
@@ -92,8 +93,22 @@ def _get_metrics(
             labelnames=("tool",),
             registry=resolved,
         )
-        _METRICS[resolved] = (attempts, exhausted)
-        return attempts, exhausted
+        latency = Histogram(
+            "security_tool_retry_latency_seconds",
+            "Latency of security tooling attempts",
+            labelnames=("tool",),
+            registry=resolved,
+            buckets=(0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0),
+        )
+        sleep_hist = Histogram(
+            "security_tool_retry_sleep_seconds",
+            "Backoff sleep durations for security tooling",
+            labelnames=("tool",),
+            registry=resolved,
+            buckets=(0.0, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0),
+        )
+        _METRICS[resolved] = (attempts, exhausted, latency, sleep_hist)
+        return attempts, exhausted, latency, sleep_hist
 
 
 def reset_metrics(*, registry: CollectorRegistry | None = None) -> None:
@@ -102,23 +117,35 @@ def reset_metrics(*, registry: CollectorRegistry | None = None) -> None:
     resolved = _resolve_registry(registry)
     counters = _METRICS.pop(resolved, None)
     if counters:
-        for counter in counters:
+        for metric in counters:
             try:
-                resolved.unregister(counter)
+                resolved.unregister(metric)
             except KeyError:
                 continue
+
+
+def _deterministic_jitter(*, seed: str, attempt: int) -> float:
+    payload = f"{seed}:{attempt}".encode("utf-8")
+    digest = hashlib.blake2b(payload, digest_size=8).digest()
+    value = int.from_bytes(digest, "big")
+    return (value % (1 << 53)) / float(1 << 53)
 
 
 def _compute_sleep(
     *,
     attempt: int,
     config: RetryConfig,
-    randomizer: Callable[[], float],
+    randomizer: Callable[[], float] | None,
+    seed: str,
 ) -> float:
     delay = config.base_delay * math.pow(config.backoff_multiplier, attempt - 1)
     if config.jitter_ratio == 0:
         return delay
-    jitter = delay * config.jitter_ratio * randomizer()
+    if randomizer is None:
+        jitter_factor = _deterministic_jitter(seed=seed, attempt=attempt)
+    else:
+        jitter_factor = max(0.0, min(1.0, randomizer()))
+    jitter = delay * config.jitter_ratio * jitter_factor
     return delay + jitter
 
 
@@ -137,12 +164,13 @@ def run_with_retry(
 
     cfg = config or RetryConfig()
     cfg.validate()
-    attempts_counter, exhausted_counter = _get_metrics(registry=registry)
+    attempts_counter, exhausted_counter, latency_hist, sleep_hist = _get_metrics(registry=registry)
     sleep_fn = sleeper or time.sleep
     rand_fn = randomizer or random.random
     monotonic_fn = monotonic or time.monotonic
     log = logger or LOGGER
     last_error: BaseException | None = None
+    jitter_seed = f"{tool_name}:{cfg.max_attempts}:{cfg.base_delay}:{cfg.backoff_multiplier}:{cfg.jitter_ratio}"
 
     for attempt in range(1, cfg.max_attempts + 1):
         attempts_counter.labels(tool=tool_name).inc()
@@ -150,6 +178,7 @@ def run_with_retry(
         try:
             result = func()
             duration = monotonic_fn() - start
+            latency_hist.labels(tool=tool_name).observe(duration)
             log.debug(
                 "security tool attempt succeeded",
                 extra={
@@ -162,6 +191,7 @@ def run_with_retry(
         except Exception as exc:  # pragma: no cover - re-raised below
             last_error = exc
             duration = monotonic_fn() - start
+            latency_hist.labels(tool=tool_name).observe(duration)
             log.warning(
                 "security tool attempt failed; scheduling retry",
                 extra={
@@ -187,8 +217,10 @@ def run_with_retry(
             sleep = _compute_sleep(
                 attempt=attempt,
                 config=cfg,
-                randomizer=rand_fn,
+                randomizer=rand_fn if randomizer is not None else None,
+                seed=jitter_seed,
             )
+            sleep_hist.labels(tool=tool_name).observe(sleep)
             log.debug(
                 "security tool sleeping before retry",
                 extra={

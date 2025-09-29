@@ -26,7 +26,7 @@ def test_memory_budget_under_load(tmp_path: Path):
     assert peak < 150 * 1024 * 1024
 
 
-def test_process_memory_lt_300mb():
+def test_rss_under_budget():
     gc.collect()
     usage = resource.getrusage(resource.RUSAGE_SELF)
     if sys.platform == "darwin":  # pragma: no cover - macOS CI safeguard

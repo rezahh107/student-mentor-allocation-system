@@ -15,8 +15,11 @@ class RateLimitConfig(BaseModel):
 
 
 class AuthConfig(BaseModel):
-    metrics_token: str = Field(..., min_length=1)
-    service_token: str = Field(..., min_length=1)
+    metrics_token: str = Field(default="", min_length=0)
+    service_token: str = Field(default="", min_length=0)
+    tokens_env_var: str = Field(default="TOKENS", min_length=3)
+    download_signing_keys_env_var: str = Field(default="DOWNLOAD_SIGNING_KEYS", min_length=8)
+    download_url_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
 
 
 class RedisConfig(BaseModel):

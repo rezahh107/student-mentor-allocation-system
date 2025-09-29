@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+import logging
 from dataclasses import dataclass
-from typing import Dict, Mapping
+from pathlib import Path
+from typing import Mapping
 
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi import Depends, FastAPI, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
 
@@ -22,6 +24,9 @@ from .middleware import (
     RequestLoggingMiddleware,
 )
 from ..obs.metrics import ServiceMetrics, build_metrics, render_metrics
+from ..security.config import AccessConfigGuard, ConfigGuardError, SigningKeyDefinition, TokenDefinition
+from ..security.rbac import TokenRegistry
+from ..security.signer import DualKeySigner, SignatureError, SigningKeySet
 from ..xlsx.workflow import ImportToSabtWorkflow
 from .probes import AsyncProbe, ProbeResult
 from .timing import MonotonicTimer, Timer
@@ -41,6 +46,8 @@ class ApplicationContainer:
     rate_limit_store: KeyValueStore
     idempotency_store: KeyValueStore
     readiness_probes: Mapping[str, AsyncProbe]
+    token_registry: TokenRegistry
+    download_signer: DualKeySigner
 
 
 async def _run_probe(name: str, probe: AsyncProbe, timeout: float) -> ProbeResult:
@@ -58,9 +65,10 @@ def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
     app.add_middleware(MetricsMiddleware, metrics=container.metrics, timer=container.timer)
     app.add_middleware(
         AuthMiddleware,
-        token=container.config.auth.service_token,
+        token_registry=container.token_registry,
         metrics=container.metrics.middleware,
         timer=container.timer,
+        service_metrics=container.metrics,
     )
     app.add_middleware(
         IdempotencyMiddleware,
@@ -98,6 +106,50 @@ def create_application(
 
     configure_logging(config.observability.service_name, config.enable_debug_logs)
 
+    guard = AccessConfigGuard()
+    try:
+        access = guard.load(
+            tokens_env=config.auth.tokens_env_var,
+            signing_keys_env=config.auth.download_signing_keys_env_var,
+            download_ttl_seconds=config.auth.download_url_ttl_seconds,
+        )
+    except ConfigGuardError as exc:
+        logger.warning("access.config.invalid", extra={"error": str(exc)})
+        access = None
+
+    tokens: list[TokenDefinition] = list(access.tokens) if access else []
+
+    def _add_token(value: str, role: str, *, center: int | None = None, metrics_only: bool = False) -> None:
+        normalized = normalize_token(value)
+        if not normalized:
+            return
+        if any(item.value == normalized for item in tokens):
+            return
+        token_role = "METRICS_RO" if metrics_only else role
+        scope = None if metrics_only else center
+        tokens.append(TokenDefinition(normalized, token_role, scope, metrics_only))
+
+    _add_token(config.auth.service_token, "ADMIN")
+    _add_token(config.auth.metrics_token, "METRICS_RO", metrics_only=True)
+
+    if not tokens:
+        fallback_token = normalize_token(config.auth.service_token) or "local-service-token"
+        tokens.append(TokenDefinition(fallback_token, "ADMIN", None, False))
+
+    token_registry = TokenRegistry(tokens)
+
+    signing_keys = list(access.signing_keys) if access else []
+    if not signing_keys:
+        fallback_secret = normalize_token(config.auth.service_token) or "import-to-sabt-secret"
+        signing_keys = [SigningKeyDefinition("legacy", fallback_secret, "active")]
+
+    signer = DualKeySigner(
+        keys=SigningKeySet(signing_keys),
+        clock=clock,
+        metrics=metrics,
+        default_ttl_seconds=access.download_ttl_seconds if access else config.auth.download_url_ttl_seconds,
+    )
+
     container = ApplicationContainer(
         config=config,
         clock=clock,
@@ -107,6 +159,8 @@ def create_application(
         rate_limit_store=rate_limit_store,
         idempotency_store=idempotency_store,
         readiness_probes=readiness_probes,
+        token_registry=token_registry,
+        download_signer=signer,
     )
 
     app = FastAPI(title="ImportToSabt")
@@ -118,6 +172,7 @@ def create_application(
         "last_idempotency": None,
         "last_auth": None,
     }
+    app.state.storage_root = Path(getattr(workflow, "storage_dir", Path("."))).resolve() if workflow else None
     install_error_handlers(app)
     configure_middleware(app, container)
 
@@ -158,10 +213,11 @@ def create_application(
 
     @app.get("/metrics")
     async def metrics_endpoint(request: Request):
-        supplied = normalize_token(request.headers.get("X-Metrics-Token"))
-        if supplied != normalize_token(container.config.auth.metrics_token):
+        actor = getattr(request.state, "actor", None)
+        if actor is None or not actor.metrics_only:
+            container.metrics.auth_fail_total.labels(reason="metrics_forbidden").inc()
             return JSONResponse(
-                status_code=401,
+                status_code=403,
                 content={
                     "fa_error_envelope": {
                         "code": "METRICS_TOKEN_INVALID",
@@ -170,6 +226,63 @@ def create_application(
                 },
             )
         return PlainTextResponse(render_metrics(container.metrics).decode("utf-8"))
+
+    @app.get("/download")
+    async def download_endpoint(signed: str, kid: str, exp: int, sig: str) -> Response:
+        try:
+            relative_path = container.download_signer.verify_components(
+                signed=signed,
+                kid=kid,
+                exp=exp,
+                sig=sig,
+                now=container.clock.now(),
+            )
+        except SignatureError as exc:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_FORBIDDEN",
+                        "message": exc.message_fa,
+                    }
+                },
+            )
+        base_dir = app.state.storage_root
+        if base_dir is None:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_UNAVAILABLE",
+                        "message": "سرویس دانلود در دسترس نیست.",
+                    }
+                },
+            )
+        target = (base_dir / Path(relative_path)).resolve()
+        if not str(target).startswith(str(base_dir)):
+            container.metrics.download_signed_total.labels(outcome="path_violation").inc()
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_FORBIDDEN",
+                        "message": "توکن نامعتبر است.",
+                    }
+                },
+            )
+        if not target.is_file():
+            container.metrics.download_signed_total.labels(outcome="missing").inc()
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_NOT_FOUND",
+                        "message": "فایل موردنظر یافت نشد.",
+                    }
+                },
+            )
+        container.metrics.download_signed_total.labels(outcome="served").inc()
+        return FileResponse(target, filename=target.name)
 
     @app.get("/ui/health", response_class=HTMLResponse)
     async def ui_health(request: Request):
@@ -209,6 +322,11 @@ def create_application(
         return {"status": "queued"}
 
     if workflow is not None:
+        try:
+            workflow._signed_urls = container.download_signer  # type: ignore[attr-defined]
+            workflow._signed_url_ttl = access.download_ttl_seconds if access else config.auth.download_url_ttl_seconds  # type: ignore[attr-defined]
+        except AttributeError:
+            logger.debug("workflow.signed_url_override_failed")
         from ..xlsx.router import build_router as build_xlsx_router
 
         app.include_router(build_xlsx_router(workflow))

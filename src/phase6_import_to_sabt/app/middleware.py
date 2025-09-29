@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from ..middleware.metrics import MiddlewareMetrics
 from ..obs.metrics import ServiceMetrics
+from ..security.rbac import AuthorizationError, TokenRegistry
 from .clock import Clock
 from .config import RateLimitConfig
 from .stores import KeyValueStore, decode_response, encode_response
@@ -208,43 +209,79 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, token: str, metrics: MiddlewareMetrics, timer: Timer) -> None:  # type: ignore[override]
+    def __init__(
+        self,
+        app,
+        token_registry: TokenRegistry,
+        metrics: MiddlewareMetrics,
+        timer: Timer,
+        service_metrics: ServiceMetrics,
+    ) -> None:  # type: ignore[override]
         super().__init__(app)
-        self._token = normalize_token(token)
+        self._tokens = token_registry
         self._metrics = metrics
         self._timer = timer
+        self._service_metrics = service_metrics
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         request.state.middleware_chain = getattr(request.state, "middleware_chain", []) + ["auth"]
         handle = self._timer.start()
-        if request.url.path in {"/healthz", "/readyz", "/metrics"} or request.url.path.startswith("/ui/"):
+        if request.url.path in {"/healthz", "/readyz", "/download"}:
             duration = handle.elapsed()
             self._metrics.observe_auth(duration)
             return await call_next(request)
+
         header = normalize_token(request.headers.get("Authorization"))
-        ensure_no_control_chars([header])
-        if header != f"Bearer {self._token}":
-            logger.warning("auth.failed", extra={"correlation_id": getattr(request.state, "correlation_id", None)})
+        ensure_no_control_chars([header or ""])
+        token_value = ""
+        if header.startswith("Bearer "):
+            token_value = header.split(" ", 1)[1].strip()
+
+        allow_metrics = request.url.path == "/metrics"
+        try:
+            actor = self._tokens.authenticate(token_value, allow_metrics=allow_metrics)
+        except AuthorizationError as exc:
             duration = handle.elapsed()
             self._metrics.observe_auth(duration)
+            self._service_metrics.auth_fail_total.labels(reason=exc.reason).inc()
             diagnostics = getattr(request.app.state, "diagnostics", None)
             if diagnostics and diagnostics.get("enabled"):
-                diagnostics["last_auth"] = {"duration": duration, "authorized": False}
+                diagnostics["last_auth"] = {"duration": duration, "authorized": False, "reason": exc.reason}
+            logger.warning(
+                "auth.failed",
+                extra={
+                    "correlation_id": getattr(request.state, "correlation_id", None),
+                    "reason": exc.reason,
+                },
+            )
+            status = 401 if exc.reason != "scope_denied" else 403
             return JSONResponse(
-                status_code=401,
+                status_code=status,
                 content={
                     "fa_error_envelope": {
                         "code": "UNAUTHORIZED",
-                        "message": "دسترسی مجاز نیست.",
+                        "message": exc.message_fa,
                     }
                 },
             )
+
+        request.state.actor = actor
         response = await call_next(request)
         duration = handle.elapsed()
         self._metrics.observe_auth(duration)
+        self._service_metrics.auth_ok_total.labels(role=actor.role).inc()
         diagnostics = getattr(request.app.state, "diagnostics", None)
         if diagnostics and diagnostics.get("enabled"):
-            diagnostics["last_auth"] = {"duration": duration, "authorized": True}
+            diagnostics["last_auth"] = {"duration": duration, "authorized": True, "role": actor.role}
+        logger.info(
+            "auth.ok",
+            extra={
+                "correlation_id": getattr(request.state, "correlation_id", None),
+                "role": actor.role,
+                "metrics_only": actor.metrics_only,
+                "fingerprint": actor.token_fingerprint,
+            },
+        )
         return response
 
 

@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import base64
 import csv
-import hashlib
-import hmac
 import itertools
-import json
 import logging
 import threading
 import uuid
@@ -15,20 +11,10 @@ from time import perf_counter
 from typing import Callable, Iterable, Optional
 from zoneinfo import ZoneInfo
 
-try:  # pragma: no cover - optional dependency
-    from itsdangerous import URLSafeSerializer  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover - deterministic fallback
-    class URLSafeSerializer:
-        def __init__(self, secret_key: str, salt: str) -> None:
-            self._secret = (secret_key + salt).encode("utf-8")
-
-        def dumps(self, payload: dict[str, object]) -> str:
-            serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-            signature = hmac.new(self._secret, serialized, hashlib.sha256).hexdigest()
-            token = base64.urlsafe_b64encode(serialized).decode("utf-8").rstrip("=")
-            return f"{token}.{signature}"
-
 from ..sanitization import sanitize_text
+from ..models import SignedURLProvider
+from ..security.signer import DualKeySigner, SigningKeySet
+from ..security.config import SigningKeyDefinition
 from .constants import DEFAULT_CHUNK_SIZE, SENSITIVE_COLUMNS
 from .job_store import ExportJobStore, InMemoryExportJobStore
 from .metrics import ImportExportMetrics
@@ -75,6 +61,8 @@ class ImportToSabtWorkflow:
         sleeper: Callable[[float], None] | None = None,
         signed_url_secret: str = "import-to-sabt-secret",
         signed_url_kid: str = "local",
+        signed_url_provider: SignedURLProvider | None = None,
+        signed_url_ttl_seconds: int = 900,
     ) -> None:
         self.storage_dir = storage_dir
         self.clock = clock
@@ -89,8 +77,16 @@ class ImportToSabtWorkflow:
         self._uploads: dict[str, UploadRecord] = {}
         self._exports: dict[str, ExportRecord] = {}
         self._sleeper = sleeper
-        self._signer = URLSafeSerializer(signed_url_secret, salt="import-to-sabt")
-        self._signed_url_kid = signed_url_kid
+        if signed_url_provider is None:
+            signing_keys = SigningKeySet([SigningKeyDefinition(signed_url_kid, signed_url_secret, "active")])
+            signed_url_provider = DualKeySigner(
+                keys=signing_keys,
+                clock=self.clock,
+                metrics=metrics,
+                default_ttl_seconds=signed_url_ttl_seconds,
+            )
+        self._signed_urls = signed_url_provider
+        self._signed_url_ttl = signed_url_ttl_seconds
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         cleanup_partials(self.storage_dir)
         self.job_store: ExportJobStore = job_store or InMemoryExportJobStore(
@@ -342,17 +338,22 @@ class ImportToSabtWorkflow:
 
     def build_signed_urls(self, record: ExportRecord) -> list[dict[str, str]]:
         urls: list[dict[str, str]] = []
-        for file_info in record.manifest.get("files", []):
+        files = record.manifest.get("files", [])
+        for file_info in files:
             name = file_info.get("name") or file_info.get("path")
             if not name:
                 continue
-            token = self._signer.dumps({"export_id": record.id, "name": name, "kid": self._signed_url_kid})
-            urls.append(
-                {
-                    "name": name,
-                    "url": f"https://files.local/{name}?token={token}&kid={self._signed_url_kid}",
-                }
-            )
+            artifact_path = record.artifact_path
+            if artifact_path.is_absolute():
+                candidate = artifact_path
+            else:
+                candidate = (self.storage_dir / artifact_path).resolve()
+            try:
+                relative = candidate.relative_to(self.storage_dir)
+            except ValueError:
+                relative = Path(name)
+            signed_url = self._signed_urls.sign(str(relative), expires_in=self._signed_url_ttl)
+            urls.append({"name": name, "url": signed_url})
         return urls
 
     def get_export(self, export_id: str) -> ExportRecord | None:

@@ -1,47 +1,35 @@
 from __future__ import annotations
 
-import anyio
-from fastapi import Depends, FastAPI, Header
-import httpx
+from tests.phase6_import_to_sabt.access_helpers import access_test_app
 
-from ops.config import OpsSettings, SLOThresholds
-from ops.security import metrics_guard
+TOKENS = [
+    {"value": "A" * 32, "role": "ADMIN"},
+    {"value": "B" * 32, "role": "MANAGER", "center": 321},
+    {"value": "C" * 32, "role": "METRICS_RO"},
+]
 
-
-def build_app() -> FastAPI:
-    settings = OpsSettings(
-        reporting_replica_dsn="postgresql://user:pass@localhost:5432/replica",
-        metrics_read_token="metrics-token-123456",
-        slo_thresholds=SLOThresholds(
-            healthz_p95_ms=120,
-            readyz_p95_ms=150,
-            export_p95_ms=800,
-            export_error_budget=42,
-        ),
-    )
-
-    app = FastAPI()
-
-    async def guard(metrics_read_token: str | None = Header(default=None, alias="X-Metrics-Token")) -> None:
-        await metrics_guard(settings, metrics_read_token)
-
-    @app.get("/metrics")
-    async def metrics_endpoint(_: None = Depends(guard)):
-        return {"ok": True}
-
-    return app
+SIGNING_KEYS = [
+    {"kid": "ABCD", "secret": "S" * 48, "state": "active"},
+]
 
 
-def test_metrics_requires_token():
-    app = build_app()
+def test_requires_ro_token(monkeypatch) -> None:
+    with access_test_app(monkeypatch, tokens=TOKENS, signing_keys=SIGNING_KEYS) as ctx:
+        forbidden = ctx.client.get(
+            "/metrics",
+            headers={"Authorization": f"Bearer {TOKENS[0]['value']}"},
+        )
+        assert forbidden.status_code == 403
+        body = forbidden.json()
+        assert body["fa_error_envelope"]["code"] == "METRICS_TOKEN_INVALID"
 
-    async def _exercise(headers: dict[str, str] | None = None) -> int:
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get("/metrics", headers=headers)
-            return response.status_code
+        fail_samples = ctx.metrics.auth_fail_total.collect()[0].samples
+        assert any(sample.labels["reason"] == "metrics_forbidden" for sample in fail_samples)
 
-    unauthorized = anyio.run(_exercise)
-    assert unauthorized == 401
-    authorized = anyio.run(lambda: _exercise({"X-Metrics-Token": "metrics-token-123456"}))
-    assert authorized == 200
+        allowed = ctx.client.get(
+            "/metrics",
+            headers={"Authorization": f"Bearer {TOKENS[2]['value']}"},
+        )
+        assert allowed.status_code == 200
+        ok_samples = ctx.metrics.auth_ok_total.collect()[0].samples
+        assert any(sample.labels["role"] == "METRICS_RO" for sample in ok_samples)

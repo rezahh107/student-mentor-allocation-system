@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<div dir="rtl" class="auth-dashboard">
+  <h1>پنل دسترسی</h1>
+  <p>نقش جاری: <strong>{{ principal.role|default('نامشخص') }}</strong></p>
+  <p>اسکوپ مرکز: <strong>{{ principal.center_scope|default('همه') }}</strong></p>
+</div>
+{% endblock %}

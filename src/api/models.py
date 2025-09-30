@@ -9,6 +9,7 @@ from pydantic.dataclasses import dataclass
 from dataclasses import field
 
 from src.core.datetime_utils import utc_now
+from src.shared.counter_rules import COUNTER_PREFIX_MAP
 
 
 def validate_national_code(code: str) -> bool:
@@ -130,7 +131,8 @@ def migrate_student_dto(old_dto: Dict) -> StudentDTO:
     # counter اطمینان از وجود
     if "counter" not in data:
         year = utc_now().year % 100
-        middle = 373 if int(data.get("gender", 1)) == 1 else 357
+        gender_value = int(data.get("gender", 1))
+        middle = COUNTER_PREFIX_MAP.get(gender_value, COUNTER_PREFIX_MAP[0])
         serial = random.randint(1, 9999)  # تولید سریال برای داده ساختگی است و نیازی به PRNG امن ندارد. # nosec B311
         data["counter"] = f"{year:02d}{middle}{serial:04d}"
 

@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-pytest_plugins = ("tests.uploads.conftest",)
 def test_freeze_clock_baku_applied_to_manifest(uploads_app, clock):
     csv_content = (
         "student_id,school_code,mobile,national_id,first_name,last_name\r\n"

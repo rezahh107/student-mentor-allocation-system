@@ -11,6 +11,7 @@ from dateutil.relativedelta import relativedelta
 from dateutil import parser as dateparser
 
 from src.core.datetime_utils import utc_now
+from src.shared.counter_rules import COUNTER_PREFIX_MAP
 
 from .exceptions import BusinessRuleException, ValidationException
 from .models import (
@@ -568,7 +569,7 @@ class MockBackend:
 
     def _next_counter(self, gender: int) -> str:
         year = utc_now().year % 100
-        middle = 357 if gender == 0 else 373
+        middle = int(COUNTER_PREFIX_MAP.get(gender, COUNTER_PREFIX_MAP[0]))
         self._counters[gender] += 1
         serial = f"{self._counters[gender]:04d}"
         return f"{year:02d}{middle}{serial}"

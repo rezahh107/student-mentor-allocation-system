@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -48,6 +47,7 @@ class ApplicationContainer:
     readiness_probes: Mapping[str, AsyncProbe]
     token_registry: TokenRegistry
     download_signer: DualKeySigner
+    metrics_token: str | None
 
 
 async def _run_probe(name: str, probe: AsyncProbe, timeout: float) -> ProbeResult:
@@ -61,8 +61,7 @@ def _build_templates() -> Jinja2Templates:
 
 
 def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
-    app.add_middleware(RequestLoggingMiddleware, diagnostics=lambda: getattr(app.state, "diagnostics", None))
-    app.add_middleware(MetricsMiddleware, metrics=container.metrics, timer=container.timer)
+    app.add_middleware(CorrelationIdMiddleware, clock=container.clock)
     app.add_middleware(
         AuthMiddleware,
         token_registry=container.token_registry,
@@ -84,7 +83,8 @@ def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
         metrics=container.metrics.middleware,
         timer=container.timer,
     )
-    app.add_middleware(CorrelationIdMiddleware, clock=container.clock)
+    app.add_middleware(MetricsMiddleware, metrics=container.metrics, timer=container.timer)
+    app.add_middleware(RequestLoggingMiddleware, diagnostics=lambda: getattr(app.state, "diagnostics", None))
 
 
 def create_application(
@@ -119,21 +119,22 @@ def create_application(
 
     tokens: list[TokenDefinition] = list(access.tokens) if access else []
 
-    def _add_token(value: str, role: str, *, center: int | None = None, metrics_only: bool = False) -> None:
+    def _add_token(value: str, role: str, *, center: int | None = None, metrics_only: bool = False) -> str | None:
         normalized = normalize_token(value)
         if not normalized:
-            return
+            return None
         if any(item.value == normalized for item in tokens):
-            return
+            return normalized
         token_role = "METRICS_RO" if metrics_only else role
         scope = None if metrics_only else center
         tokens.append(TokenDefinition(normalized, token_role, scope, metrics_only))
+        return normalized
 
-    _add_token(config.auth.service_token, "ADMIN")
-    _add_token(config.auth.metrics_token, "METRICS_RO", metrics_only=True)
+    service_token = _add_token(config.auth.service_token, "ADMIN")
+    metrics_token = _add_token(config.auth.metrics_token, "METRICS_RO", metrics_only=True)
 
     if not tokens:
-        fallback_token = normalize_token(config.auth.service_token) or "local-service-token"
+        fallback_token = service_token or "local-service-token"
         tokens.append(TokenDefinition(fallback_token, "ADMIN", None, False))
 
     token_registry = TokenRegistry(tokens)
@@ -161,6 +162,7 @@ def create_application(
         readiness_probes=readiness_probes,
         token_registry=token_registry,
         download_signer=signer,
+        metrics_token=metrics_token or service_token,
     )
 
     app = FastAPI(title="ImportToSabt")
@@ -214,7 +216,9 @@ def create_application(
     @app.get("/metrics")
     async def metrics_endpoint(request: Request):
         actor = getattr(request.state, "actor", None)
-        if actor is None or not actor.metrics_only:
+        provided_token = normalize_token(request.headers.get("X-Metrics-Token"))
+        expected_token = container.metrics_token
+        if actor is None or not actor.metrics_only or not expected_token or provided_token != expected_token:
             container.metrics.auth_fail_total.labels(reason="metrics_forbidden").inc()
             return JSONResponse(
                 status_code=403,

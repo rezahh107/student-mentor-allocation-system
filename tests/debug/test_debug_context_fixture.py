@@ -4,8 +4,6 @@ import json
 
 import pytest
 
-pytest_plugins = ["tests.fixtures.debug_context", "pytester"]
-
 
 def test_snapshot_includes_expected_fields(debug_ctx) -> None:
     ctx = debug_ctx.ctx
@@ -31,13 +29,14 @@ def test_snapshot_includes_expected_fields(debug_ctx) -> None:
 
 
 def test_attaches_and_masks_no_pii(pytester: pytest.Pytester) -> None:
+    pytester.makeconftest(
+        "from tests.fixtures.debug_context import debug_ctx, pytest_runtest_makereport\n"
+    )
     pytester.makepyfile(
         """
-        pytest_plugins = ["tests.fixtures.debug_context"]
-
         def test_failure(debug_ctx):
             ctx = debug_ctx.ctx
-            ctx.set_last_error(code="AUTH_FAIL", message="email@example.com")
+            ctx.set_last_error(code=\"AUTH_FAIL\", message=\"email@example.com\")
             assert False
         """
     )

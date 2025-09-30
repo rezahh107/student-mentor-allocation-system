@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-pytest_plugins = ("tests.uploads.conftest",)
+
 def test_uploads_metrics_exposed_with_token(uploads_app):
     csv_content = (
         "student_id,school_code,mobile,national_id,first_name,last_name\r\n"

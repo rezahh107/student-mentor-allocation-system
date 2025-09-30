@@ -27,9 +27,10 @@ from .models import (
 )
 from .sanitization import guard_formula, sanitize_phone, sanitize_text
 from .xlsx.writer import XLSXStreamWriter
+from src.shared.counter_rules import COUNTER_REGEX
 
 PHONE_RE = re.compile(r"^09\d{9}$")
-COUNTER_RE = re.compile(r"^\d{2}(357|373)\d{4}$")
+COUNTER_RE = COUNTER_REGEX
 
 
 class ExportValidationError(ValueError):

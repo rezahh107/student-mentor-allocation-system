@@ -18,7 +18,7 @@ from phase6_import_to_sabt.xlsx.retry import retry_with_backoff
 from tests.export.helpers import build_exporter, make_row
 
 
-def test_streaming_memory_bound(cleanup_fixtures) -> None:
+def test_streaming_under_memory_cap(cleanup_fixtures) -> None:
     cleanup_fixtures.flush_state()
     leading_row = make_row(idx=1, center=0, group_code=1, school_code=210210)
     rows = [leading_row]

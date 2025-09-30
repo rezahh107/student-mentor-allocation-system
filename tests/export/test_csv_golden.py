@@ -12,7 +12,7 @@ from phase6_import_to_sabt.xlsx.retry import retry_with_backoff
 from tests.export.helpers import build_exporter, make_row
 
 
-def test_csv_golden_quotes_and_formula_guard(cleanup_fixtures) -> None:
+def test_sensitive_always_quoted_and_formula_guard(cleanup_fixtures) -> None:
     cleanup_fixtures.flush_state()
     base_one = make_row(idx=1, school_code=100001)
     base_two = make_row(idx=2, school_code=654321)

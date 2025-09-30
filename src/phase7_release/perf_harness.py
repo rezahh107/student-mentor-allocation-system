@@ -21,6 +21,7 @@ from phase6_import_to_sabt.models import (
     NormalizedStudentRow,
 )
 from phase6_import_to_sabt.roster import InMemoryRoster
+from src.shared.counter_rules import COUNTER_PREFIX_MAP
 
 from .atomic import atomic_write
 
@@ -46,7 +47,7 @@ class _SyntheticDataSource(ExporterDataSource):
     def fetch_rows(self, filters: ExportFilters, snapshot: ExportSnapshot):  # type: ignore[override]
         base_created = datetime(2023, 1, 1, tzinfo=timezone.utc)
         for idx in range(1, self._total + 1):
-            counter_core = "357" if idx % 2 else "373"
+            counter_core = COUNTER_PREFIX_MAP[idx % 2]
             counter = f"{str(filters.year)[-2:]}{counter_core}{idx % 10000:04d}"
             yield NormalizedStudentRow(
                 national_id=f"{idx:010d}",

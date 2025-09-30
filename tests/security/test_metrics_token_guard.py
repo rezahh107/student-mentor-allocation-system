@@ -13,7 +13,7 @@ SIGNING_KEYS = [
 ]
 
 
-def test_requires_ro_token(monkeypatch) -> None:
+def test_metrics_requires_token(monkeypatch) -> None:
     with access_test_app(monkeypatch, tokens=TOKENS, signing_keys=SIGNING_KEYS) as ctx:
         forbidden = ctx.client.get(
             "/metrics",

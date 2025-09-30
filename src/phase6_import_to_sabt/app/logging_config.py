@@ -7,7 +7,14 @@ from typing import Any, Dict
 import orjson
 
 
-SENSITIVE_KEYS = {"authorization", "token", "secret"}
+SENSITIVE_KEYS = {
+    "authorization",
+    "token",
+    "secret",
+    "mobile",
+    "national_id",
+    "mentor_id",
+}
 
 
 def _mask_value(value: str) -> str:

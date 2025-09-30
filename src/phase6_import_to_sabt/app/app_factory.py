@@ -131,7 +131,14 @@ def create_application(
         return normalized
 
     service_token = _add_token(config.auth.service_token, "ADMIN")
-    metrics_token = _add_token(config.auth.metrics_token, "METRICS_RO", metrics_only=True)
+    if access and access.metrics_tokens:
+        metrics_token = access.metrics_tokens[0]
+    else:
+        metrics_token = _add_token(
+            config.auth.metrics_token,
+            "METRICS_RO",
+            metrics_only=True,
+        )
 
     if not tokens:
         fallback_token = service_token or "local-service-token"

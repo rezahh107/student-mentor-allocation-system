@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
+import asyncio
+
+import httpx
 
 from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
 from tests.export.helpers import build_job_runner, make_row
@@ -9,11 +11,16 @@ from tests.export.helpers import build_job_runner, make_row
 def test_error_messages_deterministic(tmp_path):
     runner, metrics = build_job_runner(tmp_path, [make_row(idx=1)])
     app = create_export_api(runner=runner, signer=HMACSignedURLProvider("secret"), metrics=metrics, logger=runner.logger)
-    client = TestClient(app)
-    response = client.post(
-        "/exports",
-        json={"year": 1402, "center": 1},
-        headers={"Idempotency-Key": "k", "X-Role": "MANAGER"},
-    )
+
+    async def _exercise() -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.post(
+                "/exports",
+                json={"year": 1402, "center": 1},
+                headers={"Idempotency-Key": "k", "X-Role": "MANAGER"},
+            )
+
+    response = asyncio.run(_exercise())
     assert response.status_code == 400
     assert "کد مرکز" in response.json()["detail"]

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
 
 from phase6_import_to_sabt.job_runner import ExportJobRunner
 from phase6_import_to_sabt.logging_utils import ExportLogger
@@ -24,7 +23,7 @@ class FlakyExporter:
         self.output_dir = output_dir
         self._attempts = 0
 
-    def run(self, *, filters, options, snapshot, clock_now):  # noqa: ANN001
+    def run(self, *, filters, options, snapshot, clock_now, stats=None):  # noqa: ANN001,ARG002
         self._attempts += 1
         if self._attempts < 3:
             raise OSError("transient")
@@ -72,6 +71,7 @@ def test_exponential_backoff_and_jitter(tmp_path):
     metrics = ExporterMetrics()
     logger = ExportLogger()
     clock = lambda: datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)
+    delays: list[float] = []
     runner = ExportJobRunner(
         exporter=exporter,
         redis=NoopRedis(),
@@ -79,17 +79,16 @@ def test_exponential_backoff_and_jitter(tmp_path):
         logger=logger,
         clock=clock,
         max_retries=3,
+        sleeper=lambda delay: delays.append(delay),
     )
-    delays: list[float] = []
-    with patch("src.phase6_import_to_sabt.job_runner.time.sleep", lambda delay: delays.append(delay)):
-        job = runner.submit(
-            filters=ExportFilters(year=1402, center=1),
-            options=ExportOptions(output_format="csv"),
-            idempotency_key="retry",
-            namespace="retry",
-            correlation_id="retry",
-        )
-        runner.await_completion(job.id)
+    job = runner.submit(
+        filters=ExportFilters(year=1402, center=1),
+        options=ExportOptions(output_format="csv"),
+        idempotency_key="retry",
+        namespace="retry",
+        correlation_id="retry",
+    )
+    runner.await_completion(job.id)
     assert len(delays) == 2
     expected_first = deterministic_jitter(0.1, 1, job.id)
     expected_second = deterministic_jitter(0.1, 2, job.id)

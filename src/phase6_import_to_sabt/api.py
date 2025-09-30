@@ -4,10 +4,11 @@ import hmac
 import os
 import time
 from hashlib import sha256
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
+from zoneinfo import ZoneInfo
 
 import asyncio
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
@@ -27,6 +28,7 @@ from .models import (
     ExportJobStatus,
     ExportOptions,
     SignedURLProvider,
+    Clock,
 )
 
 
@@ -38,12 +40,13 @@ class ExportRequest(BaseModel):
     chunk_size: int | None = None
     bom: bool | None = None
     excel_mode: bool | None = None
-    format: str | None = Field(default="csv")
+    format: str | None = Field(default="xlsx")
 
 
 class ExportResponse(BaseModel):
     job_id: str
     status: ExportJobStatus
+    format: str
     middleware_chain: list[str]
 
 
@@ -63,9 +66,16 @@ class DualKeyHMACSignedURLProvider(SignedURLProvider):
         active: tuple[str, str],
         next_: tuple[str, str] | None = None,
         base_url: str = "https://files.local/export",
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | None = None,
     ) -> None:
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._tz = ZoneInfo("Asia/Tehran")
+        if clock is None:
+            def _tehran_now() -> datetime:
+                return datetime.now(tz=self._tz)
+
+            self._clock: Callable[[], datetime] = _tehran_now
+        else:
+            self._clock = clock
         self.base_url = base_url.rstrip("/")
         self._active_kid, active_secret = active
         self._next_kid: str | None = None
@@ -233,7 +243,7 @@ class ExportAPI:
                 center=payload.center,
                 delta=delta,
             )
-            fmt = (payload.format or "csv").lower()
+            fmt = (payload.format or "xlsx").lower()
             chunk_size = payload.chunk_size or 50_000
             if chunk_size <= 0:
                 raise self._validation_error({"chunk_size": "اندازه قطعه باید بزرگتر از صفر باشد."})
@@ -274,7 +284,12 @@ class ExportAPI:
                 correlation_id=correlation_id,
             )
             chain = getattr(request.state, "middleware_chain", [])
-            return ExportResponse(job_id=job.id, status=job.status, middleware_chain=chain)
+            return ExportResponse(
+                job_id=job.id,
+                status=job.status,
+                format=options.output_format,
+                middleware_chain=chain,
+            )
 
         @router.get("/exports/{job_id}", response_model=ExportStatusResponse)
         async def get_export(job_id: str, request: Request) -> ExportStatusResponse:

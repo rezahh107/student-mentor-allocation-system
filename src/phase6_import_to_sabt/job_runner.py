@@ -85,6 +85,7 @@ class ExportJobRunner:
         logger: ExportLogger | None = None,
         clock: Clock,
         max_retries: int = 3,
+        sleeper: Callable[[float], None] | None = None,
     ) -> None:
         self.exporter = exporter
         self.redis = redis or DeterministicRedis()
@@ -95,6 +96,7 @@ class ExportJobRunner:
         self.jobs: Dict[str, ExportJob] = {}
         self._lock = threading.Lock()
         self._threads: Dict[str, threading.Thread] = {}
+        self._sleep = sleeper or time.sleep
 
     def submit(
         self,
@@ -243,7 +245,7 @@ class ExportJobRunner:
                     )
                     break
                 delay = deterministic_jitter(0.1, attempt, job_id)
-                time.sleep(delay)
+                self._sleep(delay)
                 continue
             except Exception as exc:  # pragma: no cover - defensive logging
                 self.metrics.inc_error("unknown", format_label)

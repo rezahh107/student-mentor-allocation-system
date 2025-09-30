@@ -1,0 +1,164 @@
+name: Strict CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: strict-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Tests (Strict)
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Tehran
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      PYTHONWARNINGS: error
+      STRICT_CI_NAMESPACE: ${{ format('ci:{0}:{1}:{2}', github.run_id, github.run_attempt, github.job) }}
+      STRICT_CI_REDIS_URL: redis://localhost:6379/0
+      STRICT_CI_ARTIFACT_DIR: artifacts
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Upgrade pip with retry
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          import subprocess
+          import time
+
+          def deterministic_jitter(attempt: int) -> float:
+              seed = f"pip-upgrade::{os.getenv('GITHUB_RUN_ID', 'local')}::{attempt}"
+              digest = hashlib.blake2b(seed.encode('utf-8'), digest_size=8).hexdigest()
+              return (int(digest, 16) % 500) / 1000.0
+
+          cmd = ["python", "-m", "pip", "install", "--upgrade", "pip"]
+          base_delay = 2.0
+          for attempt in range(1, 6):
+              try:
+                  subprocess.run(cmd, check=True)
+                  break
+              except subprocess.CalledProcessError:
+                  if attempt == 5:
+                      raise
+                  jitter = deterministic_jitter(attempt)
+                  delay = base_delay * (2 ** (attempt - 1)) + jitter
+                  print(f"Retrying pip upgrade in {delay:.2f}s (attempt {attempt}/5)...", flush=True)
+                  time.sleep(delay)
+          PY
+
+      - name: Install dependencies with retry
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          import subprocess
+          import time
+
+          requirements = [
+              "-r", "requirements.txt",
+              "-r", "requirements-dev.txt",
+              "prometheus_client",
+              "redis",
+          ]
+
+          def deterministic_jitter(attempt: int) -> float:
+              seed = f"pip-install::{os.getenv('GITHUB_RUN_ID', 'local')}::{attempt}"
+              digest = hashlib.blake2b(seed.encode('utf-8'), digest_size=8).hexdigest()
+              return (int(digest, 16) % 500) / 1000.0
+
+          cmd = ["python", "-m", "pip", "install", "--upgrade"] + requirements
+          base_delay = 2.0
+          for attempt in range(1, 6):
+              try:
+                  subprocess.run(cmd, check=True)
+                  break
+              except subprocess.CalledProcessError:
+                  if attempt == 5:
+                      raise
+                  jitter = deterministic_jitter(attempt)
+                  delay = base_delay * (2 ** (attempt - 1)) + jitter
+                  print(f"Retrying dependency install in {delay:.2f}s (attempt {attempt}/5)...", flush=True)
+                  time.sleep(delay)
+          PY
+
+      - name: Pre-test state cleanup
+        run: |
+          redis-cli -u "$STRICT_CI_REDIS_URL" FLUSHALL
+
+      - name: Redis readiness probe with deterministic backoff
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          import time
+
+          import redis  # type: ignore
+
+          redis_url = os.environ["STRICT_CI_REDIS_URL"]
+          base_delay = 0.5
+          max_attempts = 5
+
+          for attempt in range(1, max_attempts + 1):
+              try:
+                  client = redis.Redis.from_url(redis_url, socket_timeout=1.5)
+                  client.ping()
+                  client.close()
+                  break
+              except Exception as exc:  # noqa: BLE001
+                  if attempt == max_attempts:
+                      raise
+                  seed = f"redis-readiness::{os.getenv('GITHUB_RUN_ID', 'local')}::{attempt}"
+                  jitter = int(hashlib.blake2b(seed.encode('utf-8'), digest_size=8).hexdigest(), 16) % 500 / 1000.0
+                  delay = base_delay * (2 ** (attempt - 1)) + jitter
+                  print(f"Redis not ready ({exc}); retrying in {delay:.2f}s", flush=True)
+                  time.sleep(delay)
+          PY
+
+      - name: Run strict pytest gate (Smoke evidence + Full suite)
+        run: |
+          python ci/pytest_summary_gate.py --artifact-dir "$STRICT_CI_ARTIFACT_DIR" tests
+
+      - name: Post-test cleanup
+        if: always()
+        run: |
+          redis-cli -u "$STRICT_CI_REDIS_URL" FLUSHALL
+
+      - name: Upload strict gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-ci-artifacts
+          path: ${{ env.STRICT_CI_ARTIFACT_DIR }}
+          if-no-files-found: error

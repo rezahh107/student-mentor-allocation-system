@@ -73,5 +73,11 @@ def build_job_runner(
     registry = CollectorRegistry()
     metrics = ExporterMetrics(registry)
     runner_clock = clock or (lambda: datetime(2023, 7, 2, 10, 0, tzinfo=timezone.utc))
-    runner = ExportJobRunner(exporter=exporter, redis=redis, metrics=metrics, clock=runner_clock)
+    runner = ExportJobRunner(
+        exporter=exporter,
+        redis=redis,
+        metrics=metrics,
+        clock=runner_clock,
+        sleeper=lambda _: None,
+    )
     return runner, metrics

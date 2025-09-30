@@ -36,6 +36,7 @@ def test_post_get_flow_with_signed_urls(tmp_path):
     assert response.status_code == 200
     data = response.json()
     assert data["middleware_chain"] == ["ratelimit", "idempotency", "auth"]
+    assert data["format"] == "csv"
 
     runner.await_completion(data["job_id"])
 
@@ -48,3 +49,29 @@ def test_post_get_flow_with_signed_urls(tmp_path):
     assert payload["files"][0]["sha256"]
     assert payload["manifest"]["format"] == "csv"
     assert payload["manifest"]["excel_safety"]["always_quote"]
+
+
+def test_default_format_is_xlsx(tmp_path):
+    rows = [make_row(idx=1)]
+    runner, metrics = build_job_runner(tmp_path, rows)
+    signer = HMACSignedURLProvider(secret="secret")
+    gate = ReadinessGate(clock=lambda: 0.0)
+    gate.record_cache_warm()
+    gate.record_dependency(name="redis", healthy=True)
+    gate.record_dependency(name="database", healthy=True)
+    app = create_export_api(
+        runner=runner,
+        signer=signer,
+        metrics=metrics,
+        logger=runner.logger,
+        readiness_gate=gate,
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/exports",
+        json={"year": 1402, "center": 1},
+        headers={"Idempotency-Key": "auto", "X-Role": "ADMIN"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["format"] == "xlsx"

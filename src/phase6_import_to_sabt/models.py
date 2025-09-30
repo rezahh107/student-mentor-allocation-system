@@ -72,10 +72,10 @@ class ExportOptions:
     include_bom: bool = False
     newline: str = "\r\n"
     excel_mode: bool = True
-    output_format: str = "csv"
+    output_format: str = "xlsx"
 
     def __post_init__(self) -> None:
-        normalized = (self.output_format or "csv").lower()
+        normalized = (self.output_format or "xlsx").lower()
         if normalized not in {"csv", "xlsx"}:
             raise ValueError(f"unsupported_format:{self.output_format}")
         object.__setattr__(self, "output_format", normalized)

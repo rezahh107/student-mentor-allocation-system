@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
 from ..middleware.metrics import MiddlewareMetrics
 
@@ -25,6 +25,9 @@ class ServiceMetrics:
     token_rotation_total: Counter
     retry_attempts_total: Counter
     retry_exhausted_total: Counter
+    retry_backoff_seconds: Histogram
+    ratelimit_tokens: Gauge
+    ratelimit_drops_total: Counter
 
     def reset(self) -> None:
         if hasattr(self.registry, "_names_to_collectors"):
@@ -62,6 +65,18 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         "Readiness check results",
         registry=reg,
         labelnames=("component", "status"),
+    )
+    rate_limit_tokens = Gauge(
+        f"{namespace}_ratelimit_tokens",
+        "Rate limit tokens remaining per route",
+        registry=reg,
+        labelnames=("route",),
+    )
+    rate_limit_drops_total = Counter(
+        f"{namespace}_ratelimit_drops_total",
+        "Rate limit drops grouped by route",
+        registry=reg,
+        labelnames=("route",),
     )
     middleware_metrics = MiddlewareMetrics(
         rate_limit_decision_total=Counter(
@@ -102,6 +117,8 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
             registry=reg,
             buckets=(0.001, 0.01, 0.05, 0.1),
         ),
+        rate_limit_tokens=rate_limit_tokens,
+        rate_limit_drops_total=rate_limit_drops_total,
     )
     exporter_duration = _build_histogram(
         namespace,
@@ -151,6 +168,13 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         registry=reg,
         labelnames=("operation", "route"),
     )
+    retry_backoff_seconds = Histogram(
+        f"{namespace}_retry_backoff_seconds",
+        "Deterministic retry backoff schedule seconds",
+        registry=reg,
+        labelnames=("operation", "route"),
+        buckets=(0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0),
+    )
     return ServiceMetrics(
         registry=reg,
         request_latency=request_latency,
@@ -165,6 +189,9 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         token_rotation_total=token_rotation_total,
         retry_attempts_total=retry_attempts_total,
         retry_exhausted_total=retry_exhausted_total,
+        retry_backoff_seconds=retry_backoff_seconds,
+        ratelimit_tokens=rate_limit_tokens,
+        ratelimit_drops_total=rate_limit_drops_total,
     )
 
 

@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 from src.phase6_import_to_sabt.obs.metrics import build_metrics
 from tests.helpers import RetryExhaustedError, request_with_retry
 
+_ANCHOR = "AGENTS.md::Observability & No PII"
+
 
 @pytest.mark.observability
 def test_retry_metrics_emitted(cleanup_fixtures) -> None:
@@ -41,6 +43,7 @@ def test_retry_metrics_emitted(cleanup_fixtures) -> None:
         {"operation": "ops.retry", "route": "/guarded"},
     )
     assert attempts_total == float(len(context.attempts)), {
+        "anchor": _ANCHOR,
         "samples": list(metrics.registry.collect()),
         "context": context.as_dict(),
     }
@@ -69,6 +72,15 @@ def test_retry_metrics_emitted(cleanup_fixtures) -> None:
         {"operation": "ops.retry", "route": "/guarded"},
     )
     assert exhausted_total_after == 1.0, {
+        "anchor": _ANCHOR,
         "samples": list(metrics.registry.collect()),
         "namespace": namespace,
+    }
+    histogram_value = metrics.registry.get_sample_value(
+        f"{namespace}_retry_backoff_seconds_bucket",
+        {"operation": "ops.retry", "route": "/guarded", "le": "0.2"},
+    )
+    assert histogram_value is not None, {
+        "anchor": _ANCHOR,
+        "histogram_samples": list(metrics.registry.collect()),
     }

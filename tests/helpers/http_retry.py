@@ -135,6 +135,8 @@ async def asgi_request_with_retry(
         attempt = 1
         while attempt <= max_attempts:
             delay = _compute_delay(base_delay, attempt, jitter_seed)
+            if metrics is not None:
+                metrics.retry_backoff_seconds.labels(operation=operation, route=path).observe(delay)
             _increment_attempt_metric(metrics, operation, path, exhausted=False)
             try:
                 response = await client.request(

@@ -64,9 +64,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         request.state.middleware_chain = getattr(request.state, "middleware_chain", []) + ["RateLimit"]
         handle = self._timer.start()
         decision = "allow"
-        if request.url.path in {"/healthz", "/readyz", "/metrics"} or request.url.path.startswith("/ui/"):
+        route = request.url.path
+        capacity = self._config.requests
+        if route in {"/healthz", "/readyz", "/metrics"} or route.startswith("/ui/"):
             duration = handle.elapsed()
-            self._metrics.observe_rate_limit("bypass", duration)
+            self._metrics.observe_rate_limit(
+                "bypass",
+                duration,
+                route=route,
+                remaining=capacity,
+                capacity=capacity,
+            )
             diagnostics = getattr(request.app.state, "diagnostics", None)
             if diagnostics and diagnostics.get("enabled"):
                 diagnostics["last_rate_limit"] = {"decision": "bypass", "duration": duration}
@@ -75,12 +83,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ensure_no_control_chars([identifier])
         bucket = f"{self._config.namespace}:rl:{identifier}:{int(self._clock.now().timestamp()) // self._config.window_seconds}"
         current = await self._store.incr(bucket, ttl_seconds=self._config.window_seconds)
+        remaining = max(self._config.requests - current, 0)
         if current > self._config.requests:
             logger.warning("rate.limit.exceeded", extra={"correlation_id": getattr(request.state, "correlation_id", None)})
             retry_after = str(self._config.penalty_seconds)
             decision = "block"
             duration = handle.elapsed()
-            self._metrics.observe_rate_limit(decision, duration)
+            self._metrics.observe_rate_limit(
+                decision,
+                duration,
+                route=route,
+                remaining=0,
+                capacity=capacity,
+            )
             diagnostics = getattr(request.app.state, "diagnostics", None)
             if diagnostics and diagnostics.get("enabled"):
                 diagnostics["last_rate_limit"] = {"decision": decision, "duration": duration}
@@ -95,9 +110,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 headers={"Retry-After": retry_after},
             )
         response = await call_next(request)
-        response.headers["X-RateLimit-Remaining"] = str(max(self._config.requests - current, 0))
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
         duration = handle.elapsed()
-        self._metrics.observe_rate_limit(decision, duration)
+        self._metrics.observe_rate_limit(
+            decision,
+            duration,
+            route=route,
+            remaining=remaining,
+            capacity=capacity,
+        )
         diagnostics = getattr(request.app.state, "diagnostics", None)
         if diagnostics and diagnostics.get("enabled"):
             diagnostics["last_rate_limit"] = {"decision": decision, "duration": duration}

@@ -1,1 +1,1 @@
-﻿from ...services.config_manager import ConfigManager  # noqa: F401
+from ...services.config_manager import ConfigManager  # noqa: F401

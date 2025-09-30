@@ -1,14 +1,16 @@
 import asyncio
 import json
-import uuid
+import os
 from datetime import datetime
+from hashlib import blake2s
+from zoneinfo import ZoneInfo
 
 import httpx
 from prometheus_client import CollectorRegistry
-from zoneinfo import ZoneInfo
 
 from src.infrastructure.api.routes import create_app as create_infra_app
 from src.phase6_import_to_sabt.app.app_factory import create_application
+from src.phase6_import_to_sabt.app.clock import FixedClock
 from src.phase6_import_to_sabt.app.config import (
     AppConfig,
     AuthConfig,
@@ -17,16 +19,25 @@ from src.phase6_import_to_sabt.app.config import (
     RateLimitConfig,
     RedisConfig,
 )
-from src.phase6_import_to_sabt.app.clock import FixedClock
 from src.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
 from src.phase6_import_to_sabt.app.timing import DeterministicTimer
 from src.phase6_import_to_sabt.obs.metrics import build_metrics
 
+_ANCHOR = "AGENTS.md::Middleware Order"
+_SUCCESS_STATUS = 200
+_ACCEPTED_STATUS = 202
+_EXPECTED_CHAIN = ["RateLimit", "Idempotency", "Auth"]
+
+
+def _deterministic_hex(seed: str) -> str:
+    return blake2s(seed.encode("utf-8"), digest_size=6).hexdigest()
+
 
 def _build_phase6_app(monkeypatch):
-    namespace = f"phase6-test-{uuid.uuid4().hex}"
-    tokens_env = f"TOKENS_{uuid.uuid4().hex}"
-    signing_env = f"SIGNING_{uuid.uuid4().hex}"
+    seed = os.environ.get("PYTEST_CURRENT_TEST", "phase6-app")
+    namespace = f"phase6-test-{_deterministic_hex(seed + ':namespace')}"
+    tokens_env = f"TOKENS_{_deterministic_hex(seed + ':tokens')}"
+    signing_env = f"SIGNING_{_deterministic_hex(seed + ':signing')}"
     tokens_payload = [
         {"value": "service-token", "role": "ADMIN"},
         {"value": "metrics-token", "role": "METRICS_RO", "metrics_only": True},
@@ -43,8 +54,15 @@ def _build_phase6_app(monkeypatch):
     idem_store = InMemoryKeyValueStore(namespace=f"{namespace}:idem", clock=clock)
 
     config = AppConfig(
-        redis=RedisConfig(dsn="redis://localhost:6379/0", namespace=namespace, operation_timeout=0.1),
-        database=DatabaseConfig(dsn="postgresql://localhost/test", statement_timeout_ms=500),
+        redis=RedisConfig(
+            dsn="redis://localhost:6379/0",
+            namespace=namespace,
+            operation_timeout=0.1,
+        ),
+        database=DatabaseConfig(
+            dsn="postgresql://localhost/test",
+            statement_timeout_ms=500,
+        ),
         auth=AuthConfig(
             metrics_token="metrics-token",
             service_token="service-token",
@@ -52,8 +70,16 @@ def _build_phase6_app(monkeypatch):
             download_signing_keys_env_var=signing_env,
             download_url_ttl_seconds=600,
         ),
-        ratelimit=RateLimitConfig(namespace=namespace, requests=100, window_seconds=60, penalty_seconds=60),
-        observability=ObservabilityConfig(service_name="phase6-test", metrics_namespace=namespace),
+        ratelimit=RateLimitConfig(
+            namespace=namespace,
+            requests=100,
+            window_seconds=60,
+            penalty_seconds=60,
+        ),
+        observability=ObservabilityConfig(
+            service_name="phase6-test",
+            metrics_namespace=namespace,
+        ),
         timezone="Asia/Tehran",
         readiness_timeout_seconds=0.1,
         health_timeout_seconds=0.1,
@@ -76,7 +102,10 @@ def _build_phase6_app(monkeypatch):
 
 def _send_request(app, method: str, path: str, **kwargs):
     async def _call():
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
             return await client.request(method, path, **kwargs)
 
     return asyncio.run(_call())
@@ -95,9 +124,9 @@ def test_order_phase6_app(monkeypatch) -> None:
         },
         json={},
     )
-    assert response.status_code == 200
+    assert response.status_code == _SUCCESS_STATUS, _failure_context(response)
     chain = response.json()["middleware_chain"]
-    assert chain[:3] == ["RateLimit", "Idempotency", "Auth"]
+    assert chain[:3] == _EXPECTED_CHAIN, _failure_context(response, chain=chain)
 
 
 def test_order_infra_app(monkeypatch) -> None:
@@ -115,7 +144,19 @@ def test_order_infra_app(monkeypatch) -> None:
             "X-Api-Key": "infra-client",
         },
     )
-    assert response.status_code == 202
+    assert response.status_code == _ACCEPTED_STATUS, _failure_context(response)
     chain_header = response.headers.get("X-Middleware-Chain")
-    assert chain_header is not None
-    assert chain_header.split(",")[:3] == ["RateLimit", "Idempotency", "Auth"]
+    assert chain_header is not None, _failure_context(response)
+    chain_values = chain_header.split(",")
+    assert chain_values[:3] == _EXPECTED_CHAIN, _failure_context(response, chain=chain_values)
+
+
+def _failure_context(response, *, chain=None):
+    payload = {
+        "evidence": _ANCHOR,
+        "status": response.status_code,
+        "headers": dict(response.headers),
+    }
+    if chain is not None:
+        payload["chain"] = chain
+    return json.dumps(payload, ensure_ascii=False)

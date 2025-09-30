@@ -1,4 +1,4 @@
-﻿"""Mock service for mentor management to support UI development."""
+"""Mock service for mentor management to support UI development."""
 from __future__ import annotations
 
 from datetime import datetime

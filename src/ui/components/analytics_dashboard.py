@@ -1,1 +1,1 @@
-﻿from ..widgets.analytics_dashboard import AnalyticsDashboard  # noqa: F401
+from ..widgets.analytics_dashboard import AnalyticsDashboard  # noqa: F401

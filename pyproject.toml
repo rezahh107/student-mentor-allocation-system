@@ -1,0 +1,95 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "student-mentor-allocation-system"
+version = "0.0.0"
+description = "Student Mentor Allocation System tooling and services."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT License"}
+authors = [{name = "Reza", email = "ops@example.invalid"}]
+keywords = ["education", "mentoring", "allocation"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.5.0",
+    "mypy>=1.8.0",
+    "pydocstyle>=6.3.0",
+    "pre-commit>=3.5.0",
+]
+test = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "build>=1.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "C90",
+    "PL",
+    "RUF",
+]
+ignore = ["E203"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D100", "D103"]
+
+[tool.ruff.lint.pylint]
+max-statements = 120
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+files = [
+    "tools/bom_guard.py",
+    "tools/strip_bom.py",
+    "tests/ci/conftest.py",
+    "tests/ci/test_bom_guard.py",
+    "tests/ci/test_ruff_gate.py",
+    "tests/ci/test_mypy_strict.py",
+    "tests/ci/test_pydocstyle_gate.py",
+]
+enable_error_code = "ignore-without-code"
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["tests.packaging.conftest"]
+ignore_errors = false
+
+[tool.pydocstyle]
+convention = "pep257"
+match = "(?!test_).*[.]py"
+add-ignore = ["D104", "D203", "D213"]
+
+[tool.pytest.ini_options]
+filterwarnings = ["error"]
+addopts = "-q"

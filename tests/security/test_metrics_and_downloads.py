@@ -6,6 +6,7 @@ import asyncio
 import httpx
 
 from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
+from phase6_import_to_sabt.clock import FixedClock
 from phase7_release.deploy import ReadinessGate
 from tests.export.helpers import build_job_runner, make_row
 
@@ -22,7 +23,7 @@ def test_token_and_signed_url(tmp_path) -> None:
     rows = [make_row(idx=1)]
     runner, metrics = build_job_runner(tmp_path, rows)
     now = datetime(2024, 1, 1, 8, 0, tzinfo=timezone.utc)
-    signer = HMACSignedURLProvider(secret="secret", clock=lambda: now)
+    signer = HMACSignedURLProvider(secret="secret", clock=FixedClock(now))
     app = create_export_api(
         runner=runner,
         signer=signer,

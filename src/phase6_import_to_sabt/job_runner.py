@@ -7,11 +7,11 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Callable, Dict, Optional
 
+from .clock import Clock, ensure_clock
 from .exporter import ExportValidationError, ImportToSabtExporter
 from .logging_utils import ExportLogger
 from .metrics import ExporterMetrics
 from .models import (
-    Clock,
     ExportExecutionStats,
     ExportFilters,
     ExportJob,
@@ -83,7 +83,7 @@ class ExportJobRunner:
         redis: RedisLike | None = None,
         metrics: ExporterMetrics | None = None,
         logger: ExportLogger | None = None,
-        clock: Clock,
+        clock: Clock | Callable[[], datetime] | None = None,
         max_retries: int = 3,
         sleeper: Callable[[float], None] | None = None,
     ) -> None:
@@ -91,7 +91,7 @@ class ExportJobRunner:
         self.redis = redis or DeterministicRedis()
         self.metrics = metrics or ExporterMetrics()
         self.logger = logger or ExportLogger()
-        self.clock = clock
+        self.clock = ensure_clock(clock, timezone="Asia/Tehran")
         self.max_retries = max_retries
         self.jobs: Dict[str, ExportJob] = {}
         self._lock = threading.Lock()
@@ -106,7 +106,7 @@ class ExportJobRunner:
         idempotency_key: str,
         namespace: str,
         correlation_id: str,
-    ) -> ExportJob:
+        ) -> ExportJob:
         redis_key = f"phase6:exports:{namespace}:{idempotency_key}"
         if not self.redis.setnx(redis_key, "RUNNING", ex=86_400):
             data = self.redis.hgetall(redis_key)
@@ -115,7 +115,7 @@ class ExportJobRunner:
                 return self.jobs[existing_id]
             raise ValueError("EXPORT_DUPLICATE")
         job_id = str(uuid.uuid4())
-        now = self.clock()
+        now = self.clock.now()
         snapshot = ExportSnapshot(marker=f"snapshot-{job_id}", created_at=now)
         job = ExportJob(
             id=job_id,
@@ -147,7 +147,7 @@ class ExportJobRunner:
 
     # internal
     def _run_job(self, job_id: str, redis_key: str) -> None:
-        start_time = self.clock()
+        start_time = self.clock.now()
         job = self.jobs[job_id]
         format_label = job.options.output_format
         queue_duration = (start_time - job.queued_at).total_seconds()
@@ -168,7 +168,7 @@ class ExportJobRunner:
                     clock_now=start_time,
                     stats=stats,
                 )
-                duration = (self.clock() - start_time).total_seconds()
+                duration = (self.clock.now() - start_time).total_seconds()
                 self.metrics.observe_duration("total", duration, format_label)
                 for phase, value in stats.phase_durations.items():
                     self.metrics.observe_duration(phase, value, format_label)
@@ -179,7 +179,7 @@ class ExportJobRunner:
                 self._update_job(
                     job_id,
                     status=ExportJobStatus.SUCCESS,
-                    finished_at=self.clock(),
+                    finished_at=self.clock.now(),
                     manifest=manifest,
                 )
                 self.redis.hset(redis_key, {"status": ExportJobStatus.SUCCESS.value})
@@ -202,7 +202,7 @@ class ExportJobRunner:
                 self._update_job(
                     job_id,
                     status=ExportJobStatus.FAILED,
-                    finished_at=self.clock(),
+                    finished_at=self.clock.now(),
                     error=str(exc),
                 )
                 self.redis.hset(redis_key, {"status": ExportJobStatus.FAILED.value, "error": str(exc)})
@@ -225,7 +225,7 @@ class ExportJobRunner:
                     self._update_job(
                         job_id,
                         status=ExportJobStatus.FAILED,
-                        finished_at=self.clock(),
+                        finished_at=self.clock.now(),
                         error=str(exc),
                     )
                     self.redis.hset(
@@ -253,7 +253,7 @@ class ExportJobRunner:
                 self._update_job(
                     job_id,
                     status=ExportJobStatus.FAILED,
-                    finished_at=self.clock(),
+                    finished_at=self.clock.now(),
                     error=str(exc),
                 )
                 self.redis.hset(

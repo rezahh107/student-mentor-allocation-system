@@ -1,4 +1,4 @@
-﻿"""Mentor management UI page."""
+"""Mentor management UI page."""
 from __future__ import annotations
 
 import logging

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Rollback helper for reverting the most recent commit safely.
 

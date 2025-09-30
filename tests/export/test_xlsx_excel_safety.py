@@ -9,6 +9,8 @@ from src.phase6_import_to_sabt.xlsx.constants import SENSITIVE_COLUMNS
 from src.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
 from src.phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
 
+_ANCHOR = "AGENTS.md::Atomic I/O & Excel-Safety"
+
 
 def test_formula_guard_and_sensitive_as_text(cleanup_fixtures) -> None:
     writer = XLSXStreamWriter(chunk_size=8)
@@ -45,7 +47,7 @@ def test_formula_guard_and_sensitive_as_text(cleanup_fixtures) -> None:
         format_label="xlsx",
         sleeper=lambda _: None,
     )
-    debug_context = cleanup_fixtures.context(export_path=str(output_path))
+    debug_context = cleanup_fixtures.context(export_path=str(output_path), evidence=_ANCHOR)
     assert artifact.excel_safety["formula_guard"], debug_context
     workbook = load_workbook(output_path, data_only=False)
     sheet = workbook.active

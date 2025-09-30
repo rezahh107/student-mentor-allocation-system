@@ -1,1 +1,1 @@
-﻿from ...services.performance_monitor import PerformanceMonitor  # noqa: F401
+from ...services.performance_monitor import PerformanceMonitor  # noqa: F401

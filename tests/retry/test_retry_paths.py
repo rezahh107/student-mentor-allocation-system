@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from phase6_import_to_sabt.clock import FixedClock
 from phase6_import_to_sabt.job_runner import ExportJobRunner
 from phase6_import_to_sabt.logging_utils import ExportLogger
 from phase6_import_to_sabt.metrics import ExporterMetrics
@@ -70,7 +71,7 @@ def test_exponential_backoff_and_jitter(tmp_path):
     exporter = FlakyExporter(tmp_path)
     metrics = ExporterMetrics()
     logger = ExportLogger()
-    clock = lambda: datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)
+    clock = FixedClock(datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc))
     delays: list[float] = []
     runner = ExportJobRunner(
         exporter=exporter,

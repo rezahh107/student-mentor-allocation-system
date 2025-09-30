@@ -1,36 +1,19 @@
-from __future__ import annotations
+"""Backward-compatible re-export of clock utilities for application wiring."""
 
-import datetime as dt
-from dataclasses import dataclass
-from typing import Protocol
-from zoneinfo import ZoneInfo
+from ..clock import (
+    CallableClock,
+    Clock,
+    FixedClock,
+    SystemClock,
+    build_system_clock,
+    ensure_clock,
+)
 
-
-class Clock(Protocol):
-    """Protocol describing deterministic clock access."""
-
-    def now(self) -> dt.datetime:
-        ...
-
-
-@dataclass(frozen=True)
-class FixedClock:
-    instant: dt.datetime
-
-    def now(self) -> dt.datetime:
-        return self.instant
-
-
-@dataclass
-class SystemClock:
-    timezone: ZoneInfo
-
-    def now(self) -> dt.datetime:
-        return dt.datetime.now(tz=self.timezone)
-
-
-def build_system_clock(timezone: str) -> SystemClock:
-    return SystemClock(timezone=ZoneInfo(timezone))
-
-
-__all__ = ["Clock", "FixedClock", "SystemClock", "build_system_clock"]
+__all__ = [
+    "Clock",
+    "FixedClock",
+    "SystemClock",
+    "CallableClock",
+    "build_system_clock",
+    "ensure_clock",
+]

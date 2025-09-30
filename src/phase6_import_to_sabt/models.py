@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Iterable, Optional
 
 from src.shared.counter_rules import COUNTER_PREFIX_MAP
+from .clock import Clock
 
 COUNTER_PREFIX = dict(COUNTER_PREFIX_MAP)
 
@@ -161,9 +162,6 @@ class ExportJob:
     finished_at: Optional[datetime] = None
     manifest: Optional[ExportManifest] = None
     error: Optional[str] = None
-
-
-Clock = Callable[[], datetime]
 
 
 class ExporterDataSource:

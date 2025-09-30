@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterable, List
+from typing import Callable, Iterable
+from zoneinfo import ZoneInfo
 
 from prometheus_client import CollectorRegistry
 
+from phase6_import_to_sabt.clock import Clock, FixedClock, ensure_clock
 from phase6_import_to_sabt.data_source import InMemoryDataSource
 from phase6_import_to_sabt.exporter import ImportToSabtExporter
 from phase6_import_to_sabt.job_runner import DeterministicRedis, ExportJobRunner
@@ -66,13 +68,14 @@ def build_job_runner(
     tmp_path: Path,
     rows: Iterable[NormalizedStudentRow],
     *,
-    clock: Callable[[], datetime] | None = None,
+    clock: Clock | Callable[[], datetime] | None = None,
 ):
     exporter = build_exporter(tmp_path, rows)
     redis = DeterministicRedis()
     registry = CollectorRegistry()
     metrics = ExporterMetrics(registry)
-    runner_clock = clock or (lambda: datetime(2023, 7, 2, 10, 0, tzinfo=timezone.utc))
+    default_clock = FixedClock(datetime(2023, 7, 2, 10, 0, tzinfo=ZoneInfo("Asia/Tehran")))
+    runner_clock = ensure_clock(clock, timezone="Asia/Tehran") if clock is not None else default_clock
     runner = ExportJobRunner(
         exporter=exporter,
         redis=redis,

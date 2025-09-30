@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from phase6_import_to_sabt.clock import FixedClock
 from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
 
 from tests.export.helpers import build_exporter, build_job_runner, make_row
@@ -23,8 +24,7 @@ def test_clock_freeze_and_naming_determinism(tmp_path):
         assert "20240101080000" in file.name
     assert manifest.generated_at == tehran_now
 
-    clock = lambda: tehran_now
-    runner, metrics = build_job_runner(tmp_path / "runner", rows, clock=clock)
+    runner, metrics = build_job_runner(tmp_path / "runner", rows, clock=FixedClock(tehran_now))
     job = runner.submit(
         filters=ExportFilters(year=1402, center=1),
         options=ExportOptions(output_format="csv"),

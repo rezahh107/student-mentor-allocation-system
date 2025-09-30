@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
-from zoneinfo import ZoneInfo
 
 import asyncio
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
@@ -19,6 +18,7 @@ from uuid import uuid4
 
 from src.phase7_release.deploy import CircuitBreaker, ReadinessGate, get_debug_context
 
+from .clock import Clock, ensure_clock
 from .job_runner import ExportJobRunner
 from .logging_utils import ExportLogger
 from .metrics import ExporterMetrics
@@ -28,7 +28,6 @@ from .models import (
     ExportJobStatus,
     ExportOptions,
     SignedURLProvider,
-    Clock,
 )
 
 
@@ -66,16 +65,9 @@ class DualKeyHMACSignedURLProvider(SignedURLProvider):
         active: tuple[str, str],
         next_: tuple[str, str] | None = None,
         base_url: str = "https://files.local/export",
-        clock: Clock | None = None,
+        clock: Clock | Callable[[], datetime] | None = None,
     ) -> None:
-        self._tz = ZoneInfo("Asia/Tehran")
-        if clock is None:
-            def _tehran_now() -> datetime:
-                return datetime.now(tz=self._tz)
-
-            self._clock: Callable[[], datetime] = _tehran_now
-        else:
-            self._clock = clock
+        self._clock = ensure_clock(clock, timezone="Asia/Tehran")
         self.base_url = base_url.rstrip("/")
         self._active_kid, active_secret = active
         self._next_kid: str | None = None
@@ -88,7 +80,7 @@ class DualKeyHMACSignedURLProvider(SignedURLProvider):
     def sign(self, file_path: str, expires_in: int = 3600) -> str:
         if expires_in <= 0:
             raise ValueError("expires_in must be positive")
-        now = self._clock()
+        now = self._clock.now()
         expires_at = int(now.timestamp()) + int(expires_in)
         filename = Path(file_path).name
         payload = self._payload(filename, expires_at, self._active_kid)
@@ -110,7 +102,7 @@ class DualKeyHMACSignedURLProvider(SignedURLProvider):
             expires_at = int(exp)
         except ValueError:
             return False
-        now = now or self._clock()
+        now = now or self._clock.now()
         if int(now.timestamp()) > expires_at:
             return False
         payload = self._payload(Path(parsed.path).name, expires_at, kid)
@@ -138,7 +130,7 @@ class HMACSignedURLProvider(DualKeyHMACSignedURLProvider):
         secret: str,
         *,
         base_url: str = "https://files.local/export",
-        clock: Callable[[], datetime] | None = None,
+        clock: Clock | Callable[[], datetime] | None = None,
     ) -> None:
         super().__init__(active=("legacy", secret), next_=None, base_url=base_url, clock=clock)
 

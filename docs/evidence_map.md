@@ -11,11 +11,15 @@
 | AGENTS.md::5 Uploads & Exports (Manifests) | tests/exports/test_manifest.py::test_atomic_manifest_after_files |
 | AGENTS.md::5 Uploads & Exports (Atomic I/O) | src/phase6_import_to_sabt/exporter_service.py::atomic_writer |
 | AGENTS.md::6 Observability & Security | tests/security/test_metrics_and_downloads.py::test_token_and_signed_url |
-| AGENTS.md::6 Observability & Security (PII masking) | tests/logging/test_json_logs.py::test_masking_and_correlation_id |
+| AGENTS.md::6 Observability & Security (PII masking) | tests/logging/test_json_logs_pii_scan.py::test_no_pii_in_logs |
+| AGENTS.md::6 Observability & Security (/metrics token) | tests/security/test_metrics_token_guard.py::test_metrics_requires_token |
 | AGENTS.md::7 Performance & Reliability | tests/perf/test_exporter_100k.py::test_p95_latency_and_memory_budget |
 | AGENTS.md::7 Performance & Reliability (Retry) | tests/retry/test_retry_backoff.py::test_retry_jitter_and_metrics_without_sleep |
 | AGENTS.md::8 Testing & CI Gates (State hygiene) | tests/fixtures/state.py::cleanup_fixtures |
+| AGENTS.md::8 Testing & CI Gates (CollectorRegistry reset) | tests/conftest.py::metrics_registry_guard |
+| AGENTS.md::8 Testing & CI Gates (Redis namespace guard) | tests/conftest.py::redis_state_guard |
 | AGENTS.md::3 Absolute Guardrails (Middleware Order) | tests/mw/test_order_uploads.py::test_rate_then_idem_then_auth |
+| AGENTS.md::3 Absolute Guardrails (RateLimit→Idempotency→Auth) | tests/mw/test_order_clocked.py::test_post_chain_order |
 | AGENTS.md::3 Absolute Guardrails (Persian errors) | tests/i18n/test_persian_errors.py::test_error_messages_deterministic |
 | AGENTS.md::4 Domain Rules (Year & Counter) | tests/export/test_crosschecks.py::test_counter_prefix_and_regex |
 | AGENTS.md::4 Domain Rules (StudentType derivation) | src/phase6_import_to_sabt/exporter_service.py::ImportToSabtExporter._normalize_row |

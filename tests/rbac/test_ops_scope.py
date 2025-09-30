@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from tests.ops.conftest import get_debug_context
 
-pytest_plugins = ("tests.ops.conftest",)
-
 
 def test_manager_sees_only_own_center(build_ops_client, clean_state):
     client = build_ops_client(

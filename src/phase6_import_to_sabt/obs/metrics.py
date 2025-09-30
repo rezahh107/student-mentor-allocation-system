@@ -23,6 +23,8 @@ class ServiceMetrics:
     auth_fail_total: Counter
     download_signed_total: Counter
     token_rotation_total: Counter
+    retry_attempts_total: Counter
+    retry_exhausted_total: Counter
 
     def reset(self) -> None:
         if hasattr(self.registry, "_names_to_collectors"):
@@ -137,6 +139,18 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         registry=reg,
         labelnames=("event",),
     )
+    retry_attempts_total = Counter(
+        f"{namespace}_retry_attempts_total",
+        "HTTP client retry attempts",
+        registry=reg,
+        labelnames=("operation", "route"),
+    )
+    retry_exhausted_total = Counter(
+        f"{namespace}_retry_exhausted_total",
+        "HTTP client retry exhaustion count",
+        registry=reg,
+        labelnames=("operation", "route"),
+    )
     return ServiceMetrics(
         registry=reg,
         request_latency=request_latency,
@@ -149,6 +163,8 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         auth_fail_total=auth_fail_total,
         download_signed_total=download_signed_total,
         token_rotation_total=token_rotation_total,
+        retry_attempts_total=retry_attempts_total,
+        retry_exhausted_total=retry_exhausted_total,
     )
 
 

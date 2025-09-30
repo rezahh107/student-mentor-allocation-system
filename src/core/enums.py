@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import Dict
 
-COUNTER_PREFIX: Dict[int, int] = {1: 357, 0: 373}
+from src.shared.counter_rules import COUNTER_PREFIX_MAP
+
+COUNTER_PREFIX: Dict[int, str] = dict(COUNTER_PREFIX_MAP)
 """Mapping gender counters to their associated prefixes.
 
 The mapping is exposed for downstream systems that derive counters based on

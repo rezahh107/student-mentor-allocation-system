@@ -5,7 +5,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Iterable, Optional
 
-COUNTER_PREFIX = {0: "373", 1: "357"}
+from src.shared.counter_rules import COUNTER_PREFIX_MAP
+
+COUNTER_PREFIX = dict(COUNTER_PREFIX_MAP)
 
 
 class ExportErrorCode(str, Enum):

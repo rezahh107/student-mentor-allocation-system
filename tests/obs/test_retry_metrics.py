@@ -1,124 +1,74 @@
-"""Observability tests for security tool retry metrics."""
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import pytest
-from prometheus_client import CollectorRegistry
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
-from scripts import security_tools
-
-
-class Clock:
-    def __init__(self) -> None:
-        self._current = 0.0
-
-    def tick(self) -> float:
-        self._current += 0.01
-        return self._current
+from src.phase6_import_to_sabt.obs.metrics import build_metrics
+from tests.helpers import RetryExhaustedError, request_with_retry
 
 
-@pytest.fixture
-def deterministic_components() -> dict[str, Callable]:
-    clock = Clock()
-    return {
-        "sleeper": lambda _: None,
-        "monotonic": clock.tick,
+@pytest.mark.observability
+def test_retry_metrics_emitted(cleanup_fixtures) -> None:
+    namespace = cleanup_fixtures.namespace
+    metrics = build_metrics(namespace, registry=cleanup_fixtures.registry)
+
+    attempts: dict[str, int] = {"count": 0}
+    app = FastAPI()
+
+    @app.post("/guarded")
+    async def guarded() -> JSONResponse:  # pragma: no cover - executed via httpx transport
+        attempts["count"] += 1
+        if attempts["count"] < 2:
+            return JSONResponse(status_code=503, content={"detail": "backend"})
+        return JSONResponse(status_code=200, content={"ok": True, "attempt": attempts["count"]})
+
+    response, context = request_with_retry(
+        app,
+        "POST",
+        "/guarded",
+        headers={"Authorization": "Bearer metrics"},
+        json={"task": "retry"},
+        max_attempts=3,
+        metrics=metrics,
+        namespace=namespace,
+        operation="ops.retry",
+    )
+    assert response.status_code == 200, context.as_dict()
+    metric_name = f"{namespace}_retry_attempts_total"
+    attempts_total = metrics.registry.get_sample_value(
+        metric_name,
+        {"operation": "ops.retry", "route": "/guarded"},
+    )
+    assert attempts_total == float(len(context.attempts)), {
+        "samples": list(metrics.registry.collect()),
+        "context": context.as_dict(),
     }
-
-
-def _sample(registry: CollectorRegistry, name: str, labels: dict[str, str]) -> float | None:
-    return registry.get_sample_value(name, labels=labels)
-
-
-def test_retry_histograms_and_exhaustion(deterministic_components: dict[str, Callable]) -> None:
-    registry = CollectorRegistry()
-    attempts: list[int] = []
-
-    def _flaky() -> str:
-        attempts.append(1)
-        if len(attempts) < 3:
-            raise RuntimeError("transient failure")
-        return "ok"
-
-    result = security_tools.run_with_retry(
-        _flaky,
-        tool_name="weak_hash_scan",
-        config=security_tools.RetryConfig(max_attempts=3, base_delay=0.05, jitter_ratio=0.3),
-        registry=registry,
-        sleeper=deterministic_components["sleeper"],
-        randomizer=None,
-        monotonic=deterministic_components["monotonic"],
+    exhausted_metric = f"{namespace}_retry_exhausted_total"
+    exhausted_total = metrics.registry.get_sample_value(
+        exhausted_metric,
+        {"operation": "ops.retry", "route": "/guarded"},
     )
-    assert result == "ok"
+    assert exhausted_total in (None, 0.0)
 
-    attempts_value = _sample(
-        registry,
-        "security_tool_retry_attempts_total",
-        labels={"tool": "weak_hash_scan"},
-    )
-    assert attempts_value == 3.0
-
-    exhausted = _sample(
-        registry,
-        "security_tool_retry_exhausted_total",
-        labels={"tool": "weak_hash_scan"},
-    )
-    assert exhausted in {None, 0.0}
-
-    latency_sum = _sample(
-        registry,
-        "security_tool_retry_latency_seconds_sum",
-        labels={"tool": "weak_hash_scan"},
-    )
-    assert latency_sum == pytest.approx(0.03, rel=1e-6)
-
-    sleep_count = _sample(
-        registry,
-        "security_tool_retry_sleep_seconds_count",
-        labels={"tool": "weak_hash_scan"},
-    )
-    assert sleep_count == 2.0
-
-    sleep_sum = _sample(
-        registry,
-        "security_tool_retry_sleep_seconds_sum",
-        labels={"tool": "weak_hash_scan"},
-    )
-    assert sleep_sum is not None and sleep_sum > 0.05
-
-    def _always_fail() -> None:
-        raise RuntimeError("permanent failure")
-
-    with pytest.raises(RuntimeError):
-        security_tools.run_with_retry(
-            _always_fail,
-            tool_name="weak_hash_scan",
-            config=security_tools.RetryConfig(max_attempts=2, base_delay=0.05, jitter_ratio=0.3),
-            registry=registry,
-            sleeper=deterministic_components["sleeper"],
-            randomizer=None,
-            monotonic=deterministic_components["monotonic"],
+    attempts["count"] = 0
+    with pytest.raises(RetryExhaustedError):
+        request_with_retry(
+            app,
+            "POST",
+            "/guarded",
+            headers={"Authorization": "Bearer metrics"},
+            json={"task": "retry"},
+            max_attempts=1,
+            metrics=metrics,
+            namespace=namespace,
+            operation="ops.retry",
         )
-
-    exhausted_after = _sample(
-        registry,
-        "security_tool_retry_exhausted_total",
-        labels={"tool": "weak_hash_scan"},
+    exhausted_total_after = metrics.registry.get_sample_value(
+        exhausted_metric,
+        {"operation": "ops.retry", "route": "/guarded"},
     )
-    assert exhausted_after == 1.0
-
-    latency_sum_after = _sample(
-        registry,
-        "security_tool_retry_latency_seconds_sum",
-        labels={"tool": "weak_hash_scan"},
-    )
-    assert latency_sum_after == pytest.approx(0.05, rel=1e-6)
-
-    sleep_count_after = _sample(
-        registry,
-        "security_tool_retry_sleep_seconds_count",
-        labels={"tool": "weak_hash_scan"},
-    )
-    assert sleep_count_after == 3.0
-
+    assert exhausted_total_after == 1.0, {
+        "samples": list(metrics.registry.collect()),
+        "namespace": namespace,
+    }

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-pytest_plugins = ("tests.uploads.conftest",)
-
 
 def test_rate_then_idem_then_auth(cleanup_fixtures, uploads_app):
     cleanup_fixtures.flush_state()

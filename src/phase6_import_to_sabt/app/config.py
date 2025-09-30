@@ -46,7 +46,7 @@ class AppConfig(BaseSettings):
     auth: AuthConfig
     ratelimit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
-    timezone: str = Field(default="Asia/Baku")
+    timezone: str = Field(default="Asia/Tehran")
     readiness_timeout_seconds: float = Field(default=0.5, ge=0.1, le=5.0)
     health_timeout_seconds: float = Field(default=0.2, ge=0.1, le=5.0)
     enable_debug_logs: bool = Field(default=False)

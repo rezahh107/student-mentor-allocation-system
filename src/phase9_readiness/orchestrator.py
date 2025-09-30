@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.core.normalize import normalize_digits
 from src.phase2_counter_service.academic_year import AcademicYearProvider
+from src.shared.counter_rules import COUNTER_PREFIX_MAP
 from src.reliability.clock import Clock
 from src.reliability.logging_utils import JSONLogger
 
@@ -68,7 +69,7 @@ def _validate_counter(counter: Any) -> str:
         raise ValueError("شناسه شمارنده خالی است.")
     if not text.isdigit() or len(text) != 9:
         raise ValueError("شناسه شمارنده باید ۹ رقم باشد.")
-    if not text[2:5] in {"357", "373"}:
+    if text[2:5] not in COUNTER_PREFIX_MAP.values():
         raise ValueError("شناسه شمارنده باید با 357/373 باشد.")
     return text
 

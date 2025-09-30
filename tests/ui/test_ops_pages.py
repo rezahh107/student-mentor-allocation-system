@@ -4,8 +4,6 @@ import pytest
 
 from tests.ops.conftest import get_debug_context
 
-pytest_plugins = ("tests.ops.conftest",)
-
 
 @pytest.mark.parametrize("path", ["/ui/ops/home", "/ui/ops/exports", "/ui/ops/uploads", "/ui/ops/slo"])
 def test_ops_pages_render_rtl_no_pii(build_ops_client, clean_state, path):

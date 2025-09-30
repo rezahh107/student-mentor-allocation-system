@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-import pytest
 
-from src.phase9_readiness.report import PytestSummary, assert_zero_warnings
-
-
-def test_zero_warnings() -> None:
-    summary = PytestSummary(passed=12, failed=0, xfailed=0, skipped=0, warnings=0)
-    assert_zero_warnings(summary)
-
-
-def test_warnings_raise_assertion() -> None:
-    summary = PytestSummary(passed=10, failed=0, xfailed=0, skipped=0, warnings=2)
-    with pytest.raises(AssertionError):
-        assert_zero_warnings(summary)
+def test_no_warnings(pytestconfig) -> None:
+    filters = pytestconfig.getini("filterwarnings")
+    assert filters == ["error"], filters
+    scope = pytestconfig.getini("asyncio_default_fixture_loop_scope")
+    assert scope == "function"
+    assert pytestconfig.pluginmanager.has_plugin("pytest_asyncio")

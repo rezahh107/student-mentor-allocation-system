@@ -6,6 +6,7 @@ from typing import Iterable, Protocol
 
 from src.application.commands.allocation import GetJobStatus, StartBatchAllocation
 from src.domain.allocation.engine import AllocationEngine
+from src.domain.allocation.reasons import LocalizedReason, ReasonCode, build_reason
 from src.domain.mentor.entities import Mentor
 from src.domain.shared.events import AllocationFailed, MentorAssigned
 from src.domain.shared.types import AllocationStatus
@@ -43,14 +44,37 @@ class AllocationService:
             if result.mentor_id is not None:
                 self.mentors.increment_load(result.mentor_id)
                 self.students.mark_assigned(s, result.mentor_id, AllocationStatus.OK)
-                self.outbox.enqueue(MentorAssigned(national_id=s.national_id, mentor_id=result.mentor_id, rule_trace=result.rule_trace))
+                self.outbox.enqueue(
+                    MentorAssigned(
+                        national_id=s.national_id,
+                        mentor_id=result.mentor_id,
+                        rule_trace=[self._reason_payload(r) for r in result.rule_trace],
+                        fairness_strategy=result.fairness_strategy.value,
+                        fairness_key=result.fairness_key,
+                    )
+                )
                 success += 1
             else:
+                failure_reason = result.reason or build_reason(ReasonCode.NO_ELIGIBLE_MENTOR)
                 self.students.mark_assigned(s, None, AllocationStatus.NEEDS_NEW_MENTOR)
-                self.outbox.enqueue(AllocationFailed(national_id=s.national_id, reason="NoEligibleMentor"))
+                self.outbox.enqueue(
+                    AllocationFailed(
+                        national_id=s.national_id,
+                        reason_code=failure_reason.code.value,
+                        reason_message=failure_reason.message_fa,
+                        fairness_strategy=result.fairness_strategy.value,
+                        fairness_key=result.fairness_key,
+                    )
+                )
         return {"processed": processed, "successful": success}
 
     def get_job_status(self, q: GetJobStatus) -> dict:
         # Placeholder; integrate with job store when implemented
         return {"jobId": q.job_id, "status": "completed", "progress": 100}
+
+    @staticmethod
+    def _reason_payload(reason: LocalizedReason | None) -> dict[str, str] | None:
+        if reason is None:
+            return None
+        return {"code": reason.code.value, "message_fa": reason.message_fa}
 

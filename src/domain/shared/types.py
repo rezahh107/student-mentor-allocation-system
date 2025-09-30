@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from typing import Optional
+
+from src.shared.counter_rules import gender_prefix
 
 
 class Gender(IntEnum):
@@ -12,7 +13,7 @@ class Gender(IntEnum):
 
     @property
     def counter_code(self) -> str:
-        return "357" if self is Gender.male else "373"
+        return gender_prefix(int(self))
 
 
 class EduStatus(IntEnum):
@@ -41,10 +42,3 @@ class AllocationStatus(StrEnum):
     OK = "OK"
     TEMP_REVIEW = "TEMP_REVIEW"
     NEEDS_NEW_MENTOR = "NEEDS_NEW_MENTOR"
-
-
-@dataclass(slots=True)
-class RuleResult:
-    ok: bool
-    reason: Optional[str] = None
-

@@ -61,7 +61,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._timer = timer
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        request.state.middleware_chain = getattr(request.state, "middleware_chain", []) + ["rate_limit"]
+        request.state.middleware_chain = getattr(request.state, "middleware_chain", []) + ["RateLimit"]
         handle = self._timer.start()
         decision = "allow"
         if request.url.path in {"/healthz", "/readyz", "/metrics"} or request.url.path.startswith("/ui/"):
@@ -121,7 +121,7 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         chain = getattr(request.state, "middleware_chain", [])
-        request.state.middleware_chain = chain + ["idempotency"]
+        request.state.middleware_chain = chain + ["Idempotency"]
         handle = self._timer.start()
         method = request.method.upper()
         if method == "GET" or request.url.path in {"/healthz", "/readyz", "/metrics"} or request.url.path.startswith("/ui/"):
@@ -224,20 +224,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self._service_metrics = service_metrics
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        request.state.middleware_chain = getattr(request.state, "middleware_chain", []) + ["auth"]
+        request.state.middleware_chain = getattr(request.state, "middleware_chain", []) + ["Auth"]
         handle = self._timer.start()
         if request.url.path in {"/healthz", "/readyz", "/download"}:
             duration = handle.elapsed()
             self._metrics.observe_auth(duration)
             return await call_next(request)
 
-        header = normalize_token(request.headers.get("Authorization"))
-        ensure_no_control_chars([header or ""])
+        raw_auth = request.headers.get("Authorization")
+        header = normalize_token(raw_auth)
+        metrics_header = normalize_token(request.headers.get("X-Metrics-Token"))
+        ensure_no_control_chars([header or "", metrics_header or ""])
         token_value = ""
-        if header.startswith("Bearer "):
+        allow_metrics = request.url.path == "/metrics"
+        if allow_metrics and metrics_header:
+            token_value = metrics_header
+        elif header.startswith("Bearer "):
             token_value = header.split(" ", 1)[1].strip()
 
-        allow_metrics = request.url.path == "/metrics"
         try:
             actor = self._tokens.authenticate(token_value, allow_metrics=allow_metrics)
         except AuthorizationError as exc:

@@ -13,8 +13,6 @@ from auth.utils import exponential_backoff
 from config.env_schema import SSOConfig
 from src.fakeredis import FakeStrictRedis
 
-pytest_plugins = ["tests.fixtures.debug_context"]
-
 
 def test_kid_rotation_success_then_exhaustion_metrics(
     oidc_provider,

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from tests.ops.conftest import get_debug_context
 
-pytest_plugins = ("tests.ops.conftest",)
-
 
 def test_empty_and_error_states(build_ops_client, clean_state):
     client = build_ops_client(exports=[], uploads=[])

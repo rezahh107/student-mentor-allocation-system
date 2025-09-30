@@ -9,8 +9,6 @@ from auth.ldap_adapter import LdapGroupMapper, LdapSettings
 from auth.metrics import AuthMetrics
 from auth.utils import exponential_backoff
 
-pytest_plugins = ["tests.fixtures.debug_context"]
-
 
 def test_retry_then_success_and_exhaustion_metrics() -> None:
     async def _run() -> None:

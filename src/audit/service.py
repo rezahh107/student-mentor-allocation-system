@@ -17,7 +17,7 @@ from .repository import AuditEventCreate, AuditQuery, AuditRepository
 
 _LOGGER = logging.getLogger("audit.service")
 _REQUEST_ID_RE = re.compile(r"^(?:[0-9a-fA-F]{32,64}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$")
-_DEFAULT_TZ = ZoneInfo("Asia/Baku")
+_DEFAULT_TZ = ZoneInfo("Asia/Tehran")
 
 
 @dataclass(slots=True)
@@ -44,6 +44,12 @@ class AuditMetrics:
     events_total: Counter
     export_bytes_total: Counter
     review_runs_total: Counter
+    archive_runs_total: Counter
+    archive_bytes_total: Counter
+    archive_fail_total: Counter
+    retention_purges_total: Counter
+    retry_attempts_total: Counter
+    retry_exhausted_total: Counter
 
 
 def build_metrics(*, registry: CollectorRegistry | None = None) -> AuditMetrics:
@@ -66,11 +72,53 @@ def build_metrics(*, registry: CollectorRegistry | None = None) -> AuditMetrics:
         labelnames=("status",),
         registry=registry,
     )
+    archive_runs_total = Counter(
+        "audit_archive_runs_total",
+        "Total archiver executions grouped by status.",
+        labelnames=("status", "month"),
+        registry=registry,
+    )
+    archive_bytes_total = Counter(
+        "audit_archive_bytes_total",
+        "Bytes emitted by audit archiver per artifact type.",
+        labelnames=("type",),
+        registry=registry,
+    )
+    archive_fail_total = Counter(
+        "audit_archive_fail_total",
+        "Failures during audit archiver stages.",
+        labelnames=("stage",),
+        registry=registry,
+    )
+    retention_purges_total = Counter(
+        "audit_retention_purges_total",
+        "Count of partitions purged by retention enforcer.",
+        labelnames=("reason",),
+        registry=registry,
+    )
+    retry_attempts_total = Counter(
+        "audit_retry_attempts_total",
+        "Total retry attempts triggered by audit lifecycle operations.",
+        labelnames=("stage",),
+        registry=registry,
+    )
+    retry_exhausted_total = Counter(
+        "audit_retry_exhausted_total",
+        "Count of audit lifecycle operations exhausting all retry attempts.",
+        labelnames=("stage",),
+        registry=registry,
+    )
     return AuditMetrics(
         registry=registry,
         events_total=events_total,
         export_bytes_total=export_bytes_total,
         review_runs_total=review_runs_total,
+        archive_runs_total=archive_runs_total,
+        archive_bytes_total=archive_bytes_total,
+        archive_fail_total=archive_fail_total,
+        retention_purges_total=retention_purges_total,
+        retry_attempts_total=retry_attempts_total,
+        retry_exhausted_total=retry_exhausted_total,
     )
 
 

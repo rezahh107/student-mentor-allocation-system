@@ -8,6 +8,7 @@ from .exporter import AuditExporter
 from .hooks import audited_config_parse, record_config_rejected
 from .repository import AuditRepository, AuditQuery
 from .release_manifest import ReleaseManifest
+from .retention import AuditArchiveConfig, AuditArchiver, AuditRetentionEnforcer
 from .security import AuditSignedURLProvider
 
 __all__ = [
@@ -20,6 +21,9 @@ __all__ = [
     "AuditQuery",
     "AuditExporter",
     "ReleaseManifest",
+    "AuditArchiver",
+    "AuditRetentionEnforcer",
+    "AuditArchiveConfig",
     "create_audit_api",
     "AuditSignedURLProvider",
     "record_config_rejected",

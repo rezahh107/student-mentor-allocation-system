@@ -9,12 +9,11 @@ description = "Student Mentor Allocation System tooling and services."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{name = "Reza", email = "ops@example.invalid"}]
+authors = [{name = "Reza Hashemi Hosseini", email = "reza.hashemi.hosseini@gmail.com"}]
 keywords = ["education", "mentoring", "allocation"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = []

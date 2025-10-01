@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Mapping, Optional, Sequence, Tuple, cast
 
-from sqlalchemy import Select, select
+try:  # SQLAlchemy 1.4+/2.0
+    from sqlalchemy import Select, select  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - SQLAlchemy < 1.4
+    from sqlalchemy import select
+    try:
+        from sqlalchemy.sql.selectable import Select  # type: ignore[assignment]
+    except ImportError:  # pragma: no cover - extreme legacy
+        from typing import Any as Select  # type: ignore[assignment]
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.orm import Session, sessionmaker
 

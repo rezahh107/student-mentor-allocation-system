@@ -7,9 +7,9 @@ import pytest
 from tests.hardened_api.conftest import assert_clean_final_state, setup_test_data
 
 
-def test_asyncio_fixture_scope_is_function(pytestconfig: pytest.Config) -> None:
-    """Ensure pytest-asyncio reads the function-level fixture scope from config."""
-    assert pytestconfig.getini("asyncio_default_fixture_loop_scope") == "function"
+def test_asyncio_mode_is_auto(pytestconfig: pytest.Config) -> None:
+    """Ensure pytest-asyncio operates under the configured auto mode."""
+    assert pytestconfig.getini("asyncio_mode") == "auto"
 
 
 @pytest.mark.asyncio

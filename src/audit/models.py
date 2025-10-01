@@ -14,17 +14,33 @@ from sqlalchemy import (
     event,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
-from .enums import AuditAction, AuditActorRole, AuditOutcome
+from typing import Any
 
 
 def _metadata() -> MetaData:
     return MetaData(schema=None)
 
 
-class Base(DeclarativeBase):
-    metadata = _metadata()
+try:  # SQLAlchemy 2.x style declarative base
+    from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - fallback for SQLAlchemy < 2.0
+    from sqlalchemy import Column
+    from sqlalchemy.orm import declarative_base
+
+    mapped_column = Column  # type: ignore[assignment]
+
+    try:  # SQLAlchemy 1.4 exposes ``Mapped``
+        from sqlalchemy.orm import Mapped  # type: ignore[assignment]
+    except ImportError:  # pragma: no cover - SQLAlchemy <=1.3
+        from typing import Any as Mapped  # type: ignore[assignment]
+
+    Base = declarative_base(metadata=_metadata())
+else:
+
+    class Base(DeclarativeBase):
+        metadata = _metadata()
+
+from .enums import AuditAction, AuditActorRole, AuditOutcome
 
 
 class AuditEvent(Base):

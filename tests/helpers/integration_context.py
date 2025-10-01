@@ -271,16 +271,22 @@ class IntegrationContext:
         part_path = final_path.with_suffix(final_path.suffix + ".part")
         with pd.ExcelWriter(part_path, engine="openpyxl", mode="w") as writer:
             start_row = 0
+            header_written = False
             for start in range(0, len(df), chunk_size):
                 chunk = df.iloc[start : start + chunk_size]
                 chunk.to_excel(
                     writer,
                     sheet_name=sheet_name,
                     index=False,
-                    header=start == 0,
+                    header=not header_written,
                     startrow=start_row,
                 )
                 start_row += len(chunk)
+                if not header_written and len(chunk) > 0:
+                    # Account for the header occupying the first row so subsequent chunks
+                    # append after the previous data instead of overwriting the last row.
+                    start_row += 1
+                    header_written = True
         with open(part_path, "rb") as handle:
             handle.flush()
             os.fsync(handle.fileno())

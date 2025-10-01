@@ -1,36 +1,31 @@
 # Core application stack
-aiohttp>=3.8.0
-pydantic>=1.10.0
+pydantic>=2.6,<3
 python-dateutil>=2.8.0
-PyQt5>=5.15.0
-qasync>=0.23.0
+aiohttp>=3.8.0
 aiofiles>=0.8.0
+qasync>=0.23.0
 openpyxl>=3.1.0
 jdatetime>=4.1.0
-matplotlib>=3.7.0
-psutil>=5.9.0
-pyqtgraph>=0.13.0
-seaborn>=0.12.0
-reportlab>=4.0.0
 pandas>=2.0.0
+psutil>=5.9.0
 websockets>=10.0
 arabic-reshaper>=3.0.0
 python-bidi>=0.4.2
 
 # ImportToSabt service stack
-fastapi>=0.110,<0.112
+fastapi>=0.110,<0.111
 starlette>=0.36,<0.37
 pydantic-settings>=2.11
-redis>=5
-psycopg[binary]>=3.2
-httpx>=0.27
-uvicorn>=0.29
-orjson>=3.11
-prometheus_client>=0.23
+redis>=5,<6
+psycopg[binary]>=3.2,<3.3
+httpx>=0.27,<0.28
+uvicorn>=0.29,<0.30
+orjson>=3.11,<4
+prometheus_client>=0.16,<1.0
 freezegun>=1.2
-python-multipart>=0.0.6
-typer>=0.9
-SQLAlchemy>=1.4
+python-multipart>=0.0.6,<0.1
+typer>=0.9,<0.10
+SQLAlchemy>=1.4,<2.0   # ← اگر 2.x هستی، این را به sqlalchemy>=2.0,<2.1 تغییر بده و سطر بالا را حذف کن
 
 # Developer experience & tooling
 GitPython>=3.1.30
@@ -47,9 +42,6 @@ pytest-json-report>=1.5.0
 pytest-watch>=4.2.0
 pytest-xdist>=3.3.1
 
-# Dashboard & automation
-streamlit>=1.29.0
-sqlalchemy>=2.0.0
-alembic>=1.12.0
-prometheus_client>=0.16.0
-PyYAML>=6.0.0
+# Dashboard & automation (پیشنهادی: منتقل به extra)
+# streamlit>=1.29.0
+# PyYAML>=6.0.0

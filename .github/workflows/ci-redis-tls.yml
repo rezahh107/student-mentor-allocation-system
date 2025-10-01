@@ -60,7 +60,11 @@ jobs:
       - name: Install project (CI extras)
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[ci]
+          # تلاش برای نصب اکستراهای CI؛ اگر نبودند، نصب معمولی
+          pip install -e .[ci] || pip install -e .
+          # تضمین وابستگی‌های ضروری برای تست‌های CI
+          pip install "redis>=5,<6" "prometheus-client>=0.20,<0.21" "tenacity>=8,<9" "pyyaml>=6,<7" "jinja2>=3,<4"
+
 
       - name: Pre-test cleanup (flush Redis and Redis/TLS)
         run: |

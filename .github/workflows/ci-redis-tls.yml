@@ -1,10 +1,13 @@
 name: CI (Redis + RedisTLS for integration)
 
+
 on:
+  workflow_dispatch: {}   # اجرای دستی از تب Actions
   push:
     branches: [ "ci/redis-tls-services" ]
   pull_request:
     branches: [ "main" ]
+
 
 jobs:
   ci-redis-tls:

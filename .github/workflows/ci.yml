@@ -37,7 +37,8 @@ jobs:
       QT_QPA_PLATFORM: 'offscreen'
       PYTHONDONTWRITEBYTECODE: '1'
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/src
-      REDIS_URL: ${{ secrets.CI_REDIS_URL || 'redis://localhost:6379/0' }}
+      # ✅ GitHub Expressions: fallback درست
+      REDIS_URL: ${{ secrets.CI_REDIS_URL != '' && secrets.CI_REDIS_URL || 'redis://localhost:6379/0' }}
       CI_CORRELATION_ID: "be862f1780d7"
       METRICS_TOKEN: "test-token"
       APP_ENV: "test"
@@ -58,7 +59,7 @@ jobs:
         run: |
           python - <<'PY'
           import hashlib, os, subprocess, time
-          def jitter(i): 
+          def jitter(i):
               d = hashlib.blake2b(f"pip-up::{os.getenv('GITHUB_RUN_ID','local')}::{i}".encode(), digest_size=8).hexdigest()
               return (int(d,16)%400)/1000
           for i in range(1,6):
@@ -69,25 +70,31 @@ jobs:
                   time.sleep(0.8*(2**(i-1))+jitter(i))
           PY
 
-      - name: Install dependencies (retry; explicit tools)
+      - name: Install dependencies (wheels-only + constraints, retry)
         run: |
           python - <<'PY'
-          import hashlib, os, subprocess, time
-          pkgs = [
-            "-r","requirements.txt",
-            "-r","requirements-dev.txt",
-            "redis","prometheus_client","pytest-json-report"
-          ]
+          import hashlib, os, subprocess, time, sys
+          # wheels-only to avoid sdist reading deprecated setup.cfg keys
+          os.environ["PIP_ONLY_BINARY"] = ":all:"
+          args = ["-r","requirements.txt"]
+          if os.path.exists("requirements-dev.txt"): args += ["-r","requirements-dev.txt"]
+          if os.path.exists("constraints/ci.txt"):   args += ["-c","constraints/ci.txt"]
+          # explicit tools used later
+          args += ["redis","prometheus_client","pytest-json-report"]
+          cmd = ["python","-m","pip","install","--upgrade"] + args
+
           def jitter(i):
               d = hashlib.blake2b(f"pip-install::{os.getenv('GITHUB_RUN_ID','local')}::{i}".encode(), digest_size=8).hexdigest()
-              return (int(d,16)%400)/1000
-          cmd = ["python","-m","pip","install","--upgrade"] + pkgs
+              return (int(d,16)%400)/1000.0
+
           for i in range(1,6):
               try:
                   subprocess.run(cmd, check=True); break
-              except subprocess.CalledProcessError:
+              except subprocess.CalledProcessError as e:
                   if i==5: raise
-                  time.sleep(0.8*(2**(i-1))+jitter(i))
+                  delay = 0.8*(2**(i-1)) + jitter(i)
+                  print(f"Retrying dependency install in {delay:.2f}s ({i}/5)...", flush=True)
+                  time.sleep(delay)
           PY
 
       - name: Redis readiness (deterministic backoff)

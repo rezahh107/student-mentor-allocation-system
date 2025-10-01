@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-pytest_plugins = ("pytest_asyncio",)
+# pytest_plugins moved to tests/conftest.py
 
 
 def pytest_configure(config):  # type: ignore[no-untyped-def]

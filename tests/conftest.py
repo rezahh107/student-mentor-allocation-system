@@ -10,14 +10,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 
+import pytest
 from prometheus_client import CollectorRegistry
 
-import pytest
-
-
+# Ensure perf suite flag exists deterministically
 os.environ.setdefault("RUN_PERFORMANCE_SUITE", "1")
 
-
+# Central plugin registration (top-level only; per pytest deprecation)
 pytest_plugins = (
     "pytest_asyncio",
     "tests.audit_retention.conftest",
@@ -34,7 +33,13 @@ pytest_plugins = (
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addini("env", "Environment variables for deterministic testing.", type="linelist", default=[])
+    parser.addini(
+        "env",
+        "Environment variables for deterministic testing.",
+        type="linelist",
+        default=[],
+    )
+    # Keep idempotent even if plugin already registered
     try:
         parser.addini(
             "asyncio_default_fixture_loop_scope",
@@ -42,23 +47,20 @@ def pytest_addoption(parser: pytest.Parser) -> None:
             default="function",
         )
     except ValueError:
-        # Already registered by pytest-asyncio; ignore to keep determinism.
         pass
 
 
 def pytest_configure(config: pytest.Config) -> None:
     for item in config.getini("env"):
-        if "=" not in item:
-            continue
-        key, value = item.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
+        if "=" in item:
+            key, value = item.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip())
 
-
+# Enforce IANA TZ (Asia/Tehran); tzset only where available
 if os.environ.get("TZ") != "Asia/Tehran":
     os.environ["TZ"] = "Asia/Tehran"
     if hasattr(time, "tzset"):
         time.tzset()
-
 
 _TEHRAN_TZ = timezone(timedelta(hours=3, minutes=30))
 
@@ -66,7 +68,6 @@ _TEHRAN_TZ = timezone(timedelta(hours=3, minutes=30))
 @dataclass
 class DeterministicClock:
     """Deterministic clock aligned with AGENTS.md::Determinism."""
-
     _current: datetime
 
     def __call__(self) -> datetime:
@@ -113,27 +114,24 @@ def _purge_namespace(client: Any, namespace: str) -> None:
 def _build_redis_client(url: str | None) -> Any:
     if url:
         import redis
-
         return redis.Redis.from_url(url, decode_responses=True)
     from src.fakeredis import FakeStrictRedis
-
     return FakeStrictRedis()
 
 
 @pytest.fixture(scope="module", autouse=True)
 def metrics_registry_guard() -> Iterator[CollectorRegistry]:
     """Reset the Prometheus CollectorRegistry per-module (AGENTS.md §8)."""
-
     modules_to_patch = (
         "prometheus_client",
         "prometheus_client.registry",
         "prometheus_client.core",
     )
     modules = [importlib.import_module(name) for name in modules_to_patch]
-    originals: list[CollectorRegistry | None] = [getattr(module, "REGISTRY", None) for module in modules]
+    originals: list[CollectorRegistry | None] = [getattr(m, "REGISTRY", None) for m in modules]
     new_registry = CollectorRegistry()
-    for module in modules:
-        setattr(module, "REGISTRY", new_registry)
+    for m in modules:
+        setattr(m, "REGISTRY", new_registry)
 
     try:
         yield new_registry
@@ -142,41 +140,38 @@ def metrics_registry_guard() -> Iterator[CollectorRegistry]:
         for collector in list(collector_map.keys()):
             try:
                 new_registry.unregister(collector)
-            except KeyError:  # pragma: no cover - defensive cleanup
+            except KeyError:
                 continue
-        for module, original in zip(modules, originals):
+        for m, original in zip(modules, originals):
             if original is not None:
-                setattr(module, "REGISTRY", original)
+                setattr(m, "REGISTRY", original)
 
 
 @pytest.fixture()
 def redis_state_guard() -> Iterator[RedisStateContext]:
     """Provide isolated Redis namespaces with cleanup before/after (AGENTS.md §8)."""
-
     url = os.getenv("STRICT_CI_REDIS_URL")
     namespace = f"import-to-sabt::{uuid.uuid4().hex}"
     client = _build_redis_client(url)
     _purge_namespace(client, namespace)
-    context = RedisStateContext(client=client, namespace=namespace)
+    ctx = RedisStateContext(client=client, namespace=namespace)
     try:
-        yield context
+        yield ctx
     finally:
-        context.purge()
+        ctx.purge()
         close = getattr(client, "close", None)
-        if callable(close):  # pragma: no cover - redis-py only
+        if callable(close):
             close()
         pool = getattr(client, "connection_pool", None)
         disconnect = getattr(pool, "disconnect", None)
-        if callable(disconnect):  # pragma: no cover - redis-py only
+        if callable(disconnect):
             disconnect()
+
 
 @pytest.fixture()
 def clock() -> Iterator[DeterministicClock]:
     """Provide deterministic time control per AGENTS.md::Testing & CI Gates."""
-
-    timeline = DeterministicClock(
-        _current=datetime(2024, 1, 1, 0, 0, tzinfo=_TEHRAN_TZ)
-    )
+    timeline = DeterministicClock(_current=datetime(2024, 1, 1, 0, 0, tzinfo=_TEHRAN_TZ))
     try:
         yield timeline
     finally:

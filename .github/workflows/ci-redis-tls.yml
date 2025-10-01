@@ -31,7 +31,7 @@ jobs:
           --health-interval 5s --health-timeout 3s --health-retries 30
 
       redistls:
-        image: bitnami/redis:7.4
+        image: bitnami/redis:latest
         ports: [ "6380:6380" ]
         env:
           REDIS_TLS_ENABLED: "yes"

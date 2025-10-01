@@ -1,7 +1,7 @@
 name: CI (Redis + RedisTLS for integration)
 
 on:
-  workflow_dispatch: {}   # اجرای دستی از تب Actions
+  workflow_dispatch: {}
   push:
     branches: [ "ci/redis-tls-services" ]
   pull_request:
@@ -17,9 +17,7 @@ jobs:
       PYTHONWARNINGS: error
       REDIS_URL:  redis://127.0.0.1:6379/15
       REDISS_URL: rediss://127.0.0.1:6380/15
-      # برای سناریوی "requires_ca_success"
       REDIS_TLS_CA_FILE: ${{ github.workspace }}/ci/certs/server.crt
-      # برای سناریوی "allow_insecure"
       REDIS_TLS_ALLOW_INSECURE: "1"
 
     services:
@@ -30,34 +28,16 @@ jobs:
           --health-cmd "redis-cli ping || exit 1"
           --health-interval 5s --health-timeout 3s --health-retries 30
 
-      redistls:
-        image: bitnami/redis:latest
-        ports: [ "6380:6380" ]
-        env:
-          REDIS_TLS_ENABLED: "yes"
-          REDIS_TLS_PORT_NUMBER: "6380"
-          REDIS_TLS_AUTH_CLIENTS: "no"
-          REDIS_PASSWORD: ""
-          REDIS_TLS_CERT_FILE: /certs/server.crt
-          REDIS_TLS_KEY_FILE:  /certs/server.key
-          REDIS_TLS_CA_FILE:   /certs/server.crt
-        options: >-
-          --volume ${{ github.workspace }}/ci/certs:/certs:ro
-          --health-cmd "redis-cli -h 127.0.0.1 -p 6380 --tls --cacert /certs/server.crt ping || exit 1"
-          --health-interval 5s --health-timeout 3s --health-retries 30
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          # پایدارتر؛ بعداً می‌تونیم به 3.13 مهاجرت بدیم وقتی wheels کامل شد
           python-version: "3.11"
 
       - name: Install project (CI extras)
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # نصب از اکسترای ci که در pyproject.toml تعریف شد
           pip install -e .[ci]
 
       - name: Verify redis and CI deps are importable
@@ -65,6 +45,30 @@ jobs:
           python -c "import sys; print('Python', sys.version)"
           python -c "import redis; print('redis', redis.__version__)"
           python -c "import prometheus_client, tenacity, yaml, jinja2; print('deps ok')"
+
+      # ── RedisTLS via official image (redis:7) + TLS flags ─────────────────────
+      - name: Launch Redis TLS container (6380)
+        run: |
+          docker run -d --name redistls \
+            -p 6380:6380 \
+            -v "$GITHUB_WORKSPACE/ci/certs:/certs:ro" \
+            --health-cmd "redis-cli -p 6380 --tls --cacert /certs/server.crt ping || exit 1" \
+            --health-interval 5s --health-timeout 3s --health-retries 30 \
+            redis:7 \
+            redis-server --port 0 --tls-port 6380 \
+              --tls-cert-file /certs/server.crt \
+              --tls-key-file  /certs/server.key \
+              --tls-ca-cert-file /certs/server.crt
+
+      - name: Wait for Redis TLS health
+        run: |
+          for i in {1..60}; do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' redistls || echo "starting")
+            echo "redistls health: $STATUS"
+            if [ "$STATUS" = "healthy" ]; then exit 0; fi
+            sleep 1
+          done
+          echo "redistls not healthy in time"; docker logs redistls || true; exit 1
 
       - name: Pre-test cleanup (inline flush)
         run: |
@@ -132,3 +136,9 @@ jobs:
           flush(os.getenv("REDIS_URL"))
           flush(os.getenv("REDISS_URL"), os.getenv("REDIS_TLS_CA_FILE"))
           PY
+
+      - name: Teardown Redis TLS container (always)
+        if: always()
+        run: |
+          docker logs redistls || true
+          docker rm -f redistls || true

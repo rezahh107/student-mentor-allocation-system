@@ -31,7 +31,7 @@ jobs:
           --health-interval 5s --health-timeout 3s --health-retries 30
 
       redistls:
-        image: bitnami/redis:7.2
+        image: bitnami/redis:7.4
         ports: [ "6380:6380" ]
         env:
           REDIS_TLS_ENABLED: "yes"
@@ -45,7 +45,6 @@ jobs:
           --volume ${{ github.workspace }}/ci/certs:/certs:ro
           --health-cmd "redis-cli -h 127.0.0.1 -p 6380 --tls --cacert /certs/server.crt ping || exit 1"
           --health-interval 5s --health-timeout 3s --health-retries 30
-
 
     steps:
       - uses: actions/checkout@v4
@@ -73,7 +72,7 @@ jobs:
           import os, ssl, sys
           import redis
           def flush(url, ca=None, allow_insecure=False):
-              if not url: 
+              if not url:
                   return
               kw = {}
               if url.startswith("rediss://"):
@@ -103,7 +102,6 @@ jobs:
           )
           PY
 
-
       - name: Run CI tests (no skips/xfails)
         run: |
           pytest -q -p pytest_asyncio -W error tests/ci
@@ -113,9 +111,13 @@ jobs:
         run: |
           python - <<'PY'
           import os, ssl
-          import redis
+          try:
+              import redis
+          except Exception as e:
+              print(f"[warn] redis not importable in post-cleanup: {e}")
+              raise SystemExit(0)
           def flush(url, ca=None):
-              if not url: 
+              if not url:
                   return
               kw = {}
               if url.startswith("rediss://"):

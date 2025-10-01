@@ -3,9 +3,9 @@ name: CI (Redis + RedisTLS for integration)
 on:
   workflow_dispatch: {}
   push:
-    branches: [ "ci/redis-tls-services" ]
+    branches: ["ci/redis-tls-services"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   ci-redis-tls:
@@ -17,16 +17,9 @@ jobs:
       PYTHONWARNINGS: error
       REDIS_URL:  redis://127.0.0.1:6379/15
       REDISS_URL: rediss://127.0.0.1:6380/15
-      REDIS_TLS_CA_FILE: ${{ github.workspace }}/ci/certs/server.crt
+      REDIS_TLS_CA_FILE: /tmp/certs/server.crt
+      # برای سناریوی منفی allow_insecure در تست‌ها:
       REDIS_TLS_ALLOW_INSECURE: "1"
-
-    services:
-      redis:
-        image: redis:7
-        ports: [ "6379:6379" ]
-        options: >-
-          --health-cmd "redis-cli ping || exit 1"
-          --health-interval 5s --health-timeout 3s --health-retries 30
 
     steps:
       - uses: actions/checkout@v4
@@ -35,42 +28,70 @@ jobs:
         with:
           python-version: "3.11"
 
+      # --- Generate deterministic-enough TLS materials (no repo secrets) ---
+      - name: Generate TLS certificates
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/certs
+          # Self-signed CA/server (CN=localhost). تاریخ مهم تست‌ها نیست.
+          openssl req -x509 -nodes -newkey rsa:2048 \
+            -keyout /tmp/certs/server.key \
+            -out    /tmp/certs/server.crt \
+            -subj "/C=US/ST=State/L=City/O=Org/CN=localhost" \
+            -days 2
+          # برای سادگی، همان server.crt نقش CA را هم ایفا می‌کند (self-signed)
+
       - name: Install project (CI extras)
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip setuptools wheel
           pip install -e .[ci]
 
-      - name: Verify redis and CI deps are importable
+      - name: Verify CI deps import
         run: |
           python -c "import sys; print('Python', sys.version)"
           python -c "import redis; print('redis', redis.__version__)"
           python -c "import prometheus_client, tenacity, yaml, jinja2; print('deps ok')"
 
-      # ── RedisTLS via official image (redis:7) + TLS flags ─────────────────────
-      - name: Launch Redis TLS container (6380)
+      # --- Start Redis (plain, 6379) ---
+      - name: Start Redis (plain)
         run: |
+          set -euo pipefail
+          docker run -d --name redis \
+            -p 6379:6379 \
+            redis:7 \
+            redis-server --save "" --appendonly no
+          # Wait until ready
+          for i in {1..30}; do
+            if docker exec redis redis-cli ping >/dev/null 2>&1; then
+              echo "redis (6379) ready"; break
+            fi
+            sleep 1
+          done
+
+      # --- Start Redis (TLS, 6380) using official image + TLS flags ---
+      - name: Start Redis (TLS)
+        run: |
+          set -euo pipefail
           docker run -d --name redistls \
             -p 6380:6380 \
-            -v "$GITHUB_WORKSPACE/ci/certs:/certs:ro" \
-            --health-cmd "redis-cli -p 6380 --tls --cacert /certs/server.crt ping || exit 1" \
-            --health-interval 5s --health-timeout 3s --health-retries 30 \
+            -v /tmp/certs:/certs:ro \
             redis:7 \
             redis-server --port 0 --tls-port 6380 \
               --tls-cert-file /certs/server.crt \
               --tls-key-file  /certs/server.key \
-              --tls-ca-cert-file /certs/server.crt
-
-      - name: Wait for Redis TLS health
-        run: |
-          for i in {1..60}; do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' redistls || echo "starting")
-            echo "redistls health: $STATUS"
-            if [ "$STATUS" = "healthy" ]; then exit 0; fi
+              --tls-ca-cert-file /certs/server.crt \
+              --save "" --appendonly no
+          # Health check with CA (not insecure), preserves CA validation
+          for i in {1..45}; do
+            if docker exec redistls redis-cli --tls --cacert /certs/server.crt -p 6380 ping >/dev/null 2>&1; then
+              echo "redistls (6380 TLS) ready"; break
+            fi
             sleep 1
           done
-          echo "redistls not healthy in time"; docker logs redistls || true; exit 1
 
-      - name: Pre-test cleanup (inline flush)
+      # --- Pre-test cleanup (state hygiene) ---
+      - name: Pre-test cleanup (flush both)
         run: |
           python - <<'PY'
           import os, ssl, sys
@@ -106,11 +127,13 @@ jobs:
           )
           PY
 
+      # --- Run tests (no warnings, no skips/xfails) ---
       - name: Run CI tests (no skips/xfails)
         run: |
           pytest -q -p pytest_asyncio -W error tests/ci
 
-      - name: Post-test cleanup (inline flush)
+      # --- Post-test cleanup and teardown ---
+      - name: Post-test cleanup (flush)
         if: always()
         run: |
           python - <<'PY'
@@ -137,8 +160,9 @@ jobs:
           flush(os.getenv("REDISS_URL"), os.getenv("REDIS_TLS_CA_FILE"))
           PY
 
-      - name: Teardown Redis TLS container (always)
+      - name: Teardown containers (always)
         if: always()
         run: |
+          docker logs redis || true
           docker logs redistls || true
-          docker rm -f redistls || true
+          docker rm -f redis redistls || true

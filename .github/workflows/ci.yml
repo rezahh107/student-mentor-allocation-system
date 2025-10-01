@@ -31,11 +31,11 @@ jobs:
 
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTHONWARNINGS: error
       PYTHONUTF8: '1'
       MPLBACKEND: 'Agg'
       QT_QPA_PLATFORM: 'offscreen'
       PYTHONDONTWRITEBYTECODE: '1'
-      # 👇 این خط کلیدیه
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/src
       REDIS_URL: ${{ secrets.CI_REDIS_URL || 'redis://localhost:6379/0' }}
       CI_CORRELATION_ID: "be862f1780d7"
@@ -45,6 +45,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -52,27 +54,100 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Upgrade pip (retry)
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r requirements-dev.txt || true
-          python -m pip install .[test]
+          python - <<'PY'
+          import hashlib, os, subprocess, time
+          def jitter(i): 
+              d = hashlib.blake2b(f"pip-up::{os.getenv('GITHUB_RUN_ID','local')}::{i}".encode(), digest_size=8).hexdigest()
+              return (int(d,16)%400)/1000
+          for i in range(1,6):
+              try:
+                  subprocess.run(["python","-m","pip","install","--upgrade","pip"], check=True); break
+              except subprocess.CalledProcessError:
+                  if i==5: raise
+                  time.sleep(0.8*(2**(i-1))+jitter(i))
+          PY
+
+      - name: Install dependencies (retry; explicit tools)
+        run: |
+          python - <<'PY'
+          import hashlib, os, subprocess, time
+          pkgs = [
+            "-r","requirements.txt",
+            "-r","requirements-dev.txt",
+            "redis","prometheus_client","pytest-json-report"
+          ]
+          def jitter(i):
+              d = hashlib.blake2b(f"pip-install::{os.getenv('GITHUB_RUN_ID','local')}::{i}".encode(), digest_size=8).hexdigest()
+              return (int(d,16)%400)/1000
+          cmd = ["python","-m","pip","install","--upgrade"] + pkgs
+          for i in range(1,6):
+              try:
+                  subprocess.run(cmd, check=True); break
+              except subprocess.CalledProcessError:
+                  if i==5: raise
+                  time.sleep(0.8*(2**(i-1))+jitter(i))
+          PY
+
+      - name: Redis readiness (deterministic backoff)
+        run: |
+          python - <<'PY'
+          import hashlib, os, time, sys
+          import redis
+          url = os.environ.get("REDIS_URL","redis://localhost:6379/0")
+          base, attempts = 0.4, 6
+          for i in range(1, attempts+1):
+              try:
+                  c = redis.Redis.from_url(url, socket_timeout=1.5)
+                  c.ping(); c.close(); break
+              except Exception as e:
+                  if i==attempts: print(f"Redis not ready: {e}", file=sys.stderr); raise
+                  j = int(hashlib.blake2b(f"cm-ready::{i}".encode(), digest_size=6).hexdigest(),16)%400/1000
+                  time.sleep(base*(2**(i-1))+j)
+          PY
+
+      - name: Pre-test Redis flush (Python; no redis-cli)
+        run: |
+          python - <<'PY'
+          import os, sys, time, hashlib, redis
+          url = os.environ.get("REDIS_URL","redis://localhost:6379/0")
+          r = redis.from_url(url, socket_connect_timeout=2, socket_timeout=3)
+          base=0.2; jitter=(hashlib.blake2s(url.encode(), digest_size=2).digest()[0]/255.0)*0.05
+          for i in range(1,6):
+              try:
+                  r.ping(); r.flushall()
+                  if r.dbsize()==0: print("FLUSHALL_OK"); break
+                  raise RuntimeError("dbsize>0 after flush")
+              except Exception as e:
+                  if i==5: print(f"Flush failed: {e}", file=sys.stderr); sys.exit(1)
+                  time.sleep(base*(2**(i-1))+jitter)
+          PY
 
       - name: Sanity check import
-        run: |
-          python -c "import phase6_import_to_sabt; print('Import OK')"
+        run: python -c "import phase6_import_to_sabt; print('Import OK')"
 
       - name: Run static checks (with safe guards)
         run: |
           (make -n static-checks >/dev/null 2>&1 && make static-checks) || echo "skip: static-checks"
           (make -n ci-checks >/dev/null 2>&1 && make ci-checks) || echo "skip: ci-checks"
 
-      - name: Run tests
-        env:
-          PYTHONWARNINGS: 'default'  # فقط در این گام اگر خواستی 'error' بذار
+      - name: Run tests (JSON report)
         run: |
           mkdir -p reports
           python -m pytest --json-report --json-report-file=reports/strict_score.json
+
+      - name: Post-test Redis flush
+        if: always()
+        run: |
+          python - <<'PY'
+          import os, redis
+          url = os.environ.get("REDIS_URL","redis://localhost:6379/0")
+          try:
+              redis.from_url(url, socket_connect_timeout=2, socket_timeout=3).flushall()
+          except Exception:
+              pass
+          PY
 
       - name: Upload reports
         if: always()
@@ -80,3 +155,4 @@ jobs:
         with:
           name: strict-score
           path: reports/strict_score.json
+          if-no-files-found: warn

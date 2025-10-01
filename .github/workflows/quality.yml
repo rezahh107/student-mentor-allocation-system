@@ -11,74 +11,100 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    
     env:
       TZ: Asia/Tehran
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
       PYTHONWARNINGS: error
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Cache Ruff
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ruff
+          key: ruff-${{ hashFiles('**/pyproject.toml') }}-${{ matrix.python-version }}
+
+      - name: Cache Mypy
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mypy
+          key: mypy-${{ hashFiles('**/pyproject.toml') }}-${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev,ci]
+
+      - name: Ruff lint
+        run: |
+          # استفاده از پیکربندی پروژه
+          python -m ruff check .
+
+      - name: Mypy strict
+        run: |
+          python -m mypy --config-file pyproject.toml .
+
+      - name: Pydocstyle
+        run: |
+          # استفاده از پیکربندی پروژه
+          python -m pydocstyle .
+
+      - name: UTF-8 BOM guard
+        run: |
+          python tools/bom_guard.py --json
+
+      - name: Run quality tests
+        run: |
+          pytest -q -W error tests/ci -k "quality"
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-      - name: Install dependencies (wheels-only + optional constraints)
-        shell: bash
+      - name: Install dependencies
         run: |
-          set -euo pipefail
-          export PIP_ONLY_BINARY=:all:
-          EXTRA_ARGS=()
-          if [ -f constraints/ci.txt ]; then EXTRA_ARGS+=("-c" "constraints/ci.txt"); fi
-          python -m pip install -r requirements.txt "${EXTRA_ARGS[@]}"
-          if [ -f requirements-dev.txt ]; then python -m pip install -r requirements-dev.txt "${EXTRA_ARGS[@]}"; fi
-          # ابزارهای کیفی در صورت نبود در extras
-          python -m pip install ruff mypy pydocstyle
+          pip install -e .[security]
 
-      - name: Ruff lint
-        run: >-
-          python -m ruff check
-          tools/bom_guard.py
-          tools/strip_bom.py
-          tests/ci/conftest.py
-          tests/ci/test_bom_guard.py
-          tests/ci/test_ruff_gate.py
-          tests/ci/test_mypy_strict.py
-          tests/ci/test_pydocstyle_gate.py
-          tests/export/test_xlsx_excel_safety.py
-          tests/export/test_atomic_finalize.py
-          tests/security/test_metrics_protection_all_apps.py
-          tests/mw/test_middleware_order_all_apps.py
-          tests/perf/test_perf_gates.py
+      - name: Run security tests
+        run: |
+          pytest -q -W error tests/security tests/export/test_xlsx_excel_safety.py
 
-      - name: Mypy strict
-        run: python -m mypy --config-file pyproject.toml
+  performance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Pydocstyle
-        run: >-
-          python -m pydocstyle
-          tools/bom_guard.py
-          tools/strip_bom.py
-          tests/ci/conftest.py
-          tests/ci/test_bom_guard.py
-          tests/ci/test_ruff_gate.py
-          tests/ci/test_mypy_strict.py
-          tests/ci/test_pydocstyle_gate.py
-          tests/export/test_xlsx_excel_safety.py
-          tests/export/test_atomic_finalize.py
-          tests/security/test_metrics_protection_all_apps.py
-          tests/mw/test_middleware_order_all_apps.py
-          tests/perf/test_perf_gates.py
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: UTF-8 BOM guard
-        run: python tools/bom_guard.py --json
+      - name: Install dependencies
+        run: |
+          pip install -e .[perf]
 
-      - name: CI tests (quality subset)
-        run: pytest -q -W error tests/ci
+      - name: Run performance tests
+        run: |
+          pytest -q -W error tests/perf

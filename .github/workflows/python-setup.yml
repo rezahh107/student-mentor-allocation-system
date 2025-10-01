@@ -12,8 +12,6 @@ on:
 env:
   # 🔧 تنظیمات سراسری Enterprise
   PYTHON_VERSION: '3.11'
-  PIP_CACHE_DIR: ${{ github.workspace }}/.enterprise-cache/pip
-  PIP_NO_CACHE_DIR: false
   PYTHONUNBUFFERED: 1
   PYTHONDONTWRITEBYTECODE: 1
 

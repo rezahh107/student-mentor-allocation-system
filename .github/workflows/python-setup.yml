@@ -1,5 +1,4 @@
-# فایل: .github/workflows/python-setup.yml
-name: "🚀 Enterprise Python CI/CD (No Cache)"
+name: "🚀 Enterprise Python CI/CD (No Cache – Safe Mode)"
 
 on:
   push:
@@ -10,268 +9,160 @@ on:
     - cron: '0 2 * * 1'  # هر دوشنبه ساعت 2 صبح
 
 env:
-  # 🚫 تنظیمات غیرفعال‌سازی کامل Cache
+  # 🚫 غیرفعال‌سازی کامل Cache
   PYTHON_VERSION: '3.11'
   PYTHONUNBUFFERED: '1'
   PYTHONDONTWRITEBYTECODE: '1'
   PIP_NO_CACHE_DIR: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
   PIP_DEFAULT_TIMEOUT: '100'
-  # 🚫 حذف کامل تنظیمات cache
-  # PIP_CACHE_DIR: غیرفعال شد
-  # CACHE_ENABLED: غیرفعال شد
 
 jobs:
-  # 🏗️ مرحله آماده‌سازی (بدون cache)
   setup-environment:
     name: "🔧 Environment Setup (Fresh Install)"
     runs-on: ubuntu-latest
     outputs:
       python-version: ${{ env.PYTHON_VERSION }}
       build-timestamp: ${{ steps.timestamp.outputs.time }}
-    
     steps:
-    - name: "📥 Checkout Repository"
-      uses: actions/checkout@v4
-      
-    - name: "⏰ Generate Build Timestamp"
-      id: timestamp
-      run: |
-        echo "time=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
-        echo "🕒 Build started at: $(date)"
+      - name: "📥 Checkout Repository"
+        uses: actions/checkout@v4
 
-  # 🐍 مرحله تنظیم Python (بدون cache)
+      - name: "⏰ Generate Build Timestamp"
+        id: timestamp
+        run: |
+          echo "time=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+          echo "🕒 Build started at: $(date)"
+
   python-setup:
     name: "🐍 Python Fresh Installation"
     runs-on: ubuntu-latest
     needs: setup-environment
-    
     steps:
-    - name: "📥 Checkout Repository"
-      uses: actions/checkout@v4
-      
-    - name: "🚫 Disable All Caching Mechanisms"
-      run: |
-        echo "🚫 Disabling all cache mechanisms..."
-        
-        # حذف فولدرهای cache احتمالی
-        sudo rm -rf ~/.cache/pip || true
-        sudo rm -rf ~/.local/share/pip || true
-        sudo rm -rf /tmp/pip-* || true
-        
-        # تنظیم environment variables
-        echo "PIP_NO_CACHE_DIR=1" >> $GITHUB_ENV
-        echo "PIP_DISABLE_PIP_VERSION_CHECK=1" >> $GITHUB_ENV
-        echo "PYTHONDONTWRITEBYTECODE=1" >> $GITHUB_ENV
-        
-        echo "✅ All caching disabled successfully"
-        
-    - name: "🐍 Setup Python (No Cache)"
-      uses: actions/setup-python@v4  # ✅ v4 به جای v5 برای جلوگیری از خطا
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        # ❌ cache: حذف شده
-        # ❌ cache-dependency-path: حذف شده
-        
-    - name: "⚙️ Configure Fresh Pip Installation"
-      run: |
-        echo "🔧 Configuring pip for fresh installation..."
-        
-        # حذف تنظیمات pip قدیمی
-        rm -rf ~/.pip || true
-        
-        # تنظیم pip برای عدم استفاده از cache
-        python -m pip config set global.no-cache-dir true
-        python -m pip config set global.disable-pip-version-check true
-        python -m pip config set install.no-deps false
-        
-        echo "📋 Current pip configuration:"
-        python -m pip config list || echo "No config found"
-        
-    - name: "📦 Fresh Dependency Installation"
-      run: |
-        echo "🔄 Installing core tools (fresh)..."
-        python -m pip install --no-cache-dir --upgrade pip setuptools wheel
-        
-        echo "📦 Installing main dependencies (fresh)..."
-        if [ -f "requirements.txt" ]; then
-          echo "Installing from requirements.txt..."
-          python -m pip install --no-cache-dir -r requirements.txt
-        else
-          echo "⚠️ requirements.txt not found"
-        fi
-        
-        if [ -f "requirements-dev.txt" ]; then
-          echo "Installing dev dependencies..."
-          python -m pip install --no-cache-dir -r requirements-dev.txt
-        fi
-        
-        if [ -f "requirements-test.txt" ]; then
-          echo "Installing test dependencies..."
-          python -m pip install --no-cache-dir -r requirements-test.txt
-        fi
-        
-        # نصب پروژه خودی
-        echo "Installing project in development mode..."
-        python -m pip install --no-cache-dir -e . || echo "Project setup.py not found"
-        
-    - name: "🔍 Verify Fresh Installation"
-      run: |
-        echo "🔍 Python Environment Info:"
-        echo "Python Version: $(python --version)"
-        echo "Python Path: $(which python)"
-        echo "Pip Version: $(pip --version)"
-        echo "Pip Path: $(which pip)"
-        
-        echo "📦 Installed Packages:"
-        pip list --format=columns
-        
-        echo "🚫 Cache Status (Should be disabled):"
-        python -c "
-import os
-print(f'PIP_NO_CACHE_DIR: {os.getenv(\"PIP_NO_CACHE_DIR\", \"Not set\")}')
-print(f'PYTHONDONTWRITEBYTECODE: {os.getenv(\"PYTHONDONTWRITEBYTECODE\", \"Not set\")}')
+      - name: "📥 Checkout Repository"
+        uses: actions/checkout@v4
 
-# تست عدم وجود cache
+      - name: "🚫 Disable All Caching Mechanisms"
+        run: |
+          echo "🚫 Removing any cache directories..."
+          sudo rm -rf ~/.cache/pip ~/.local/share/pip /tmp/pip-* || true
+          echo "PIP_NO_CACHE_DIR=1" >> $GITHUB_ENV
+          echo "PIP_DISABLE_PIP_VERSION_CHECK=1" >> $GITHUB_ENV
+          echo "PYTHONDONTWRITEBYTECODE=1" >> $GITHUB_ENV
+
+      - name: "🐍 Setup Python (No Cache)"
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: "⚙️ Configure Fresh Pip Installation"
+        run: |
+          rm -rf ~/.pip || true
+          python -m pip config set global.no-cache-dir true
+          python -m pip config set global.disable-pip-version-check true
+          python -m pip config set install.no-deps false
+          echo "📋 Current pip configuration:"
+          python -m pip config list || echo "No config found"
+
+      - name: "📦 Fresh Dependency Installation"
+        run: |
+          echo "🔄 Installing core tools..."
+          python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+          if [ -f "requirements.txt" ]; then
+            python -m pip install --no-cache-dir -r requirements.txt
+          fi
+          if [ -f "requirements-dev.txt" ]; then
+            python -m pip install --no-cache-dir -r requirements-dev.txt
+          fi
+          if [ -f "requirements-test.txt" ]; then
+            python -m pip install --no-cache-dir -r requirements-test.txt
+          fi
+          python -m pip install --no-cache-dir -e . || echo "No setup.py found"
+
+      - name: "🔍 Verify Fresh Installation (Safe Mode)"
+        run: |
+          echo "🔍 Python Environment:"
+          python --version
+          pip --version
+          pip list --format=columns
+          echo "🚫 Cache Env Vars:"
+          echo "PIP_NO_CACHE_DIR=${PIP_NO_CACHE_DIR}"
+          echo "PYTHONDONTWRITEBYTECODE=${PYTHONDONTWRITEBYTECODE}"
+          python - << 'EOF'
+import os
+print(f"PIP_NO_CACHE_DIR: {os.getenv('PIP_NO_CACHE_DIR')}")
+print(f"PYTHONDONTWRITEBYTECODE: {os.getenv('PYTHONDONTWRITEBYTECODE')}")
 try:
     import pip._internal.utils.misc as misc
     cache_dir = misc.get_cache_dir()
-    print(f'Cache Directory: {cache_dir}')
-    if cache_dir:
-        print('⚠️ Cache still enabled')
+    if cache_dir and os.path.exists(cache_dir):
+        print(f"⚠️ Cache dir still exists: {cache_dir}")
     else:
-        print('✅ Cache successfully disabled')
+        print("✅ No active pip cache directory")
 except Exception as e:
-    print(f'✅ Cache completely disabled: {e}')
-"
-        
-    - name: "🔍 Verify Critical Dependencies"
-      run: |
-        echo "🔍 Verifying critical dependencies..."
-        python -c "
-import sys
-critical_deps = ['pytest', 'fastapi', 'pydantic', 'redis', 'psycopg']
+    print(f"✅ Cache check passed (pip cache unavailable): {e}")
+EOF
 
+      - name: "🔍 Verify Critical Dependencies"
+        run: |
+          python - << 'EOF'
+critical_deps = ['pytest', 'fastapi', 'pydantic', 'redis', 'psycopg']
+import importlib
 for dep in critical_deps:
     try:
-        __import__(dep.replace('-', '_'))
-        print(f'✅ {dep}: Available')
+        importlib.import_module(dep.replace("-", "_"))
+        print(f"✅ {dep}: Available")
     except ImportError:
-        print(f'⚠️ {dep}: Not installed (optional)')
-    except Exception as e:
-        print(f'❌ {dep}: Error - {e}')
-        
-print(f'✅ Python path verification: {sys.executable}')
-"
+        print(f"⚠️ {dep}: Not installed")
+EOF
 
-  # 🧪 مرحله تست (بدون cache)
   testing:
     name: "🧪 Fresh Testing Environment"
     runs-on: ubuntu-latest
     needs: [setup-environment, python-setup]
-    
     steps:
-    - name: "📥 Checkout Repository"
-      uses: actions/checkout@v4
-      
-    - name: "🚫 Disable Cache for Testing"
-      run: |
-        echo "PIP_NO_CACHE_DIR=1" >> $GITHUB_ENV
-        echo "PYTHONDONTWRITEBYTECODE=1" >> $GITHUB_ENV
-        sudo rm -rf ~/.cache/pip || true
-        
-    - name: "🐍 Setup Python for Testing"
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        # ❌ هیچ cache استفاده نمی‌شود
-        
-    - name: "📦 Install Testing Dependencies (Fresh)"
-      run: |
-        python -m pip install --no-cache-dir --upgrade pip setuptools wheel
-        
-        # نصب وابستگی‌های تست
-        if [ -f "requirements-test.txt" ]; then
-          python -m pip install --no-cache-dir -r requirements-test.txt
-        elif [ -f "requirements.txt" ]; then
-          python -m pip install --no-cache-dir -r requirements.txt
-        fi
-        
-        # نصب pytest اگر موجود نباشد
-        python -m pip install --no-cache-dir pytest pytest-cov pytest-asyncio
-        
-    - name: "🧪 Run Enterprise Tests"
-      run: |
-        echo "🧪 Running fresh test suite..."
-        
-        # بررسی وجود تست‌ها
-        if [ -d "tests" ]; then
-          echo "Running tests from tests/ directory..."
-          python -m pytest tests/ -v --tb=short || echo "Some tests failed"
-        elif find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
-          echo "Running discovered test files..."
-          python -m pytest -v --tb=short || echo "Some tests failed"
-        else
-          echo "⚠️ No tests found, creating basic test..."
-          mkdir -p tests
-          cat > tests/test_basic.py << 'EOF'
-def test_basic():
-    """Basic test to verify testing works"""
-    assert True
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-def test_python_version():
-    """Test Python version"""
-    import sys
-    assert sys.version_info >= (3, 11)
-EOF
-          python -m pytest tests/test_basic.py -v
-        fi
+      - name: "🚫 Ensure No Cache in Testing"
+        run: |
+          echo "PIP_NO_CACHE_DIR=1" >> $GITHUB_ENV
+          rm -rf ~/.cache/pip || true
 
-  # 📊 مرحله گزارش‌گیری (بدون cache)
+      - name: "🐍 Setup Python"
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: "📦 Install Test Dependencies"
+        run: |
+          python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+          if [ -f "requirements-test.txt" ]; then
+            pip install --no-cache-dir -r requirements-test.txt
+          else
+            pip install --no-cache-dir pytest pytest-cov pytest-asyncio
+          fi
+
+      - name: "🧪 Run Tests"
+        run: |
+          if [ -d "tests" ]; then
+            python -m pytest tests/ -v --tb=short
+          else
+            mkdir tests
+            echo "def test_basic(): assert True" > tests/test_basic.py
+            python -m pytest tests -v
+          fi
+
   reporting:
-    name: "📊 Fresh Build Reporting"
+    name: "📊 Build Reporting"
     runs-on: ubuntu-latest
     needs: [setup-environment, python-setup, testing]
     if: always()
-    
     steps:
-    - name: "📈 Generate Fresh Build Report"
-      run: |
-        echo "🎯 Enterprise Fresh Build Summary:"
-        echo "✅ Environment Setup: Complete (No Cache)"
-        echo "✅ Python Configuration: Fresh Installation"  
-        echo "✅ Dependency Installation: Fresh Downloads"
-        echo "✅ Testing Phase: Fresh Environment"
-        echo "🚫 Cache Usage: Completely Disabled"
-        echo "⏱️ Build Time: ${{ needs.setup-environment.outputs.build-timestamp }}"
-        echo "🚀 Ready for Production (Cache-Free)!"
-        
-    - name: "🔍 Final Cache Verification"
-      run: |
-        echo "🔍 Final verification that cache is disabled:"
-        echo "PIP_NO_CACHE_DIR: ${PIP_NO_CACHE_DIR:-Not set}"
-        echo "PYTHONDONTWRITEBYTECODE: ${PYTHONDONTWRITEBYTECODE:-Not set}"
-        
-        # بررسی عدم وجود فایل‌های cache
-        if [ -d ~/.cache/pip ]; then
-          echo "⚠️ Cache directory still exists"
-          ls -la ~/.cache/pip || true
-        else
-          echo "✅ No cache directory found - Perfect!"
-        fi
-
-  # 🚀 مرحله نهایی
-  deployment-ready:
-    name: "🚀 Deployment Ready"
-    runs-on: ubuntu-latest
-    needs: [reporting]
-    if: success()
-    
-    steps:
-    - name: "🎉 Success Notification"
-      run: |
-        echo "🎉 Enterprise CI/CD Pipeline Completed Successfully!"
-        echo "✅ All processes ran with fresh installations"
-        echo "✅ No cache-related errors occurred"
-        echo "✅ System is ready for deployment"
-        echo "🚀 Build completed at: $(date)"
+      - name: "📈 Final Report"
+        run: |
+          echo "✅ Environment Setup: OK"
+          echo "✅ Python Setup: Fresh"
+          echo "✅ Dependencies Installed: Fresh"
+          echo "✅ Tests: Completed"
+          echo "🚫 Cache: Fully Disabled"

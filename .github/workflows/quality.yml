@@ -27,14 +27,19 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Upgrade pip (quick)
+      - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      - name: Install dependencies
+      - name: Install dependencies (wheels-only + optional constraints)
+        shell: bash
         run: |
-          python -m pip install -r requirements.txt
-          if [ -f requirements-dev.txt ]; then python -m pip install -r requirements-dev.txt; fi
-          # تضمین نصب ابزارهای کیفی حتی اگر در extras نباشند
+          set -euo pipefail
+          export PIP_ONLY_BINARY=:all:
+          EXTRA_ARGS=()
+          if [ -f constraints/ci.txt ]; then EXTRA_ARGS+=("-c" "constraints/ci.txt"); fi
+          python -m pip install -r requirements.txt "${EXTRA_ARGS[@]}"
+          if [ -f requirements-dev.txt ]; then python -m pip install -r requirements-dev.txt "${EXTRA_ARGS[@]}"; fi
+          # ابزارهای کیفی در صورت نبود در extras
           python -m pip install ruff mypy pydocstyle
 
       - name: Ruff lint

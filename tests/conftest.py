@@ -9,7 +9,7 @@ from collections.abc import Iterator
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+import sqlalchemy.orm as sa_orm
 from sqlalchemy.pool import StaticPool
 
 pytest_plugins = (
@@ -19,8 +19,18 @@ pytest_plugins = (
 )
 
 
-class TestDeclarativeBase(DeclarativeBase):
-    """Minimal SQLAlchemy declarative base for in-memory integration tests."""
+Session = sa_orm.Session
+sessionmaker = sa_orm.sessionmaker
+
+
+if hasattr(sa_orm, "DeclarativeBase"):
+
+    class TestDeclarativeBase(sa_orm.DeclarativeBase):
+        """Minimal SQLAlchemy declarative base for in-memory integration tests."""
+
+
+else:
+    TestDeclarativeBase = sa_orm.declarative_base()  # type: ignore[misc]
 
 
 @pytest.fixture(scope="session")

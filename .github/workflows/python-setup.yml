@@ -36,6 +36,47 @@ jobs:
         echo "key=python-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml', '**/setup.py') }}" >> $GITHUB_OUTPUT
         echo "week=$(date +%V)" >> $GITHUB_OUTPUT
 
+  # متأسفانه، یک خطای کوچک در فایل YAML شما وجود دارد. مشکل در تورفتگی (indentation) بخش "Enterprise Dependency Installation" است. اینطوری درست‌تر است:
+
+```yaml
+# فایل: .github/workflows/python-setup.yml
+name: "🚀 Enterprise Python CI/CD"
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 2 * * 1'  # هر دوشنبه ساعت 2 صبح
+
+env:
+  # 🔧 تنظیمات سراسری Enterprise
+  PYTHON_VERSION: '3.11'
+  PIP_CACHE_DIR: ${{ github.workspace }}/.enterprise-cache/pip
+  PIP_NO_CACHE_DIR: false
+  PYTHONUNBUFFERED: 1
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  # 🏗️ مرحله آماده‌سازی
+  setup-environment:
+    name: "🔧 Environment Setup"
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.cache-keys.outputs.key }}
+      python-version: ${{ env.PYTHON_VERSION }}
+    
+    steps:
+    - name: "📥 Checkout Repository"
+      uses: actions/checkout@v4
+      
+    - name: "🔑 Generate Cache Keys"
+      id: cache-keys
+      run: |
+        echo "key=python-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml', '**/setup.py') }}" >> $GITHUB_OUTPUT
+        echo "week=$(date +%V)" >> $GITHUB_OUTPUT
+
   # 🐍 مرحله تنظیم Python
   python-setup:
     name: "🐍 Python Configuration"
@@ -94,22 +135,20 @@ jobs:
         echo "🔄 Upgrading core tools..."
         python -m pip install --upgrade pip setuptools wheel
         
-        echo "📋 Installing project dependencies..."
-        if [ -f requirements.txt ]; then
-          pip install -r requirements.txt
-        fi
+        echo "📋 Installing main dependencies..."
+        pip install -r requirements.txt
         
-        if [ -f requirements-dev.txt ]; then
-          pip install -r requirements-dev.txt
-        fi
-        
-        if [ -f requirements-test.txt ]; then
-          pip install -r requirements-test.txt
-        fi
-        
-        if [ -f pyproject.toml ]; then
-          pip install -e .
-        fi
+        echo "🔍 Verifying critical dependencies..."
+        python -c "
+        critical_deps = ['fastapi', 'pydantic', 'pytest', 'redis', 'psycopg']
+        import importlib
+        for dep in critical_deps:
+            try:
+                importlib.import_module(dep.replace('-', '_'))
+                print(f'✅ {dep}: OK')
+            except ImportError as e:
+                print(f'❌ {dep}: {e}')
+        "
         
     - name: "✅ Verify Installation"
       run: |

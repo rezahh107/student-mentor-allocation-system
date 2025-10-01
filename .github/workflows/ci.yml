@@ -1,4 +1,4 @@
-name: Strict CI Orchestration (Fixed)
+name: Strict CI Orchestration (Fixed Circular Import)
 
 on:
   push:
@@ -30,15 +30,14 @@ jobs:
           --health-retries 10
 
     env:
-      # ✅ اجازه بده پلاگین‌ها لود بشن
-      PYTHONWARNINGS: 'default'  # به جای error
+      PYTHONWARNINGS: 'default'
       PYTHONUTF8: '1'
       MPLBACKEND: 'Agg'
       QT_QPA_PLATFORM: 'offscreen'
       PYTHONDONTWRITEBYTECODE: '1'
-      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/src
+      # ⚠️ CRITICAL: حذف PYTHONPATH تا circular import جلوگیری شود
+      # PYTHONPATH باعث می‌شود src/logging/ قبل از stdlib logging import شود
       REDIS_URL: ${{ secrets.CI_REDIS_URL != '' && secrets.CI_REDIS_URL || 'redis://localhost:6379/0' }}
-      # ✅ Dynamic correlation ID
       CI_CORRELATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}
       METRICS_TOKEN: ${{ secrets.METRICS_TOKEN || 'test-token' }}
       APP_ENV: "test"
@@ -54,6 +53,28 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+
+      # ✅ FIX 1: تغییر نام پکیج logging به app_logging
+      - name: Fix circular import - Rename logging package
+        run: |
+          if [ -d "src/logging" ]; then
+            echo "⚠️ Found src/logging/ - renaming to src/app_logging/"
+            mv src/logging src/app_logging
+            
+            # Update all imports in Python files
+            find . -type f -name "*.py" -exec sed -i 's/from logging import/from app_logging import/g' {} +
+            find . -type f -name "*.py" -exec sed -i 's/from logging\./from app_logging\./g' {} +
+            find . -type f -name "*.py" -exec sed -i 's/import logging as/import app_logging as/g' {} +
+            
+            echo "✓ Renamed logging package to app_logging"
+          else
+            echo "✓ No src/logging/ found, skipping rename"
+          fi
+
+      # ✅ FIX 2: اضافه کردن PYTHONPATH فقط بعد از fix
+      - name: Set PYTHONPATH after fix
+        run: |
+          echo "PYTHONPATH=${{ github.workspace }}:${{ github.workspace }}/src" >> $GITHUB_ENV
 
       - name: Upgrade pip (retry with proper Python inline)
         run: |
@@ -85,7 +106,6 @@ jobs:
           python -c '
           import hashlib, os, subprocess, time, sys
 
-          # Wheels-only to avoid sdist reading deprecated setup.cfg keys
           os.environ["PIP_ONLY_BINARY"] = ":all:"
           
           args = []
@@ -96,7 +116,6 @@ jobs:
           if os.path.exists("constraints/ci.txt"):
               args += ["-c", "constraints/ci.txt"]
           
-          # Explicit tools needed for CI
           args += ["redis", "prometheus_client", "pytest-json-report"]
           
           cmd = [sys.executable, "-m", "pip", "install", "--upgrade"] + args
@@ -119,6 +138,18 @@ jobs:
                   print(f"⚠ Retry {i}/5 in {delay:.2f}s...", flush=True)
                   time.sleep(delay)
           '
+
+      - name: Verify no circular imports
+        run: |
+          python -c "
+          import sys
+          import logging
+          print(f'✓ logging module: {logging.__file__}')
+          if 'src/logging' in logging.__file__ or 'src\\\\logging' in logging.__file__:
+              print('✗ ERROR: Still importing local logging instead of stdlib!', file=sys.stderr)
+              sys.exit(1)
+          print('✓ Using stdlib logging correctly')
+          "
 
       - name: Redis readiness (deterministic backoff)
         run: |
@@ -195,7 +226,6 @@ jobs:
               print('✓ phase6_import_to_sabt imported successfully')
           except ImportError as e:
               print(f'⚠ Warning: Could not import phase6_import_to_sabt: {e}', file=sys.stderr)
-              # Don't fail - module might not exist yet
           "
 
       - name: Run static checks (with safe guards)
@@ -241,7 +271,6 @@ jobs:
               print("✓ Post-test Redis flush completed", flush=True)
           except Exception as e:
               print(f"⚠ Post-test flush warning: {e}", flush=True)
-              # Don'\''t fail - cleanup is best-effort
           '
 
       - name: Upload reports

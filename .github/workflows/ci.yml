@@ -1,84 +1,26 @@
-# .github/workflows/ci.yml
-
-name: 🚀 CI Pipeline - Production Grade
+name: CI
 
 on:
   push:
-    branches: ['**']
-  pull_request:
     branches: [main, develop]
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
-  actions: write
   checks: write
   pull-requests: write
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
-  PYTHON_VERSION: '3.11'
-  CACHE_VERSION: 'v1'
+  PYTHONUNBUFFERED: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PIP_NO_CACHE_DIR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
-  # ═══════════════════════════════════════════════════════════════
-  # Job 1: Quality Checks
-  # ═══════════════════════════════════════════════════════════════
-  
-  quality:
-    name: 🔍 Quality Checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
-            pyproject.toml
-      
-      - name: 📦 Install dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -e .[dev]
-      
-      - name: 🧹 Ruff Lint
-        run: ruff check . --output-format=github
-        continue-on-error: false
-      
-      - name: 🎨 Ruff Format
-        run: ruff format --check .
-        continue-on-error: false
-      
-      - name: 🔍 MyPy
-        run: mypy src
-        continue-on-error: false
-      
-      - name: 📝 Pydocstyle
-        run: pydocstyle src
-        continue-on-error: true
-
-  # ═══════════════════════════════════════════════════════════════
-  # Job 2: Tests
-  # ═══════════════════════════════════════════════════════════════
-  
   test:
-    name: 🧪 Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: quality
     
     services:
       redis:
@@ -92,47 +34,28 @@ jobs:
           --health-retries 10
     
     env:
-      # Python
-      PYTHONUNBUFFERED: '1'
-      PYTHONDONTWRITEBYTECODE: '1'
-      PYTHONHASHSEED: '0'
-      
-      # Qt
-      QT_QPA_PLATFORM: 'offscreen'
-      
-      # Matplotlib
-      MPLBACKEND: 'Agg'
-      
-      # Testing
-      TEST_ENV: 'ci'
-      TESTING: '1'
-      
-      # Services
-      REDIS_URL: 'redis://localhost:6379/0'
-      DATABASE_URL: 'sqlite:///:memory:'
+      QT_QPA_PLATFORM: offscreen
+      MPLBACKEND: Agg
+      TEST_ENV: ci
+      TESTING: "1"
+      REDIS_URL: redis://localhost:6379/0
+      DATABASE_URL: sqlite:///:memory:
     
     steps:
-      - name: 📥 Checkout
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: 🐍 Setup Python
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
-            pyproject.toml
-      
-      - name: 📦 Install dependencies
+          python-version: "3.11"
+
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -e .[test]
-      
-      - name: 🔌 Wait for Redis
+          python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+          pip install --no-cache-dir -e .[test]
+
+      - name: Wait for Redis
         run: |
           python -c "
 import time
@@ -140,27 +63,18 @@ import redis
 
 for attempt in range(10):
     try:
-        client = redis.Redis(host='localhost', port=6379, db=0, socket_connect_timeout=2)
+        client = redis.Redis(host='localhost', port=6379, socket_connect_timeout=2)
         client.ping()
         print(f'✓ Redis ready on attempt {attempt + 1}')
         break
     except Exception as e:
         if attempt == 9:
-            raise RuntimeError(f'Redis not ready after 10 attempts: {e}')
-        print(f'⚠ Attempt {attempt + 1}/10 failed, retrying...')
+            raise RuntimeError(f'Redis failed: {e}')
+        print(f'⚠ Attempt {attempt + 1}/10 failed')
         time.sleep(1)
 "
-      
-      - name: 🧹 Clean Redis
-        run: |
-          python -c "
-import redis
-client = redis.Redis(host='localhost', port=6379, db=0)
-client.flushall()
-print('✓ Redis flushed')
-"
-      
-      - name: 🧪 Run Tests
+
+      - name: Run tests
         run: |
           pytest \
             --cov=src \
@@ -170,64 +84,23 @@ print('✓ Redis flushed')
             --junitxml=test-results/junit.xml \
             --html=test-results/report.html \
             --self-contained-html \
-            --json-report \
-            --json-report-file=test-results/report.json \
             -v \
             --tb=short \
             --maxfail=5
-      
-      - name: 📊 Upload Coverage to Codecov
+
+      - name: Upload coverage
         uses: codecov/codecov-action@v4
         if: always()
         with:
           files: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
           fail_ci_if_error: false
-      
-      - name: 📈 Upload Test Results
+
+      - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results-${{ github.run_id }}
+          name: test-results
           path: |
             test-results/
             htmlcov/
-            coverage.xml
           retention-days: 30
-      
-      - name: 🧹 Cleanup Redis
-        if: always()
-        run: |
-          python -c "
-import redis
-try:
-    client = redis.Redis(host='localhost', port=6379, db=0)
-    client.flushall()
-    print('✓ Redis cleaned up')
-except Exception as e:
-    print(f'⚠ Cleanup warning: {e}')
-"
-      
-      - name: ✅ Test Summary
-        if: always()
-        run: |
-          echo "## 🎯 Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -f test-results/report.json ]; then
-            python -c "
-import json
-with open('test-results/report.json') as f:
-    data = json.load(f)
-    summary = data.get('summary', {})
-    total = summary.get('total', 0)
-    passed = summary.get('passed', 0)
-    failed = summary.get('failed', 0)
-    skipped = summary.get('skipped', 0)
-    
-    print(f'| Metric | Count |')
-    print(f'|--------|-------|')
-    print(f'| Total | {total} |')
-    print(f'| Passed | {passed} ✅ |')
-    print(f

@@ -20,8 +20,27 @@ repos:
           - ".bandit"
   - repo: local
     hooks:
+      - id: fix-pytest-config
+        name: Fix pytest configuration
+        entry: python scripts/fix_pytest_config.py
+        language: system
+        files: \.?(toml|ini|cfg)$
+        pass_filenames: false
+        verbose: true
       - id: weak-hash-guard
         name: weak-hash-guard
         entry: python -m scripts.check_no_weak_hashes
         language: system
         pass_filenames: false
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.8
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]

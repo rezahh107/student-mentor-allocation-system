@@ -14,6 +14,10 @@ def _load_asyncio_module() -> Any:
     return importlib.import_module(_ASYNCIO_PLUGIN)
 
 
+def pytest_addoption(parser: Parser) -> None:
+    parser.addini("asyncio_mode", "Default asyncio mode for pytest-asyncio", default="auto")
+
+
 def pytest_load_initial_conftests(early_config: Config, parser: Parser, args: list[str]) -> None:
     module = _load_asyncio_module()
     pluginmanager = early_config.pluginmanager
@@ -24,9 +28,19 @@ def pytest_load_initial_conftests(early_config: Config, parser: Parser, args: li
 
 def pytest_configure(config: Config) -> None:
     module = _load_asyncio_module()
-    if not config.pluginmanager.has_plugin("pytest_asyncio"):
+    if not (
+        config.pluginmanager.has_plugin("pytest_asyncio")
+        or config.pluginmanager.has_plugin("pytest_asyncio.plugin")
+    ):
         config.pluginmanager.register(module, "pytest_asyncio")
-    scope = config.getini("asyncio_default_fixture_loop_scope") or "function"
-    config.inicfg.setdefault("asyncio_default_fixture_loop_scope", scope)
+    try:
+        mode = config.getini("asyncio_mode")
+    except ValueError:
+        mode = "auto"
+    if not mode:
+        mode = "auto"
+    config.inicfg.setdefault("asyncio_mode", mode)
     if hasattr(config, "_inicache"):
-        config._inicache["asyncio_default_fixture_loop_scope"] = scope  # type: ignore[attr-defined]
+        config._inicache["asyncio_mode"] = mode  # type: ignore[attr-defined]
+    config.option.strict_config = True
+    config.option.strict_markers = True

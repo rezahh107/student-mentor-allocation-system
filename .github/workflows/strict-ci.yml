@@ -38,6 +38,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11"]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +55,7 @@ jobs:
         run: |
           python - <<'PY'
           import hashlib, os, subprocess, time
-          def jitter(i): 
+          def jitter(i):
               d = hashlib.blake2b(f"pip-upgrade::{os.getenv('GITHUB_RUN_ID','local')}::{i}".encode(), digest_size=8).hexdigest()
               return (int(d,16)%500)/1000
           cmd = ["python","-m","pip","install","--upgrade","pip"]
@@ -69,25 +70,36 @@ jobs:
                   time.sleep(delay)
           PY
 
-      - name: Install dependencies with retry
+      - name: Install dependencies (wheels-only + constraints) with retry
+        shell: bash
         run: |
-          python - <<'PY'
-          import hashlib, os, subprocess, time
-          req = ["-r","requirements.txt","-r","requirements-dev.txt","prometheus_client","redis"]
-          def jitter(i):
-              d = hashlib.blake2b(f"pip-install::{os.getenv('GITHUB_RUN_ID','local')}::{i}".encode(), digest_size=8).hexdigest()
-              return (int(d,16)%500)/1000
-          cmd = ["python","-m","pip","install","--upgrade"] + req
+          set -euo pipefail
+          export PIP_ONLY_BINARY=:all:
+          args=(-r requirements.txt)
+          [[ -f requirements-dev.txt ]] && args+=(-r requirements-dev.txt)
+          [[ -f constraints/ci.txt   ]] && args+=(-c constraints/ci.txt)
+
+          pycmd() { python -m pip install --upgrade "${args[@]}"; }
+
+          jitter() { python - <<'PY'
+          import hashlib, os, sys
+          i=int(sys.argv[1]); h=hashlib.blake2b(f"pip-install::{os.getenv('GITHUB_RUN_ID','local')}::{i}".encode(), digest_size=8).hexdigest()
+          print((int(h,16)%500)/1000)
+PY
+          }
+
           base=2.0
-          for i in range(1,6):
-              try:
-                  subprocess.run(cmd, check=True); break
-              except subprocess.CalledProcessError:
-                  if i==5: raise
-                  delay = base*(2**(i-1))+jitter(i)
-                  print(f"Retrying dependency install in {delay:.2f}s ({i}/5)...", flush=True)
-                  time.sleep(delay)
-          PY
+          for i in {1..5}; do
+            if pycmd; then break; fi
+            if [[ $i -eq 5 ]]; then exit 1; fi
+            j=$(jitter "$i"); delay=$(python - <<PY
+base=$base; i=$i; j=$j
+print(base*(2**(i-1))+j)
+PY
+)
+            echo "Retrying deps in ${delay}s (${i}/5)..."
+            sleep "$delay"
+          done
 
       - name: Redis readiness probe (deterministic backoff)
         run: |
@@ -138,12 +150,10 @@ jobs:
           PY
 
       - name: Prepare artifact dir
-        run: |
-          mkdir -p "$STRICT_CI_ARTIFACT_DIR"
+        run: mkdir -p "$STRICT_CI_ARTIFACT_DIR"
 
       - name: Run strict pytest gate (Smoke evidence + Full suite)
-        run: |
-          python ci/pytest_summary_gate.py --artifact-dir "$STRICT_CI_ARTIFACT_DIR" tests
+        run: python ci/pytest_summary_gate.py --artifact-dir "$STRICT_CI_ARTIFACT_DIR" tests
 
       - name: Post-test cleanup (Python FLUSHALL; no redis-cli)
         if: always()

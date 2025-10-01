@@ -11,8 +11,8 @@ permissions:
 env:
   PYTHONUNBUFFERED: "1"
   PYTHONDONTWRITEBYTECODE: "1"
-  PIP_NO_CACHE_DIR: "off"
-  PIP_DISABLE_PIP_VERSION_CHECK: "on"
+  PIP_NO_CACHE_DIR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_DEFAULT_TIMEOUT: "100"
 
 jobs:
@@ -30,40 +30,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
-            pyproject.toml
 
-      - name: Cache pip packages (explicit)
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-3.11-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-3.11-
-            ${{ runner.os }}-pip-
-
-      - name: Upgrade pip and install build tools
+      - name: Upgrade pip
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip --version
+          python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
       - name: Install dependencies
         run: |
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          if [ -f requirements-dev.txt ]; then
-            pip install -r requirements-dev.txt
-          fi
-          pip install -e .[dev,ci]
+          pip install --no-cache-dir -e .[dev,ci]
 
       - name: Verify installation
         run: |
           pip list
-          python -c "import pytest; print(f'pytest version: {pytest.__version__}')"
+          python -c "import pytest; print(f'pytest: {pytest.__version__}')"
 
       - name: Run quality checks
         run: |
@@ -72,7 +51,7 @@ jobs:
   performance:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: quality  # اجرا بعد از quality
+    needs: quality
     
     steps:
       - name: Checkout
@@ -82,31 +61,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
-            pyproject.toml
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-3.11-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-3.11-
-            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          if [ -f requirements-dev.txt ]; then
-            pip install -r requirements-dev.txt
-          fi
-          pip install -e .[dev,ci]
+          python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+          pip install --no-cache-dir -e .[dev,ci]
 
       - name: Debug test discovery
         run: |
@@ -114,15 +73,14 @@ jobs:
           which python
           python --version
           echo "=== Installed Packages ==="
-          pip list | grep -E "(pytest|student-mentor)" || echo "No matching packages"
+          pip list | grep -E "(pytest|student-mentor)" || echo "No packages"
           echo "=== Test Discovery ==="
-          python -m pytest tests/perf/ --collect-only -q || echo "No tests found in tests/perf/"
+          python -m pytest tests/perf/ --collect-only -q || echo "No tests"
 
       - name: Run performance tests
         run: |
-          if [ -d "tests/perf" ] && [ -n "$(find tests/perf -name 'test_*.py' -o -name '*_test.py')" ]; then
-            echo "=== Running Performance Tests ==="
+          if [ -d "tests/perf" ]; then
             python -m pytest -v tests/perf/ --durations=10
           else
-            echo "⚠️ No performance tests found, skipping..."
+            echo "⚠️ tests/perf not found"
           fi

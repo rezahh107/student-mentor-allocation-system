@@ -41,11 +41,11 @@ jobs:
           REDIS_TLS_CERT_FILE: /certs/server.crt
           REDIS_TLS_KEY_FILE:  /certs/server.key
           REDIS_TLS_CA_FILE:   /certs/server.crt
-        volumes:
-          - ${{ github.workspace }}/ci/certs:/certs:ro
         options: >-
+          --volume ${{ github.workspace }}/ci/certs:/certs:ro
           --health-cmd "redis-cli -h 127.0.0.1 -p 6380 --tls --cacert /certs/server.crt ping || exit 1"
           --health-interval 5s --health-timeout 3s --health-retries 30
+
 
     steps:
       - uses: actions/checkout@v4
@@ -67,15 +67,66 @@ jobs:
           python -c "import redis; print('redis', redis.__version__)"
           python -c "import prometheus_client, tenacity, yaml, jinja2; print('deps ok')"
 
-      - name: Pre-test cleanup (flush Redis/RedisTLS)
+      - name: Pre-test cleanup (inline flush)
         run: |
-          python scripts/flush_state.py
+          python - <<'PY'
+          import os, ssl, sys
+          import redis
+          def flush(url, ca=None, allow_insecure=False):
+              if not url: 
+                  return
+              kw = {}
+              if url.startswith("rediss://"):
+                  kw["ssl"] = True
+                  if allow_insecure:
+                      ctx = ssl.create_default_context()
+                      ctx.check_hostname = False
+                      ctx.verify_mode = ssl.CERT_NONE
+                      kw["ssl_context"] = ctx
+                  elif ca:
+                      kw["ssl_ca_certs"] = ca
+              r = redis.Redis.from_url(url, **kw)
+              try:
+                  r.ping()
+              except Exception as e:
+                  print(f"[warn] ping failed for {url}: {e}", file=sys.stderr)
+              try:
+                  r.flushall()
+                  print(f"[ok] FLUSHALL on {url}")
+              except Exception as e:
+                  print(f"[warn] flush failed for {url}: {e}", file=sys.stderr)
+          flush(os.getenv("REDIS_URL"))
+          flush(
+              os.getenv("REDISS_URL"),
+              ca=os.getenv("REDIS_TLS_CA_FILE"),
+              allow_insecure=os.getenv("REDIS_TLS_ALLOW_INSECURE")=="1",
+          )
+          PY
+
 
       - name: Run CI tests (no skips/xfails)
         run: |
           pytest -q -p pytest_asyncio -W error tests/ci
 
-      - name: Post-test cleanup (always)
+      - name: Post-test cleanup (inline flush)
         if: always()
         run: |
-          python scripts/flush_state.py
+          python - <<'PY'
+          import os, ssl
+          import redis
+          def flush(url, ca=None):
+              if not url: 
+                  return
+              kw = {}
+              if url.startswith("rediss://"):
+                  kw["ssl"] = True
+                  if ca:
+                      kw["ssl_ca_certs"] = ca
+              try:
+                  redis.Redis.from_url(url, **kw).flushall()
+                  print(f"[ok] POST FLUSHALL on {url}")
+              except Exception as e:
+                  print(f"[warn] post flush failed for {url}: {e}")
+          flush(os.getenv("REDIS_URL"))
+          flush(os.getenv("REDISS_URL"), os.getenv("REDIS_TLS_CA_FILE"))
+          PY

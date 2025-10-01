@@ -1,73 +1,104 @@
-# ---------------------------
-# Core application stack
-# ---------------------------
+# ═══════════════════════════════════════════════════════════════
+# Core Application Stack
+# ═══════════════════════════════════════════════════════════════
+
+# Data validation
 pydantic>=2.6,<3
+pydantic-settings>=2.11,<3
+
+# Date/Time
 python-dateutil>=2.8.0
+jdatetime>=4.1.0
+
+# Async I/O
 aiohttp>=3.8.0
 aiofiles>=0.8.0
 qasync>=0.23.0
+
+# Excel/Data
 openpyxl>=3.1.0
-jdatetime>=4.1.0
 pandas>=2.0.0
+
+# System
 psutil>=5.9.0
+
+# Network
 websockets>=10.0
+
+# Persian text
 arabic-reshaper>=3.0.0
 python-bidi>=0.4.2
 
-# ---------------------------
-# ImportToSabt service stack
-# ---------------------------
+# ═══════════════════════════════════════════════════════════════
+# ImportToSabt Service Stack
+# ═══════════════════════════════════════════════════════════════
+
+# Web framework
 fastapi>=0.110,<0.111
 starlette>=0.36,<0.37
-pydantic-settings>=2.11,<3
-redis>=5,<6
-psycopg[binary]>=3.2,<3.3
-httpx>=0.27,<0.28
 uvicorn>=0.29,<0.30
-orjson>=3.11,<4
-prometheus_client>=0.16,<1.0
-freezegun>=1.2,<2
-python-multipart>=0.0.6,<0.1
-typer>=0.9,<0.10
-SQLAlchemy>=1.4,<2.0   # اگر پروژه را به 2.x مهاجرت دادید، این خط را به: SQLAlchemy>=2.0,<2.1 تغییر دهید.
 
-# ---------------------------
-# Developer experience & tooling
-# ---------------------------
+# Database
+SQLAlchemy>=2.0,<3  # ✅ تغییر از 1.4 به 2.0!
+psycopg[binary]>=3.2,<3.3
+
+# Cache
+redis>=5,<6
+
+# HTTP client
+httpx>=0.27,<0.28
+
+# Serialization
+orjson>=3.11,<4
+
+# Monitoring
+prometheus_client>=0.16,<1.0
+
+# Testing utilities
+freezegun>=1.2,<2
+
+# File upload
+python-multipart>=0.0.6,<0.1
+
+# CLI
+typer>=0.9,<0.10
+
+# ═══════════════════════════════════════════════════════════════
+# Developer Experience
+# ═══════════════════════════════════════════════════════════════
+
 GitPython>=3.1.30
 factory_boy>=3.3.0
 faker>=19.0.0
 
-# ---------------------------
-# Core testing (required)
-# ---------------------------
+# ═══════════════════════════════════════════════════════════════
+# Core Testing (Required)
+# ═══════════════════════════════════════════════════════════════
+
 pytest>=7.0.0
-pytest-asyncio>=0.21.0
+pytest-asyncio>=0.23.0
 pytest-cov>=4.0.0
 coverage>=7.0.0
 pytest-qt>=4.2.0
 pytest-json-report>=1.5.0
 pytest-xdist>=3.3.1
+pytest-timeout>=2.1.0
+pytest-html>=3.2.0
+pytest-mock>=3.11.0
+pytest-freezegun>=0.4.2
 
-# ---------------------------
-# Optional (dashboard & automation) - پیشنهاد: در extras جدا نگه دارید
-# ---------------------------
-# streamlit>=1.29.0
-# PyYAML>=6.0.0
+# ═══════════════════════════════════════════════════════════════
+# Additional Tools
+# ═══════════════════════════════════════════════════════════════
 
 tenacity>=8.2,<9
-
 PyYAML>=6,<7
 Jinja2>=3.1,<4.0
-redis>=5,<6
 
-# ---------------------------
-# CI/CD & Build optimization
-# ---------------------------
+# ═══════════════════════════════════════════════════════════════
+# CI/CD & Build
+# ═══════════════════════════════════════════════════════════════
+
 setuptools>=68.0.0
 wheel>=0.41.0
 pip>=23.0.0
-
-
-
-

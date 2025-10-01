@@ -1,335 +1,233 @@
-name: Strict CI Orchestration (Production Ready)
+# .github/workflows/ci.yml
+
+name: 🚀 CI Pipeline - Production Grade
 
 on:
   push:
     branches: ['**']
   pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
 
 permissions:
   contents: read
   actions: write
-  checks: read
+  checks: write
+  pull-requests: write
 
 concurrency:
-  group: strict-ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+env:
+  PYTHON_VERSION: '3.11'
+  CACHE_VERSION: 'v1'
 
+jobs:
+  # ═══════════════════════════════════════════════════════════════
+  # Job 1: Quality Checks
+  # ═══════════════════════════════════════════════════════════════
+  
+  quality:
+    name: 🔍 Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
+      
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e .[dev]
+      
+      - name: 🧹 Ruff Lint
+        run: ruff check . --output-format=github
+        continue-on-error: false
+      
+      - name: 🎨 Ruff Format
+        run: ruff format --check .
+        continue-on-error: false
+      
+      - name: 🔍 MyPy
+        run: mypy src
+        continue-on-error: false
+      
+      - name: 📝 Pydocstyle
+        run: pydocstyle src
+        continue-on-error: true
+
+  # ═══════════════════════════════════════════════════════════════
+  # Job 2: Tests
+  # ═══════════════════════════════════════════════════════════════
+  
+  test:
+    name: 🧪 Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: quality
+    
     services:
       redis:
         image: redis:7-alpine
-        ports: 
+        ports:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 3s
           --health-timeout 3s
           --health-retries 10
-
+    
     env:
-      PYTHONUTF8: '1'
-      MPLBACKEND: 'Agg'
-      QT_QPA_PLATFORM: 'offscreen'
+      # Python
+      PYTHONUNBUFFERED: '1'
       PYTHONDONTWRITEBYTECODE: '1'
-      REDIS_URL: ${{ secrets.CI_REDIS_URL || 'redis://localhost:6379/0' }}
-      CI_CORRELATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-      METRICS_TOKEN: ${{ secrets.METRICS_TOKEN || 'test-token' }}
-      APP_ENV: "test"
-
+      PYTHONHASHSEED: '0'
+      
+      # Qt
+      QT_QPA_PLATFORM: 'offscreen'
+      
+      # Matplotlib
+      MPLBACKEND: 'Agg'
+      
+      # Testing
+      TEST_ENV: 'ci'
+      TESTING: '1'
+      
+      # Services
+      REDIS_URL: 'redis://localhost:6379/0'
+      DATABASE_URL: 'sqlite:///:memory:'
+    
     steps:
-      - name: Checkout
+      - name: 📥 Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Setup Python
+      
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-
-      # FIX 1: تغییر نام پکیج logging به app_logging
-      - name: Fix circular import - Rename logging package
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
+      
+      - name: 📦 Install dependencies
         run: |
-          if [ -d "src/logging" ]; then
-            echo "⚠️ Found src/logging/ - renaming to src/app_logging/"
-            mv src/logging src/app_logging
-            
-            # Update imports in Python files
-            echo "Updating imports..."
-            find . -type f -name "*.py" -print0 | while IFS= read -r -d '' file; do
-              # Skip git and virtual env directories
-              if [[ "$file" == *"/.git/"* ]] || [[ "$file" == *"/venv/"* ]] || [[ "$file" == *"/.venv/"* ]]; then
-                continue
-              fi
-              
-              # Update various import patterns
-              sed -i 's/^from logging import/from app_logging import/g' "$file" 2>/dev/null || true
-              sed -i 's/^from logging\./from app_logging./g' "$file" 2>/dev/null || true
-              sed -i 's/^import logging$/import app_logging as logging/g' "$file" 2>/dev/null || true
-              sed -i 's/\bfrom \.logging import/from .app_logging import/g' "$file" 2>/dev/null || true
-              sed -i 's/\bfrom \.logging\./from .app_logging./g' "$file" 2>/dev/null || true
-            done
-            
-            echo "✓ Renamed logging package to app_logging and updated imports"
-          else
-            echo "✓ No src/logging/ found"
-          fi
-
-      # FIX 2: پاک کردن یا اصلاح pytest.ini
-      - name: Fix pytest config - Remove unknown options
-        run: |
-          # Check for pytest config files
-          for config_file in pytest.ini setup.cfg pyproject.toml tox.ini; do
-            if [ -f "$config_file" ]; then
-              echo "Found $config_file, checking for problematic options..."
-              
-              # Backup original file
-              cp "$config_file" "${config_file}.bak"
-              
-              # Remove asyncio_default_fixture_loop_scope
-              if [ "$config_file" = "pytest.ini" ] || [ "$config_file" = "setup.cfg" ]; then
-                sed -i '/asyncio_default_fixture_loop_scope/d' "$config_file" 2>/dev/null || true
-              elif [ "$config_file" = "pyproject.toml" ]; then
-                sed -i '/asyncio_default_fixture_loop_scope/d' "$config_file" 2>/dev/null || true
-              fi
-              
-              # Show current pytest config
-              echo "Current pytest config in $config_file:"
-              if [ "$config_file" = "pytest.ini" ]; then
-                cat "$config_file" 2>/dev/null || echo "Empty or not found"
-              elif [ "$config_file" = "setup.cfg" ]; then
-                sed -n '/\[tool:pytest\]/,/^\[/p' "$config_file" 2>/dev/null || echo "No pytest section"
-              elif [ "$config_file" = "pyproject.toml" ]; then
-                sed -n '/\[tool\.pytest/,/^\[/p' "$config_file" 2>/dev/null || echo "No pytest section"
-              fi
-            fi
-          done
-
-      # FIX 3: اضافه کردن PYTHONPATH بعد از fixes
-      - name: Set PYTHONPATH after fixes
-        run: |
-          echo "PYTHONPATH=${{ github.workspace }}:${{ github.workspace }}/src" >> $GITHUB_ENV
-
-      - name: Upgrade pip (retry with proper Python inline)
-        run: |
-          python -c '
-import hashlib, os, subprocess, time, sys
-
-def jitter(i):
-    seed = f"pip-up::{os.getenv(\"GITHUB_RUN_ID\", \"local\")}::{i}"
-    d = hashlib.blake2b(seed.encode(), digest_size=8).hexdigest()
-    return (int(d, 16) % 400) / 1000.0
-
-for i in range(1, 6):
-    try:
-        subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], 
-                      check=True, timeout=60)
-        print(f"✓ pip upgraded successfully", flush=True)
-        break
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        if i == 5:
-            print(f"✗ pip upgrade failed after 5 attempts: {e}", file=sys.stderr)
-            sys.exit(1)
-        delay = 0.8 * (2 ** (i - 1)) + jitter(i)
-        print(f"⚠ Retry {i}/5 in {delay:.2f}s...", flush=True)
-        time.sleep(delay)
-'
-
-      - name: Install dependencies (wheels-only + constraints, retry)
-        run: |
-          python -c '
-import hashlib, os, subprocess, time, sys
-
-os.environ["PIP_ONLY_BINARY"] = ":all:"
-
-args = []
-if os.path.exists("requirements.txt"):
-    args += ["-r", "requirements.txt"]
-if os.path.exists("requirements-dev.txt"):
-    args += ["-r", "requirements-dev.txt"]
-if os.path.exists("constraints/ci.txt"):
-    args += ["-c", "constraints/ci.txt"]
-
-# Explicit tools for CI
-args += ["redis", "prometheus_client", "pytest-json-report", "pytest-asyncio", "pytest"]
-
-cmd = [sys.executable, "-m", "pip", "install", "--upgrade"] + args
-
-def jitter(i):
-    seed = f"pip-install::{os.getenv(\"GITHUB_RUN_ID\", \"local\")}::{i}"
-    d = hashlib.blake2b(seed.encode(), digest_size=8).hexdigest()
-    return (int(d, 16) % 400) / 1000.0
-
-for i in range(1, 6):
-    try:
-        subprocess.run(cmd, check=True, timeout=300)
-        print(f"✓ Dependencies installed successfully", flush=True)
-        break
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        if i == 5:
-            print(f"✗ Dependency installation failed: {e}", file=sys.stderr)
-            sys.exit(1)
-        delay = 0.8 * (2 ** (i - 1)) + jitter(i)
-        print(f"⚠ Retry {i}/5 in {delay:.2f}s...", flush=True)
-        time.sleep(delay)
-'
-
-      - name: Verify no circular imports
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e .[test]
+      
+      - name: 🔌 Wait for Redis
         run: |
           python -c "
-import sys
-import logging
-print(f'✓ logging module: {logging.__file__}')
-if 'src/logging' in logging.__file__ or 'src\\\\logging' in logging.__file__:
-    print('✗ ERROR: Still importing local logging instead of stdlib!', file=sys.stderr)
-    sys.exit(1)
-print('✓ Using stdlib logging correctly')
-"
+import time
+import redis
 
-      - name: Redis readiness (deterministic backoff)
-        run: |
-          python -c '
-import hashlib, os, time, sys
-
-try:
-    import redis
-except ImportError:
-    print("✗ redis-py not installed", file=sys.stderr)
-    sys.exit(1)
-
-url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-base, attempts = 0.4, 8
-
-for i in range(1, attempts + 1):
+for attempt in range(10):
     try:
-        client = redis.Redis.from_url(url, socket_timeout=2, socket_connect_timeout=2)
+        client = redis.Redis(host='localhost', port=6379, db=0, socket_connect_timeout=2)
         client.ping()
-        client.close()
-        print(f"✓ Redis ready at {url}", flush=True)
+        print(f'✓ Redis ready on attempt {attempt + 1}')
         break
     except Exception as e:
-        if i == attempts:
-            print(f"✗ Redis not ready after {attempts} attempts: {e}", file=sys.stderr)
-            sys.exit(1)
-        seed = f"redis-ready::{i}"
-        j = int(hashlib.blake2b(seed.encode(), digest_size=6).hexdigest(), 16) % 400 / 1000.0
-        delay = base * (2 ** (i - 1)) + j
-        print(f"⚠ Redis attempt {i}/{attempts}, retry in {delay:.2f}s...", flush=True)
-        time.sleep(delay)
-'
-
-      - name: Pre-test Redis flush
-        run: |
-          python -c '
-import os, sys, time, hashlib
-
-try:
-    import redis
-except ImportError:
-    print("✗ redis-py not installed", file=sys.stderr)
-    sys.exit(1)
-
-url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-r = redis.from_url(url, socket_connect_timeout=2, socket_timeout=3)
-
-base = 0.2
-jitter_val = (hashlib.blake2s(url.encode(), digest_size=2).digest()[0] / 255.0) * 0.05
-
-for i in range(1, 6):
-    try:
-        r.ping()
-        r.flushall()
-        if r.dbsize() == 0:
-            print("✓ Redis flushed successfully", flush=True)
-            break
-        raise RuntimeError("dbsize > 0 after flush")
-    except Exception as e:
-        if i == 5:
-            print(f"✗ Flush failed: {e}", file=sys.stderr)
-            sys.exit(1)
-        delay = base * (2 ** (i - 1)) + jitter_val
-        print(f"⚠ Flush retry {i}/5 in {delay:.2f}s...", flush=True)
-        time.sleep(delay)
-'
-
-      - name: Sanity check import
-        continue-on-error: true
+        if attempt == 9:
+            raise RuntimeError(f'Redis not ready after 10 attempts: {e}')
+        print(f'⚠ Attempt {attempt + 1}/10 failed, retrying...')
+        time.sleep(1)
+"
+      
+      - name: 🧹 Clean Redis
         run: |
           python -c "
-import sys
-try:
-    import phase6_import_to_sabt
-    print('✓ phase6_import_to_sabt imported successfully')
-except ImportError as e:
-    print(f'⚠ Warning: Could not import phase6_import_to_sabt: {e}', file=sys.stderr)
+import redis
+client = redis.Redis(host='localhost', port=6379, db=0)
+client.flushall()
+print('✓ Redis flushed')
 "
-
-      - name: Run static checks (with safe guards)
-        continue-on-error: true
+      
+      - name: 🧪 Run Tests
         run: |
-          if [ -f Makefile ]; then
-            if make -n static-checks >/dev/null 2>&1; then
-              echo "✓ Running static-checks..."
-              make static-checks || echo "⚠ static-checks failed (non-blocking)"
-            else
-              echo "⚠ static-checks target not found in Makefile"
-            fi
-            
-            if make -n ci-checks >/dev/null 2>&1; then
-              echo "✓ Running ci-checks..."
-              make ci-checks || echo "⚠ ci-checks failed (non-blocking)"
-            else
-              echo "⚠ ci-checks target not found in Makefile"
-            fi
-          else
-            echo "⚠ Makefile not found, skipping static checks"
-          fi
-
-      - name: Run tests (JSON report, NO -W error)
-        run: |
-          mkdir -p reports
-          
-          # Check if tests exist
-          if [ -d "tests" ] || [ -d "test" ] || find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
-            echo "✓ Found test files, running pytest..."
-            python -m pytest \
-              --json-report \
-              --json-report-file=reports/strict_score.json \
-              --verbose \
-              --tb=short \
-              --strict-markers \
-              -p no:warnings \
-              || echo "⚠ Some tests failed"
-          else
-            echo "⚠ No test files found, creating empty report..."
-            echo '{"summary": {"total": 0, "passed": 0, "failed": 0}}' > reports/strict_score.json
-          fi
-
-      - name: Post-test Redis flush
+          pytest \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov \
+            --junitxml=test-results/junit.xml \
+            --html=test-results/report.html \
+            --self-contained-html \
+            --json-report \
+            --json-report-file=test-results/report.json \
+            -v \
+            --tb=short \
+            --maxfail=5
+      
+      - name: 📊 Upload Coverage to Codecov
+        uses: codecov/codecov-action@v4
         if: always()
-        run: |
-          python -c '
-import os
-try:
-    import redis
-    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    client = redis.from_url(url, socket_connect_timeout=2, socket_timeout=3)
-    client.flushall()
-    print("✓ Post-test Redis flush completed", flush=True)
-except Exception as e:
-    print(f"⚠ Post-test flush warning: {e}", flush=True)
-'
-
-      - name: Upload reports
-        if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: strict-score-${{ github.run_id }}
-          path: reports/strict_score.json
-          if-no-files-found: warn
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+      
+      - name: 📈 Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ github.run_id }}
+          path: |
+            test-results/
+            htmlcov/
+            coverage.xml
           retention-days: 30
+      
+      - name: 🧹 Cleanup Redis
+        if: always()
+        run: |
+          python -c "
+import redis
+try:
+    client = redis.Redis(host='localhost', port=6379, db=0)
+    client.flushall()
+    print('✓ Redis cleaned up')
+except Exception as e:
+    print(f'⚠ Cleanup warning: {e}')
+"
+      
+      - name: ✅ Test Summary
+        if: always()
+        run: |
+          echo "## 🎯 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f test-results/report.json ]; then
+            python -c "
+import json
+with open('test-results/report.json') as f:
+    data = json.load(f)
+    summary = data.get('summary', {})
+    total = summary.get('total', 0)
+    passed = summary.get('passed', 0)
+    failed = summary.get('failed', 0)
+    skipped = summary.get('skipped', 0)
+    
+    print(f'| Metric | Count |')
+    print(f'|--------|-------|')
+    print(f'| Total | {total} |')
+    print(f'| Passed | {passed} ✅ |')
+    print(f

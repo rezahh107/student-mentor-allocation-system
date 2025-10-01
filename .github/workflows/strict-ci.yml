@@ -53,107 +53,126 @@ jobs:
       - name: Upgrade pip with retry
         run: |
           python - <<'PY'
-          import hashlib
-          import os
-          import subprocess
-          import time
-
-          def deterministic_jitter(attempt: int) -> float:
-              seed = f"pip-upgrade::{os.getenv('GITHUB_RUN_ID', 'local')}::{attempt}"
-              digest = hashlib.blake2b(seed.encode('utf-8'), digest_size=8).hexdigest()
-              return (int(digest, 16) % 500) / 1000.0
-
-          cmd = ["python", "-m", "pip", "install", "--upgrade", "pip"]
-          base_delay = 2.0
-          for attempt in range(1, 6):
+          import hashlib, os, subprocess, time
+          def jitter(i): 
+              d = hashlib.blake2b(f"pip-upgrade::{os.getenv('GITHUB_RUN_ID','local')}::{i}".encode(), digest_size=8).hexdigest()
+              return (int(d,16)%500)/1000
+          cmd = ["python","-m","pip","install","--upgrade","pip"]
+          base=2.0
+          for i in range(1,6):
               try:
-                  subprocess.run(cmd, check=True)
-                  break
+                  subprocess.run(cmd, check=True); break
               except subprocess.CalledProcessError:
-                  if attempt == 5:
-                      raise
-                  jitter = deterministic_jitter(attempt)
-                  delay = base_delay * (2 ** (attempt - 1)) + jitter
-                  print(f"Retrying pip upgrade in {delay:.2f}s (attempt {attempt}/5)...", flush=True)
+                  if i==5: raise
+                  delay = base*(2**(i-1))+jitter(i)
+                  print(f"Retrying pip upgrade in {delay:.2f}s ({i}/5)...", flush=True)
                   time.sleep(delay)
           PY
 
       - name: Install dependencies with retry
         run: |
           python - <<'PY'
-          import hashlib
-          import os
-          import subprocess
-          import time
-
-          requirements = [
-              "-r", "requirements.txt",
-              "-r", "requirements-dev.txt",
-              "prometheus_client",
-              "redis",
-          ]
-
-          def deterministic_jitter(attempt: int) -> float:
-              seed = f"pip-install::{os.getenv('GITHUB_RUN_ID', 'local')}::{attempt}"
-              digest = hashlib.blake2b(seed.encode('utf-8'), digest_size=8).hexdigest()
-              return (int(digest, 16) % 500) / 1000.0
-
-          cmd = ["python", "-m", "pip", "install", "--upgrade"] + requirements
-          base_delay = 2.0
-          for attempt in range(1, 6):
+          import hashlib, os, subprocess, time
+          req = ["-r","requirements.txt","-r","requirements-dev.txt","prometheus_client","redis"]
+          def jitter(i):
+              d = hashlib.blake2b(f"pip-install::{os.getenv('GITHUB_RUN_ID','local')}::{i}".encode(), digest_size=8).hexdigest()
+              return (int(d,16)%500)/1000
+          cmd = ["python","-m","pip","install","--upgrade"] + req
+          base=2.0
+          for i in range(1,6):
               try:
-                  subprocess.run(cmd, check=True)
-                  break
+                  subprocess.run(cmd, check=True); break
               except subprocess.CalledProcessError:
-                  if attempt == 5:
-                      raise
-                  jitter = deterministic_jitter(attempt)
-                  delay = base_delay * (2 ** (attempt - 1)) + jitter
-                  print(f"Retrying dependency install in {delay:.2f}s (attempt {attempt}/5)...", flush=True)
+                  if i==5: raise
+                  delay = base*(2**(i-1))+jitter(i)
+                  print(f"Retrying dependency install in {delay:.2f}s ({i}/5)...", flush=True)
                   time.sleep(delay)
           PY
 
-      - name: Pre-test state cleanup
-        run: |
-          redis-cli -u "$STRICT_CI_REDIS_URL" FLUSHALL
-
-      - name: Redis readiness probe with deterministic backoff
+      - name: Redis readiness probe (deterministic backoff)
         run: |
           python - <<'PY'
-          import hashlib
-          import os
-          import time
-
-          import redis  # type: ignore
-
-          redis_url = os.environ["STRICT_CI_REDIS_URL"]
-          base_delay = 0.5
-          max_attempts = 5
-
-          for attempt in range(1, max_attempts + 1):
+          import hashlib, os, time
+          import redis
+          url = os.environ["STRICT_CI_REDIS_URL"]
+          base, max_attempts = 0.5, 5
+          for i in range(1, max_attempts+1):
               try:
-                  client = redis.Redis.from_url(redis_url, socket_timeout=1.5)
-                  client.ping()
-                  client.close()
-                  break
-              except Exception as exc:  # noqa: BLE001
-                  if attempt == max_attempts:
-                      raise
-                  seed = f"redis-readiness::{os.getenv('GITHUB_RUN_ID', 'local')}::{attempt}"
-                  jitter = int(hashlib.blake2b(seed.encode('utf-8'), digest_size=8).hexdigest(), 16) % 500 / 1000.0
-                  delay = base_delay * (2 ** (attempt - 1)) + jitter
+                  c = redis.Redis.from_url(url, socket_timeout=1.5)
+                  c.ping(); c.close(); break
+              except Exception as exc:
+                  if i==max_attempts: raise
+                  seed = f"redis-ready::{os.getenv('GITHUB_RUN_ID','local')}::{i}"
+                  jitter = int(hashlib.blake2b(seed.encode(), digest_size=8).hexdigest(),16)%500/1000.0
+                  delay = base*(2**(i-1))+jitter
                   print(f"Redis not ready ({exc}); retrying in {delay:.2f}s", flush=True)
                   time.sleep(delay)
           PY
+
+      - name: Pre-test state cleanup (Python FLUSHALL; no redis-cli)
+        run: |
+          python - <<'PY'
+          import os, sys, time, hashlib
+          import redis
+          URL = os.environ.get("STRICT_CI_REDIS_URL")
+          if not URL:
+              print("خطا: متغیر STRICT_CI_REDIS_URL تنظیم نشده است.", file=sys.stderr); sys.exit(2)
+          r = redis.from_url(URL, socket_connect_timeout=3, socket_timeout=5, decode_responses=False)
+          base = 0.2
+          jitter = (hashlib.blake2s(URL.encode(), digest_size=2).digest()[0] / 255.0) * 0.05
+          attempts = 6
+          for i in range(1, attempts+1):
+              try:
+                  r.ping()
+                  r.flushall()
+                  if r.dbsize() == 0:
+                      print("FLUSHALL_OK"); sys.exit(0)
+                  else:
+                      raise RuntimeError("پس از FLUSHALL همچنان داده‌ای در Redis باقی است.")
+              except Exception as e:
+                  if i == attempts:
+                      print(f"پاک‌سازی Redis ناموفق بود: {e}", file=sys.stderr); sys.exit(1)
+                  delay = base * (2 ** (i-1)) + jitter
+                  print(f"[retry {i}/{attempts}] انتظار {delay:.3f}s → {e}")
+                  time.sleep(delay)
+          PY
+
+      - name: Prepare artifact dir
+        run: |
+          mkdir -p "$STRICT_CI_ARTIFACT_DIR"
 
       - name: Run strict pytest gate (Smoke evidence + Full suite)
         run: |
           python ci/pytest_summary_gate.py --artifact-dir "$STRICT_CI_ARTIFACT_DIR" tests
 
-      - name: Post-test cleanup
+      - name: Post-test cleanup (Python FLUSHALL; no redis-cli)
         if: always()
         run: |
-          redis-cli -u "$STRICT_CI_REDIS_URL" FLUSHALL
+          python - <<'PY'
+          import os, sys, time, hashlib
+          import redis
+          URL = os.environ.get("STRICT_CI_REDIS_URL")
+          if not URL:
+              print("خطا: متغیر STRICT_CI_REDIS_URL تنظیم نشده است.", file=sys.stderr); sys.exit(2)
+          r = redis.from_url(URL, socket_connect_timeout=3, socket_timeout=5, decode_responses=False)
+          base = 0.2
+          jitter = (hashlib.blake2s(URL.encode(), digest_size=2).digest()[0] / 255.0) * 0.05
+          attempts = 6
+          for i in range(1, attempts+1):
+              try:
+                  r.ping()
+                  r.flushall()
+                  if r.dbsize() == 0:
+                      print("FLUSHALL_OK"); sys.exit(0)
+                  else:
+                      raise RuntimeError("پس از FLUSHALL همچنان داده‌ای در Redis باقی است.")
+              except Exception as e:
+                  if i == attempts:
+                      print(f"پاک‌سازی Redis ناموفق بود: {e}", file=sys.stderr); sys.exit(1)
+                  delay = base * (2 ** (i-1)) + jitter
+                  print(f"[retry {i}/{attempts}] انتظار {delay:.3f}s → {e}")
+                  time.sleep(delay)
+          PY
 
       - name: Upload strict gate artifacts
         if: always()

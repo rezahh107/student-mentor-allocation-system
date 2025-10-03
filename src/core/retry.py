@@ -8,7 +8,7 @@ from functools import wraps
 from hashlib import blake2b
 from typing import Any, Awaitable, Callable, Iterable, Protocol, TypeVar
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Histogram, REGISTRY
 
 from .clock import Clock
 
@@ -27,19 +27,29 @@ class AsyncSleeper(Protocol):
         ...
 
 
-retry_attempts_total = Counter(
+def _safe_metric(factory, name: str, description: str, **kwargs):
+    try:
+        return factory(name, description, **kwargs)
+    except ValueError:
+        return REGISTRY._names_to_collectors[name]
+
+
+retry_attempts_total = _safe_metric(
+    Counter,
     "retry_attempts_total",
     "Total retry attempts per operation and outcome.",
     labelnames=("op", "outcome"),
 )
 
-retry_exhaustion_total = Counter(
+retry_exhaustion_total = _safe_metric(
+    Counter,
     "retry_exhaustion_total",
     "Total number of times retries were exhausted.",
     labelnames=("op",),
 )
 
-retry_backoff_seconds = Histogram(
+retry_backoff_seconds = _safe_metric(
+    Histogram,
     "retry_backoff_seconds",
     "Histogram for retry backoff durations in seconds.",
     labelnames=("op",),

@@ -19,6 +19,7 @@ from fastapi.routing import APIRoute
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from src.core.clock import Clock, ensure_clock
 from .observability import (
     StructuredLogger,
     emit_log,
@@ -203,6 +204,7 @@ async def _validate_jwt(
     issuers: set[str],
     deny_list: JWTDenyList,
     correlation_id: str,
+    clock: Clock | None = None,
 ) -> tuple[str, dict[str, Any]]:
     import hashlib
     import hmac
@@ -216,7 +218,8 @@ async def _validate_jwt(
     expected = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
     if not hmac.compare_digest(expected, parts["signature"]):
         raise ValueError("SIGNATURE_INVALID|امضای توکن نامعتبر است")
-    now = int(time.time())
+    active_clock = ensure_clock(clock, default=Clock.for_tehran())
+    now = int(active_clock.unix_timestamp())
     exp = int(payload.get("exp", 0))
     if exp and now > exp + leeway:
         raise ValueError("TOKEN_EXPIRED|توکن منقضی شده است")

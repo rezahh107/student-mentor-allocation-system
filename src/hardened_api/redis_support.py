@@ -8,6 +8,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Protocol, TypeVar
 
+from src.core.clock import Clock, ensure_clock
+
 from redis.asyncio import Redis
 
 from .observability import emit_redis_retry_exhausted, get_metric
@@ -190,7 +192,7 @@ class IdempotencyInFlight:
         ttl_seconds: int,
         body_hash: str,
         executor: RedisExecutor,
-        clock: Callable[[], float],
+        clock: Clock,
         correlation_id: str | None,
     ) -> None:
         self._redis = redis
@@ -207,7 +209,7 @@ class IdempotencyInFlight:
             "status": "completed",
             "body_hash": self._body_hash,
             "response": response_payload,
-            "stored_at": int(self._clock()),
+            "stored_at": int(self._clock.unix_timestamp()),
         }
         data = json.dumps(payload, ensure_ascii=False)
         await self._executor.call(
@@ -244,14 +246,14 @@ class RedisIdempotencyRepository:
         namespaces: RedisNamespaces,
         ttl_seconds: int = 86400,
         executor: RedisExecutor,
-        clock: Callable[[], float] | None = None,
+        clock: Clock | None = None,
         monotonic: Callable[[], float] | None = None,
     ) -> None:
         self._redis = redis
         self._namespaces = namespaces
         self._ttl = ttl_seconds
         self._executor = executor
-        self._clock = clock or time.time
+        self._clock = ensure_clock(clock, default=Clock.for_tehran())
         self._monotonic = monotonic or time.monotonic
 
     async def reserve(
@@ -276,7 +278,7 @@ class RedisIdempotencyRepository:
             if decoded.get("status") == "completed":
                 return None, decoded.get("response")
         acquired = await self._executor.call(
-            lambda: self._redis.set(lock_key, str(self._clock()), ex=self._ttl, nx=True),
+            lambda: self._redis.set(lock_key, str(self._clock.unix_timestamp()), ex=self._ttl, nx=True),
             op_name="idempotency.lock",
             correlation_id=correlation_id,
         )
@@ -298,7 +300,13 @@ class RedisIdempotencyRepository:
                     return None, decoded.get("response")
                 await self._executor.sleep(0.05)
             raise RedisOperationError("idempotency wait timeout exceeded")
-        payload = json.dumps({"status": "pending", "body_hash": body_hash, "created_at": int(self._clock())})
+        payload = json.dumps(
+            {
+                "status": "pending",
+                "body_hash": body_hash,
+                "created_at": int(self._clock.unix_timestamp()),
+            }
+        )
         await self._executor.call(
             lambda: self._redis.set(redis_key, payload, ex=self._ttl),
             op_name="idempotency.reserve",
@@ -343,13 +351,13 @@ class RedisSlidingWindowLimiter:
         namespaces: RedisNamespaces,
         fail_open: bool = False,
         executor: RedisExecutor,
-        clock: Callable[[], float] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._redis = redis
         self._namespaces = namespaces
         self._fail_open = fail_open
         self._executor = executor
-        self._clock = clock or time.time
+        self._clock = ensure_clock(clock, default=Clock.for_tehran())
 
     async def allow(
         self,
@@ -361,7 +369,7 @@ class RedisSlidingWindowLimiter:
         correlation_id: str | None = None,
     ) -> RateLimitResult:
         key = self._namespaces.rate_limit(consumer, route)
-        now = self._clock()
+        now = self._clock.unix_timestamp()
         window_start = now - window_seconds
         try:
             await self._executor.call(

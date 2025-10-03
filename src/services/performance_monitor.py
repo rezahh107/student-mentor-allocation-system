@@ -1,26 +1,24 @@
 from __future__ import annotations
 
-import time
 from datetime import datetime
 from typing import Dict
 
 import psutil
 
-from src.core.clock import SupportsNow, tehran_clock
+from src.core.clock import Clock, ensure_clock
 
 class PerformanceMonitor:
     """مانیتورینگ ساده برای ثبت سرعت تخصیص و وضعیت سیستم."""
 
-    def __init__(self, *, clock: SupportsNow | None = None) -> None:
-        default_clock = tehran_clock()
-        self.start_time = time.time()
+    def __init__(self, *, clock: Clock | None = None) -> None:
+        self._clock = ensure_clock(clock, default=Clock.for_tehran())
+        self.start_time = self._clock.unix_timestamp()
         self._allocation_count = 0
         self._allocation_times: list[float] = []
         self._successful_students = 0
         self._total_students = 0
         self._last_update: datetime | None = None
-        self._clock = clock or default_clock
-        self._timezone = getattr(self._clock, "timezone", default_clock.timezone)
+        self._timezone = self._clock.timezone
 
     def record_allocation(self, duration: float, *, total_students: int = 0, successful_students: int = 0) -> None:
         self._allocation_count += 1
@@ -34,7 +32,7 @@ class PerformanceMonitor:
     def get_stats(self) -> Dict[str, object]:
         avg_time = sum(self._allocation_times) / len(self._allocation_times) if self._allocation_times else 0.0
         memory = psutil.virtual_memory().percent if psutil.virtual_memory else 0.0
-        uptime = int(time.time() - self.start_time)
+        uptime = int(self._clock.unix_timestamp() - self.start_time)
         success_rate = (
             (self._successful_students / self._total_students) * 100.0
             if self._total_students

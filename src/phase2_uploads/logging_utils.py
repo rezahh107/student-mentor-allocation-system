@@ -4,9 +4,11 @@ import json
 import logging
 import os
 import random
-import time
+from datetime import datetime
 from hashlib import sha256
 from typing import Any, Dict
+
+from src.core.clock import Clock, ensure_clock
 
 MOBILE_MASK = "09*********"
 
@@ -27,17 +29,19 @@ def hash_national_id(value: str | None) -> str | None:
     return digest[:16]
 
 
-def setup_json_logging() -> logging.Logger:
+def setup_json_logging(*, clock: Clock | None = None) -> logging.Logger:
     logger = logging.getLogger("uploads")
     if logger.handlers:
         return logger
 
     handler = logging.StreamHandler()
+    active_clock = ensure_clock(clock, default=Clock.for_tehran())
+    tz = active_clock.timezone
 
     class JsonFormatter(logging.Formatter):
         def format(self, record: logging.LogRecord) -> str:  # noqa: D401
             payload: Dict[str, Any] = {
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(record.created)),
+                "timestamp": datetime.fromtimestamp(record.created, tz=tz).isoformat(),
                 "level": record.levelname,
                 "logger": record.name,
                 "message": record.getMessage(),
@@ -56,10 +60,11 @@ def setup_json_logging() -> logging.Logger:
     return logger
 
 
-def get_debug_context(extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def get_debug_context(extra: Dict[str, Any] | None = None, *, clock: Clock | None = None) -> Dict[str, Any]:
+    active_clock = ensure_clock(clock, default=Clock.for_tehran())
     context = {
         "env": os.getenv("GITHUB_ACTIONS", "local"),
-        "timestamp": time.time(),
+        "timestamp": active_clock.unix_timestamp(),
         "rand": random.random(),
     }
     if extra:

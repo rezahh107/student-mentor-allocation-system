@@ -1,8 +1,9 @@
 """Minimal trace API stub used in tests when opentelemetry is unavailable."""
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from src.core.clock import Clock
 
 
 @dataclass
@@ -10,7 +11,11 @@ class Span:
     name: str
     kind: str | None = None
     attributes: dict[str, object] | None = None
-    start_time: float = time.time()
+    clock: Clock = field(default_factory=Clock.for_tehran)
+    start_time: float = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "start_time", self.clock.unix_timestamp())
 
     def set_attribute(self, key: str, value: object) -> None:
         if self.attributes is None:

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Mapping
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
 
@@ -23,10 +23,16 @@ from phase6_import_to_sabt.app.middleware import (
     RateLimitMiddleware,
     RequestLoggingMiddleware,
 )
+from phase6_import_to_sabt.download_api import (
+    DownloadMetrics,
+    DownloadRetryPolicy,
+    DownloadSettings,
+    create_download_router,
+)
 from phase6_import_to_sabt.obs.metrics import ServiceMetrics, build_metrics, render_metrics
 from phase6_import_to_sabt.security.config import AccessConfigGuard, ConfigGuardError, SigningKeyDefinition, TokenDefinition
 from phase6_import_to_sabt.security.rbac import TokenRegistry
-from phase6_import_to_sabt.security.signer import DualKeySigner, SignatureError, SigningKeySet
+from phase6_import_to_sabt.security.signer import DualKeySigner, SigningKeySet
 from phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 from phase6_import_to_sabt.app.probes import AsyncProbe, ProbeResult
 from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore, KeyValueStore
@@ -42,6 +48,8 @@ class ApplicationContainer:
     clock: Clock
     timer: Timer
     metrics: ServiceMetrics
+    download_metrics: DownloadMetrics
+    download_settings: DownloadSettings
     templates: Jinja2Templates
     rate_limit_store: KeyValueStore
     idempotency_store: KeyValueStore
@@ -177,11 +185,22 @@ def create_application(
         default_ttl_seconds=access.download_ttl_seconds if access else config.auth.download_url_ttl_seconds,
     )
 
+    storage_root = Path(getattr(workflow, "storage_dir", Path("."))).resolve() if workflow else Path(".").resolve()
+    download_secret = normalize_token(config.auth.service_token) or "import-to-sabt-download"
+    download_settings = DownloadSettings(
+        workspace_root=storage_root,
+        secret=download_secret.encode("utf-8"),
+        retry=DownloadRetryPolicy(),
+    )
+    download_metrics = DownloadMetrics(metrics.registry)
+
     container = ApplicationContainer(
         config=config,
         clock=clock,
         timer=timer,
         metrics=metrics,
+        download_metrics=download_metrics,
+        download_settings=download_settings,
         templates=templates,
         rate_limit_store=rate_limit_store,
         idempotency_store=idempotency_store,
@@ -202,7 +221,14 @@ def create_application(
         "last_idempotency": None,
         "last_auth": None,
     }
-    app.state.storage_root = Path(getattr(workflow, "storage_dir", Path("."))).resolve() if workflow else None
+    app.state.storage_root = storage_root
+    app.state.download_metrics = download_metrics
+    download_router = create_download_router(
+        settings=download_settings,
+        clock=clock,
+        metrics=download_metrics,
+    )
+    app.include_router(download_router)
     install_error_handlers(app)
     configure_middleware(app, container)
 
@@ -258,63 +284,6 @@ def create_application(
                 },
             )
         return PlainTextResponse(render_metrics(container.metrics).decode("utf-8"))
-
-    @app.get("/download")
-    async def download_endpoint(signed: str, kid: str, exp: int, sig: str) -> Response:
-        try:
-            relative_path = container.download_signer.verify_components(
-                signed=signed,
-                kid=kid,
-                exp=exp,
-                sig=sig,
-                now=container.clock.now(),
-            )
-        except SignatureError as exc:
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "fa_error_envelope": {
-                        "code": "DOWNLOAD_FORBIDDEN",
-                        "message": exc.message_fa,
-                    }
-                },
-            )
-        base_dir = app.state.storage_root
-        if base_dir is None:
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "fa_error_envelope": {
-                        "code": "DOWNLOAD_UNAVAILABLE",
-                        "message": "سرویس دانلود در دسترس نیست.",
-                    }
-                },
-            )
-        target = (base_dir / Path(relative_path)).resolve()
-        if not str(target).startswith(str(base_dir)):
-            container.metrics.download_signed_total.labels(outcome="path_violation").inc()
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "fa_error_envelope": {
-                        "code": "DOWNLOAD_FORBIDDEN",
-                        "message": "توکن نامعتبر است.",
-                    }
-                },
-            )
-        if not target.is_file():
-            container.metrics.download_signed_total.labels(outcome="missing").inc()
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "fa_error_envelope": {
-                        "code": "DOWNLOAD_NOT_FOUND",
-                        "message": "فایل موردنظر یافت نشد.",
-                    }
-                },
-            )
-        container.metrics.download_signed_total.labels(outcome="served").inc()
-        return FileResponse(target, filename=target.name)
 
     @app.get("/ui/health", response_class=HTMLResponse)
     async def ui_health(request: Request):

@@ -62,6 +62,7 @@ _ALLOWED_DIRECTORIES = {
     "tests/excel",
     "tests/domain",
     "tests/api",
+    "tests/downloads",
 }
 
 _DEFAULT_TZ = ZoneInfo("Asia/Tehran")
@@ -152,6 +153,8 @@ def pytest_ignore_collect(collection_path, config):  # type: ignore[no-untyped-d
             if allowed.startswith(f"{rel_posix}/"):
                 return False
         return True
+    if rel.parent.as_posix() in _ALLOWED_DIRECTORIES:
+        return False
     return rel_posix not in _ALLOWED_RELATIVE_TESTS
 
 

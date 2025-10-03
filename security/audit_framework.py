@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from src.infrastructure.monitoring.logging import correlation_id_var
+from infrastructure.monitoring.logging_adapter import correlation_id_var
 
 
 def mask(value: str) -> str:

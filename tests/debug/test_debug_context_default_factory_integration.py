@@ -12,7 +12,7 @@ from src.app.bootstrap_logging import bootstrap_logging
 from src.app.context import set_debug_context
 from src.debug.debug_context import DebugContextFactory
 from src.fakeredis import FakeStrictRedis
-from src.logging.json_logger import LogEnricher
+from app_logging.json_logger import LogEnricher
 
 
 @pytest.fixture

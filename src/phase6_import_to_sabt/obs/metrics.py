@@ -5,7 +5,7 @@ from typing import Iterable
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
-from ..middleware.metrics import MiddlewareMetrics
+from phase6_import_to_sabt.middleware.metrics import MiddlewareMetrics
 
 REQUEST_LATENCY = "request_latency_seconds"
 

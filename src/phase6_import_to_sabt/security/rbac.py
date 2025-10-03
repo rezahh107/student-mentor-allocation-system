@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import Iterable, Literal, Sequence
 
-from .config import TokenDefinition
+from phase6_import_to_sabt.security.config import TokenDefinition
 
 
 class AuthorizationError(Exception):

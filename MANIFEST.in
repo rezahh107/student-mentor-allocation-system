@@ -1,0 +1,4 @@
+recursive-include src/phase6_import_to_sabt/templates *
+graft assets
+prune __pycache__
+global-exclude *.py[cod]

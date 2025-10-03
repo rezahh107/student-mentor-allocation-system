@@ -53,9 +53,16 @@ class AppConfig(BaseSettings):
     enable_diagnostics: bool = Field(default=False)
 
 
+    @classmethod
+    def from_env(cls) -> "AppConfig":
+        """Load configuration from environment variables deterministically."""
+
+        return cls()  # type: ignore[call-arg]
+
+
 @lru_cache(maxsize=1)
 def get_config() -> AppConfig:
-    return AppConfig()  # type: ignore[call-arg]
+    return AppConfig.from_env()
 
 
 __all__ = [

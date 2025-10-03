@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from .sanitization import dumps_json, hash_national_id, mask_mobile
+from phase6_import_to_sabt.sanitization import dumps_json, hash_national_id, mask_mobile
 
 
 class ExportLogger:

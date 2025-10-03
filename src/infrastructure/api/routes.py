@@ -15,12 +15,15 @@ from starlette.concurrency import iterate_in_threadpool
 from fastapi import APIRouter, FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from src.application.commands.allocation import GetJobStatus, StartBatchAllocation
-from src.interfaces.schemas import AllocationRunRequest, Job, JobStatus
-from src.infrastructure.api.error_handlers import install_error_handlers
-from src.infrastructure.monitoring.logging import CorrelationIdMiddleware, configure_json_logging
-from src.infrastructure.security.auth import require_roles
-from src.infrastructure.security.rate_limit import RateLimiter
+from application.commands.allocation import GetJobStatus, StartBatchAllocation
+from infrastructure.api.error_handlers import install_error_handlers
+from infrastructure.security.auth import require_roles
+from infrastructure.security.rate_limit import RateLimiter
+from interfaces.schemas import AllocationRunRequest, Job, JobStatus
+from infrastructure.monitoring.logging_adapter import (
+    CorrelationIdMiddleware,
+    configure_json_logging,
+)
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 

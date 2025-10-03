@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, Protocol
 
 from redis.asyncio import Redis
 
-from .clock import Clock
+from phase6_import_to_sabt.app.clock import Clock
 
 
 class SupportsNamespace(Protocol):

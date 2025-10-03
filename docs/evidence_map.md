@@ -23,6 +23,7 @@
 | AGENTS.md::8 Testing & CI Gates (CollectorRegistry reset) | tests/conftest.py::metrics_registry_guard |
 | AGENTS.md::8 Testing & CI Gates (Redis namespace guard) | tests/conftest.py::redis_state_guard |
 | AGENTS.md::8 Testing & CI Gates (Strict Scoring Parser) | scripts/ci_pytest_summary_parser.py::main |
+| AGENTS.md::8 Testing & CI Gates (Strict Scoring Parser Test) | tests/ci/test_ci_pytest_summary_parser.py::test_strict_scoring_v2_all_axes_and_caps |
 | AGENTS.md::3 Absolute Guardrails (Middleware Order) | tests/mw/test_order_uploads.py::test_rate_then_idem_then_auth |
 | AGENTS.md::3 Absolute Guardrails (Middleware Order POST) | tests/mw/test_order_post.py::test_middleware_order_post_exact |
 | AGENTS.md::3 Absolute Guardrails (Middleware Order GET) | tests/mw/test_order_get.py::test_middleware_order_get_paths |

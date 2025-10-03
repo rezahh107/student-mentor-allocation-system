@@ -14,7 +14,7 @@ async def test_middleware_order_post_exact(client, clean_state):
     payload = setup_test_data(suffix)
     headers = {
         "Authorization": "Bearer TESTTOKEN1234567890",
-        "Idempotency-Key": f"idem:test:{uuid.uuid4().hex[:12]}",
+        "Idempotency-Key": f"idem-test-{uuid.uuid4().hex[:12]}",
         "X-Debug-MW-Probe": "trace",
         "Content-Type": "application/json; charset=utf-8",
     }

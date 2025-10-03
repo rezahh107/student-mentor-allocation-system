@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from prometheus_client import CollectorRegistry
 
+from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
 from phase6_import_to_sabt.clock import Clock, FixedClock, ensure_clock
 from phase6_import_to_sabt.data_source import InMemoryDataSource
 from phase6_import_to_sabt.exporter import ImportToSabtExporter
@@ -14,6 +15,7 @@ from phase6_import_to_sabt.job_runner import DeterministicRedis, ExportJobRunner
 from phase6_import_to_sabt.metrics import ExporterMetrics
 from phase6_import_to_sabt.models import NormalizedStudentRow
 from phase6_import_to_sabt.roster import InMemoryRoster
+from phase7_release.deploy import ReadinessGate
 
 
 def make_row(
@@ -84,3 +86,25 @@ def build_job_runner(
         sleeper=lambda _: None,
     )
     return runner, metrics
+
+
+def build_export_app(
+    tmp_path: Path,
+    rows: Iterable[NormalizedStudentRow],
+    *,
+    clock: Clock | Callable[[], datetime] | None = None,
+):
+    runner, metrics = build_job_runner(tmp_path, rows, clock=clock)
+    signer = HMACSignedURLProvider(secret="secret", clock=clock)
+    gate = ReadinessGate(clock=lambda: 0.0)
+    gate.record_cache_warm()
+    gate.record_dependency(name="redis", healthy=True)
+    gate.record_dependency(name="database", healthy=True)
+    app = create_export_api(
+        runner=runner,
+        signer=signer,
+        metrics=metrics,
+        logger=runner.logger,
+        readiness_gate=gate,
+    )
+    return app, runner, metrics

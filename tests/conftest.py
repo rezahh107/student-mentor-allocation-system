@@ -47,6 +47,14 @@ _ALLOWED_RELATIVE_TESTS: tuple[str, ...] = (
     "tests/api/test_phase6_persian_errors.py",
     "tests/retry/test_retry_jitter_determinism.py",
     "tests/retry/test_retry_metrics.py",
+    "tests/exports/test_csv_excel_safety.py",
+    "tests/exports/test_crlf_and_bom.py",
+    "tests/exports/test_atomic_finalize.py",
+    "tests/exports/test_streaming_perf.py",
+    "tests/exports/test_signed_url.py",
+    "tests/mw/test_export_middleware_order.py",
+    "tests/ci/test_state_hygiene.py",
+    "tests/obs/test_retry_metrics.py",
 )
 
 _ALLOWED_DIRECTORIES = {

@@ -1,26 +1,17 @@
-from __future__ import annotations
+from phase6_import_to_sabt.metrics import reset_registry
 
-from datetime import datetime, timezone
-
-from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
-from tests.export.helpers import build_exporter, make_row
+from tests.export.helpers import build_job_runner, make_row
 
 
-def test_cleanup_and_registry_reset(tmp_path) -> None:
-    base_time = datetime(2024, 3, 27, 3, 0, tzinfo=timezone.utc)
-    orphan = tmp_path / "stuck.xlsx.part"
-    orphan.write_text("pending", encoding="utf-8")
+def test_redis_and_registry_reset(tmp_path) -> None:
+    runner, metrics = build_job_runner(tmp_path, [make_row(idx=1)])
+    key = "phase6:test:state"
+    runner.redis.setnx(key, "1")
+    assert runner.redis.get(key) == "1"
+    runner.redis.flushdb()
+    assert runner.redis.get(key) is None
 
-    rows = [make_row(idx=1), make_row(idx=2)]
-    exporter = build_exporter(tmp_path, rows)
-    assert not orphan.exists(), "Exporter should remove stale .part files during init"
-
-    exporter.run(
-        filters=ExportFilters(year=1402, center=1),
-        options=ExportOptions(chunk_size=1, output_format="xlsx"),
-        snapshot=ExportSnapshot(marker="snap", created_at=base_time),
-        clock_now=base_time,
-    )
-
-    leftover = list(tmp_path.glob("*.part"))
-    assert not leftover, f"Unexpected partial artifacts: {leftover}"
+    metrics.errors_total.labels(type="validation", format="csv").inc()
+    assert list(metrics.registry.collect()), "Metrics should have samples before reset"
+    reset_registry(metrics.registry)
+    assert list(metrics.registry.collect()) == []

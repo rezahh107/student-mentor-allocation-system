@@ -104,6 +104,9 @@ class ExportJobRunner:
         self._lock = threading.Lock()
         self._threads: Dict[str, threading.Thread] = {}
         self._sleep = sleeper or time.sleep
+        attach = getattr(self.exporter, "attach_metrics", None)
+        if callable(attach):
+            attach(self.metrics)
 
     def submit(
         self,
@@ -238,6 +241,8 @@ class ExportJobRunner:
                 error_payload = make_error("EXPORT_IO_ERROR", EXPORT_IO_FA_MESSAGE).as_dict()
                 error_payload["detail"] = type(exc).__name__
                 self.metrics.inc_error("io", format_label)
+                if isinstance(exc, RetryExhaustedError):
+                    self.metrics.observe_retry_exhaustion(phase="job")
                 self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
                 self._update_job(
                     job_id,
@@ -269,6 +274,7 @@ class ExportJobRunner:
                 if attempt >= self.max_retries:
                     error_payload = make_error("EXPORT_IO_ERROR", EXPORT_IO_FA_MESSAGE).as_dict()
                     error_payload["detail"] = str(exc)
+                    self.metrics.observe_retry_exhaustion(phase="job")
                     self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
                     self._update_job(
                         job_id,
@@ -296,6 +302,7 @@ class ExportJobRunner:
                     )
                     break
                 delay = deterministic_jitter(0.1, attempt, job_id)
+                self.metrics.observe_retry(phase="job", outcome="retry")
                 self._sleep(delay)
                 continue
             except Exception as exc:  # pragma: no cover - defensive logging

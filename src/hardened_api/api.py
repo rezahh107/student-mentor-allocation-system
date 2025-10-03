@@ -441,6 +441,12 @@ def create_app(
                 reservation = getattr(request.state, "idempotency_reservation", None)
                 if reservation:
                     await reservation.commit(enriched.model_dump(by_alias=True))
+                    get_metric("idempotency_events_total").labels(
+                        op="POST",
+                        endpoint="/allocations",
+                        outcome="committed",
+                        reason="completed",
+                    ).inc()
                 get_metric("alloc_attempt_total").labels(outcome="success").inc()
                 return enriched
             except HTTPException:
@@ -491,6 +497,12 @@ def create_app(
                 reservation = getattr(request.state, "idempotency_reservation", None)
                 if reservation:
                     await reservation.commit(envelope)
+                    get_metric("idempotency_events_total").labels(
+                        op="POST",
+                        endpoint="/counter/allocate",
+                        outcome="committed",
+                        reason="completed",
+                    ).inc()
                 remaining = getattr(request.state, "rate_limit_remaining", "0")
                 response.headers["X-RateLimit-Remaining"] = str(remaining)
                 response.headers["X-Correlation-ID"] = correlation_id

@@ -297,12 +297,44 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class TraceProbeMiddleware(BaseHTTPMiddleware):
+    """Capture deterministic middleware traversal for observability and tests."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        trace: list[str] = []
+        request.state.middleware_trace = trace
+        probe_enabled = request.headers.get("X-Debug-MW-Probe", "").lower() == "trace"
+        try:
+            response = await call_next(request)
+        finally:
+            request.state.middleware_chain = tuple(trace)
+        if probe_enabled:
+            correlation_id = getattr(request.state, "correlation_id", None) or response.headers.get(
+                "X-Correlation-ID",
+                "-",
+            )
+            joined = ">".join(trace)
+            response.headers["X-MW-Trace"] = f"{correlation_id}|{joined}"
+        return response
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, *, state: MiddlewareState) -> None:
         super().__init__(app)
         self._state = state
+        self._events_metric = get_metric("rate_limit_events_total")
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        trace = getattr(request.state, "middleware_trace", None)
+        if trace is not None:
+            trace.append("RateLimit")
         consumer = getattr(request.state, "consumer_id", None)
         if not consumer:
             api_key = request.headers.get("X-API-Key")
@@ -326,9 +358,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 correlation_id=getattr(request.state, "correlation_id", "-"),
             )
         except RedisOperationError as exc:
+            reason = "redis_unavailable"
             if self._state.rate_limit_config.fail_open or request.method == "GET":
                 request.state.rate_limit_remaining = rule.requests
+                self._events_metric.labels(
+                    op=request.method,
+                    endpoint=route,
+                    outcome="fail_open",
+                    reason=reason,
+                ).inc()
                 return await call_next(request)
+            self._events_metric.labels(
+                op=request.method,
+                endpoint=route,
+                outcome="error",
+                reason=reason,
+            ).inc()
             raise ValueError("INTERNAL|سامانهٔ محدودکنندهٔ درخواست در دسترس نیست") from exc
         else:
             if not result.allowed:
@@ -336,8 +381,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 retry_after = result.retry_after or rule.window_seconds
                 request.state.retry_after = max(1, int(math.ceil(retry_after)))
                 request.state.rate_limit_remaining = 0
+                self._events_metric.labels(
+                    op=request.method,
+                    endpoint=route,
+                    outcome="limited",
+                    reason="quota",
+                ).inc()
                 raise ValueError("RATE_LIMIT_EXCEEDED|تعداد درخواست‌ها از حد مجاز فراتر رفته است")
             request.state.rate_limit_remaining = result.remaining
+            self._events_metric.labels(
+                op=request.method,
+                endpoint=route,
+                outcome="allowed",
+                reason="ok",
+            ).inc()
         return await call_next(request)
 
 
@@ -345,14 +402,30 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, *, state: MiddlewareState) -> None:
         super().__init__(app)
         self._state = state
+        self._events_metric = get_metric("idempotency_events_total")
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         if request.method != "POST" or request.url.path not in {"/allocations", "/counter/allocate"}:
             return await call_next(request)
+        trace = getattr(request.state, "middleware_trace", None)
+        if trace is not None:
+            trace.append("Idempotency")
         header = request.headers.get("Idempotency-Key")
         if not header:
+            self._events_metric.labels(
+                op=request.method,
+                endpoint=request.url.path,
+                outcome="bypass",
+                reason="missing_header",
+            ).inc()
             return await call_next(request)
         if not _ASCII_TOKEN_RE.fullmatch(header):
+            self._events_metric.labels(
+                op=request.method,
+                endpoint=request.url.path,
+                outcome="error",
+                reason="invalid_key",
+            ).inc()
             raise ValueError("VALIDATION_ERROR|کلید تکرارناپذیری نامعتبر است")
         body = getattr(request, "_body", None)
         if body is None:
@@ -360,6 +433,12 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         try:
             parsed = json.loads(body.decode("utf-8")) if body else {}
         except json.JSONDecodeError as exc:
+            self._events_metric.labels(
+                op=request.method,
+                endpoint=request.url.path,
+                outcome="error",
+                reason="invalid_payload",
+            ).inc()
             raise ValueError("VALIDATION_ERROR|payload نامعتبر است") from exc
         body_hash = hash_national_id(json.dumps(parsed, sort_keys=True, ensure_ascii=False), salt=self._state.auth_config.api_key_salt)
         try:
@@ -369,10 +448,22 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
                 correlation_id=getattr(request.state, "correlation_id", "-"),
             )
         except IdempotencyConflictError as exc:
+            self._events_metric.labels(
+                op=request.method,
+                endpoint=request.url.path,
+                outcome="conflict",
+                reason="payload_mismatch",
+            ).inc()
             raise ValueError("CONFLICT|درخواست تکراری با بدنهٔ متفاوت") from exc
         request.state.idempotency_key = header
         request.state.idempotency_reservation = reservation
         if cached is not None:
+            self._events_metric.labels(
+                op=request.method,
+                endpoint=request.url.path,
+                outcome="replay",
+                reason="completed",
+            ).inc()
             response = Response(
                 content=json.dumps(cached, ensure_ascii=False),
                 media_type="application/json",
@@ -380,11 +471,24 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             )
             request.state.idempotency_cached = cached
             return response
+        if reservation is not None:
+            self._events_metric.labels(
+                op=request.method,
+                endpoint=request.url.path,
+                outcome="reserved",
+                reason="inflight",
+            ).inc()
         try:
             response = await call_next(request)
         except Exception:
             reservation = getattr(request.state, "idempotency_reservation", None)
             if reservation:
+                self._events_metric.labels(
+                    op=request.method,
+                    endpoint=request.url.path,
+                    outcome="aborted",
+                    reason="exception",
+                ).inc()
                 await reservation.abort()
             raise
         return response
@@ -396,6 +500,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         self._state = state
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        trace = getattr(request.state, "middleware_trace", None)
+        if trace is not None:
+            trace.append("Auth")
         try:
             consumer_id, scheme = await authenticate_request(request, self._state.auth_config)
         except PermissionError as exc:  # mapped upstream
@@ -407,20 +514,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
 
 def setup_middlewares(app: ASGIApp, *, state: MiddlewareState, allowed_origins: Iterable[str]) -> None:
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=list(allowed_origins),
-        allow_methods=["POST", "GET"],
-        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID", "Idempotency-Key"],
-        expose_headers=["X-Correlation-ID", "Retry-After", "X-RateLimit-Remaining"],
-        allow_credentials=False,
-        max_age=600,
-    )
-    app.add_middleware(CorrelationIdMiddleware)
-    app.add_middleware(RateLimitMiddleware, state=state)
-    app.add_middleware(IdempotencyMiddleware, state=state)
-    app.add_middleware(AuthenticationMiddleware, state=state)
+    from .middleware_chain import install_middleware_chain
+
+    install_middleware_chain(app, state=state, allowed_origins=allowed_origins)
 
 
 async def finalize_response(

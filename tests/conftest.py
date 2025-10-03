@@ -64,6 +64,16 @@ _CLOCK_ALLOWLIST = {(_SRC_ROOT / "core" / "clock.py").resolve()}
 _SCAN_DIRECTORIES = [(_SRC_ROOT / "phase6_import_to_sabt").resolve()]
 
 
+def pytest_addoption(parser):  # type: ignore[no-untyped-def]
+    parser.addini("env", "Environment variables for tests", type="linelist")
+    parser.addini("qt_api", "Qt backend placeholder", default="")
+    parser.addini("qt_no_exception_capture", "pytest-qt exception capture", type="bool", default=False)
+    parser.addini("qt_wait_signal_raising", "pytest-qt wait signal raising", type="bool", default=False)
+    parser.addini("timeout", "pytest-timeout default", default="0")
+    parser.addini("timeout_func_only", "pytest-timeout scope", type="bool", default=False)
+    parser.addini("xdist_strict", "pytest-xdist strict scheduling", type="bool", default=False)
+
+
 class DeterministicClock:
     """Deterministic clock with explicit tick control for tests."""
 

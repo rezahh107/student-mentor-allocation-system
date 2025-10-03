@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Sequence
 
-from .models import (
+from phase6_import_to_sabt.models import (
     COUNTER_PREFIX,
     ExportExecutionStats,
     ExportFilters,
@@ -25,12 +25,11 @@ from .models import (
     SABT_V1_PROFILE,
     SpecialSchoolsRoster,
 )
-from .sanitization import guard_formula, sanitize_phone, sanitize_text
-from .xlsx.writer import XLSXStreamWriter
-from src.shared.counter_rules import COUNTER_REGEX
+from phase6_import_to_sabt.sanitization import guard_formula, sanitize_phone, sanitize_text
+from phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
+from shared.counter_rules import validate_counter
 
 PHONE_RE = re.compile(r"^09\d{9}$")
-COUNTER_RE = COUNTER_REGEX
 
 
 class ExportValidationError(ValueError):
@@ -246,9 +245,7 @@ class ImportToSabtExporter:
         mobile = sanitize_phone(row.mobile)
         if not PHONE_RE.match(mobile):
             raise ExportValidationError("EXPORT_VALIDATION_ERROR:mobile")
-        counter = sanitize_text(row.counter)
-        if not COUNTER_RE.match(counter):
-            raise ExportValidationError("EXPORT_VALIDATION_ERROR:counter")
+        counter = validate_counter(sanitize_text(row.counter))
         gender = int(row.gender)
         expected_prefix = COUNTER_PREFIX.get(gender)
         if expected_prefix is None or expected_prefix not in counter:

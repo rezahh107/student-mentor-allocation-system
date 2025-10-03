@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable, Set
 
-from .models import SpecialSchoolsRoster
+from phase6_import_to_sabt.models import SpecialSchoolsRoster
 
 
 class InMemoryRoster(SpecialSchoolsRoster):

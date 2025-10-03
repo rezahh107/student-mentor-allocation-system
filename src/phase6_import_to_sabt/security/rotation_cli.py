@@ -7,10 +7,10 @@ import secrets
 from dataclasses import asdict
 from typing import Iterable, Sequence, TYPE_CHECKING
 
-from .config import AccessConfigGuard, AccessSettings, SigningKeyDefinition
+from phase6_import_to_sabt.security.config import AccessConfigGuard, AccessSettings, SigningKeyDefinition
 
 if TYPE_CHECKING:  # pragma: no cover - typing helper
-    from ..obs.metrics import ServiceMetrics
+    from phase6_import_to_sabt.obs.metrics import ServiceMetrics
 
 
 def _load_settings(args: argparse.Namespace) -> AccessSettings:

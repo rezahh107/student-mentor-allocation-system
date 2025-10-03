@@ -5,9 +5,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 
-from .workflow import ImportToSabtWorkflow
-from ..app.utils import normalize_token
-from ..security.rbac import AuthorizationError, enforce_center_scope
+from phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
+from phase6_import_to_sabt.app.utils import normalize_token
+from phase6_import_to_sabt.security.rbac import AuthorizationError, enforce_center_scope
 
 
 def _parse_center(value: str | None) -> int | None:

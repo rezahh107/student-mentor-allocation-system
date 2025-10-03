@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Iterable, List
 
-from .models import ExportFilters, ExportSnapshot, ExporterDataSource, NormalizedStudentRow
+from phase6_import_to_sabt.models import ExportFilters, ExportSnapshot, ExporterDataSource, NormalizedStudentRow
 
 
 class InMemoryDataSource(ExporterDataSource):

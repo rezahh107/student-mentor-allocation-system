@@ -94,10 +94,16 @@ ci = [
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["*"]
+
+[tool.setuptools.package-data]
+"phase6_import_to_sabt" = [
+    "templates/**/*",
+]
 
 # ═══════════════════════════════════════════════════════════════
 # Ruff Configuration

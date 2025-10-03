@@ -8,11 +8,12 @@ from typing import Tuple
 
 from .errors import counter_exhausted, invalid_gender, invalid_national_id, invalid_year_code
 from .types import GenderLiteral
-from src.shared.counter_rules import COUNTER_PREFIX_MAP, COUNTER_REGEX, gender_prefix
+from src.shared.counter_rules import COUNTER_PREFIX_MAP, COUNTER_REGEX, gender_prefix, validate_counter
+
+COUNTER_PATTERN = COUNTER_REGEX
 
 NATIONAL_ID_PATTERN = re.compile(r"^\d{10}$")
 YEAR_CODE_PATTERN = re.compile(r"^\d{2}$")
-COUNTER_PATTERN = COUNTER_REGEX
 COUNTER_PREFIX = dict(COUNTER_PREFIX_MAP)
 COUNTER_MAX_SEQ = 9999
 PERSIAN_DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
@@ -45,9 +46,10 @@ def ensure_valid_inputs(national_id: str, gender: GenderLiteral, year_code: str)
 
 def ensure_counter_format(counter: str) -> str:
     value = normalize(counter)
-    if not COUNTER_PATTERN.fullmatch(value):
+    try:
+        return validate_counter(value)
+    except ValueError:
         raise counter_exhausted("فرمت شمارنده معتبر نیست یا ظرفیت پایان یافته است.")
-    return value
 
 
 def ensure_sequence_bounds(seq: int) -> int:

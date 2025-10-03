@@ -7,6 +7,8 @@ from hashlib import blake2b
 from typing import Final, Mapping, Pattern
 import re
 
+_DIGIT_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+
 COUNTER_PREFIX_MAP: Final[Mapping[int, str]] = {0: "373", 1: "357"}
 """Normalized mapping gender→prefix.
 
@@ -35,10 +37,22 @@ def stable_counter_hash(seed: str) -> int:
     return int.from_bytes(digest, "big")
 
 
+def validate_counter(value: str) -> str:
+    """Normalize and validate counters against the canonical regex."""
+
+    normalized = (value or "").translate(_DIGIT_MAP)
+    normalized = normalized.replace("\u200c", "").replace("\u200d", "").replace("\ufeff", "")
+    normalized = re.sub(r"\s+", "", normalized)
+    if not COUNTER_REGEX.fullmatch(normalized):
+        raise ValueError("فرمت شمارنده معتبر نیست.")
+    return normalized
+
+
 __all__ = [
     "COUNTER_PREFIX_MAP",
     "COUNTER_REGEX",
     "gender_prefix",
     "stable_counter_hash",
+    "validate_counter",
 ]
 

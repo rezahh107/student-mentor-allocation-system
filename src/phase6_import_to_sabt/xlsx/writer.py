@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
@@ -8,10 +9,17 @@ from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import numbers
 
-from ..sanitization import fold_digits, guard_formula, sanitize_phone, sanitize_text
-from .constants import DEFAULT_CHUNK_SIZE, RISKY_FORMULA_PREFIXES, SENSITIVE_COLUMNS, SHEET_TEMPLATE
-from .metrics import ImportExportMetrics
-from .utils import atomic_write, cleanup_partials, iter_chunks, sha256_file
+from phase6_import_to_sabt.sanitization import sanitize_phone
+from phase6_import_to_sabt.app.io_utils import write_atomic
+from phase6_import_to_sabt.xlsx.constants import DEFAULT_CHUNK_SIZE, SENSITIVE_COLUMNS, SHEET_TEMPLATE
+from phase6_import_to_sabt.xlsx.metrics import ImportExportMetrics
+from phase6_import_to_sabt.xlsx.sanitize import (
+    normalize_digits_ascii,
+    normalize_digits_fa,
+    normalize_text,
+    safe_cell,
+)
+from phase6_import_to_sabt.xlsx.utils import cleanup_partials, iter_chunks, sha256_file
 
 EXPORT_COLUMNS: Sequence[str] = (
     "national_id",
@@ -85,21 +93,15 @@ class XLSXStreamWriter:
                     if column in SENSITIVE_COLUMNS:
                         cell.number_format = numbers.FORMAT_TEXT
                         cell.data_type = "s"
-                    elif column in {"mentor_name", "first_name", "last_name"} and value:
-                        cell.value = guard_formula(value)
+                    elif isinstance(value, str):
+                        cell.data_type = "s"
                     cells.append(cell)
                 sheet.append(cells)
                 count += 1
             row_counts[sheet.title] = count
-        with atomic_write(
-            output_path,
-            backoff_seed="xlsx",
-            on_retry=on_retry,
-            metrics=metrics,
-            format_label=format_label,
-            sleeper=sleeper,
-        ) as handle:
-            workbook.save(handle)
+        buffer = BytesIO()
+        workbook.save(buffer)
+        write_atomic(output_path, buffer.getvalue())
         sha256 = sha256_file(output_path)
         byte_size = output_path.stat().st_size
         return ExportArtifact(
@@ -114,25 +116,26 @@ class XLSXStreamWriter:
     def prepare_row(self, raw: dict[str, Any]) -> dict[str, str]:
         prepared: dict[str, str] = {}
         for column in EXPORT_COLUMNS:
-            value = raw.get(column, "")
-            if column in {"group_code", "student_type", "reg_center", "reg_status", "gender"} and value != "":
-                value = str(int(value))
-            if column == "school_code" and value not in (None, ""):
-                try:
-                    value = f"{int(value):06d}"
-                except (TypeError, ValueError):
-                    value = sanitize_text(str(value))
-            elif value is None:
-                value = ""
-            if column in SENSITIVE_COLUMNS:
-                value = fold_digits(sanitize_text(str(value)))
-                if column == "mobile":
-                    value = sanitize_phone(value)
+            raw_value = raw.get(column, "")
+            if raw_value is None:
+                raw_text = ""
             else:
-                value = sanitize_text(str(value))
-            if value and value[0] in RISKY_FORMULA_PREFIXES:
-                value = guard_formula(value)
-            prepared[column] = value
+                raw_text = str(raw_value)
+            normalized = normalize_text(raw_text)
+            if column == "school_code" and normalized:
+                try:
+                    normalized = f"{int(normalized):06d}"
+                except (TypeError, ValueError):
+                    normalized = normalize_digits_ascii(normalized)
+            if column in SENSITIVE_COLUMNS:
+                ascii_value = normalize_digits_ascii(normalized)
+                if column == "mobile":
+                    ascii_value = sanitize_phone(ascii_value)
+                prepared[column] = ascii_value
+            else:
+                visible = normalize_digits_fa(normalized)
+                guarded = safe_cell(visible)
+                prepared[column] = guarded
         return prepared
 
     def _sort_key(self, row: dict[str, Any]) -> tuple[str, str, str, str, str]:

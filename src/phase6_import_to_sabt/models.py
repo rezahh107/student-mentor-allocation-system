@@ -5,8 +5,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Iterable, Optional
 
-from src.shared.counter_rules import COUNTER_PREFIX_MAP
-from .clock import Clock
+from shared.counter_rules import COUNTER_PREFIX_MAP
+from phase6_import_to_sabt.clock import Clock
 
 COUNTER_PREFIX = dict(COUNTER_PREFIX_MAP)
 

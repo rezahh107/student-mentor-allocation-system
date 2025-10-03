@@ -2,19 +2,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+import importlib.resources as resources
 from pathlib import Path
 from typing import Mapping
 
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
 
-from .clock import Clock, build_system_clock
-from .config import AppConfig, AuthConfig
-from .errors import install_error_handlers
-from .logging_config import configure_logging
-from .middleware import (
+from phase6_import_to_sabt.app.clock import Clock, build_system_clock
+from phase6_import_to_sabt.app.config import AppConfig
+from phase6_import_to_sabt.app.errors import install_error_handlers
+from phase6_import_to_sabt.app.logging_config import configure_logging
+from phase6_import_to_sabt.app.middleware import (
     AuthMiddleware,
     CorrelationIdMiddleware,
     IdempotencyMiddleware,
@@ -22,15 +23,15 @@ from .middleware import (
     RateLimitMiddleware,
     RequestLoggingMiddleware,
 )
-from ..obs.metrics import ServiceMetrics, build_metrics, render_metrics
-from ..security.config import AccessConfigGuard, ConfigGuardError, SigningKeyDefinition, TokenDefinition
-from ..security.rbac import TokenRegistry
-from ..security.signer import DualKeySigner, SignatureError, SigningKeySet
-from ..xlsx.workflow import ImportToSabtWorkflow
-from .probes import AsyncProbe, ProbeResult
-from .timing import MonotonicTimer, Timer
-from .stores import KeyValueStore
-from .utils import normalize_token
+from phase6_import_to_sabt.obs.metrics import ServiceMetrics, build_metrics, render_metrics
+from phase6_import_to_sabt.security.config import AccessConfigGuard, ConfigGuardError, SigningKeyDefinition, TokenDefinition
+from phase6_import_to_sabt.security.rbac import TokenRegistry
+from phase6_import_to_sabt.security.signer import DualKeySigner, SignatureError, SigningKeySet
+from phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
+from phase6_import_to_sabt.app.probes import AsyncProbe, ProbeResult
+from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore, KeyValueStore
+from phase6_import_to_sabt.app.timing import MonotonicTimer, Timer
+from phase6_import_to_sabt.app.utils import normalize_token
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,16 @@ async def _run_probe(name: str, probe: AsyncProbe, timeout: float) -> ProbeResul
 
 
 def _build_templates() -> Jinja2Templates:
-    return Jinja2Templates(directory="src/phase6_import_to_sabt/templates")
+    templates_dir = resources.files("phase6_import_to_sabt").joinpath("templates")
+    return Jinja2Templates(directory=str(templates_dir))
+
+
+def _resolve_static_assets_root() -> Path:
+    project_root = Path(__file__).resolve().parents[4]
+    candidate = project_root / "assets"
+    if candidate.exists():
+        return candidate
+    return Path.cwd() / "assets"
 
 
 def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
@@ -88,21 +98,29 @@ def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
 
 
 def create_application(
-    config: AppConfig,
+    config: AppConfig | None = None,
     *,
     clock: Clock | None = None,
     metrics: ServiceMetrics | None = None,
     timer: Timer | None = None,
     templates: Jinja2Templates | None = None,
-    rate_limit_store: KeyValueStore,
-    idempotency_store: KeyValueStore,
-    readiness_probes: Mapping[str, AsyncProbe],
+    rate_limit_store: KeyValueStore | None = None,
+    idempotency_store: KeyValueStore | None = None,
+    readiness_probes: Mapping[str, AsyncProbe] | None = None,
     workflow: ImportToSabtWorkflow | None = None,
 ) -> FastAPI:
+    config = config or AppConfig.from_env()
     clock = clock or build_system_clock(config.timezone)
     metrics = metrics or build_metrics(config.observability.metrics_namespace)
     timer = timer or MonotonicTimer()
     templates = templates or _build_templates()
+    rate_limit_store = rate_limit_store or InMemoryKeyValueStore(
+        f"{config.ratelimit.namespace}:rate", clock
+    )
+    idempotency_store = idempotency_store or InMemoryKeyValueStore(
+        f"{config.ratelimit.namespace}:idempotency", clock
+    )
+    readiness_probes = dict(readiness_probes or {})
 
     configure_logging(config.observability.service_name, config.enable_debug_logs)
 
@@ -173,7 +191,9 @@ def create_application(
     )
 
     app = FastAPI(title="ImportToSabt")
-    app.mount("/static", StaticFiles(directory="assets"), name="static")
+    static_root = _resolve_static_assets_root()
+    if static_root.exists():
+        app.mount("/static", StaticFiles(directory=str(static_root)), name="static")
     app.state.diagnostics = {
         "enabled": config.enable_diagnostics,
         "last_chain": [],
@@ -338,7 +358,7 @@ def create_application(
             workflow._signed_url_ttl = access.download_ttl_seconds if access else config.auth.download_url_ttl_seconds  # type: ignore[attr-defined]
         except AttributeError:
             logger.debug("workflow.signed_url_override_failed")
-        from ..xlsx.router import build_router as build_xlsx_router
+        from phase6_import_to_sabt.xlsx.router import build_router as build_xlsx_router
 
         app.include_router(build_xlsx_router(workflow))
 
@@ -351,4 +371,14 @@ def create_application(
     return app
 
 
-__all__ = ["ApplicationContainer", "create_application", "configure_middleware"]
+build_app = create_application
+create_app = create_application
+
+
+__all__ = [
+    "ApplicationContainer",
+    "create_application",
+    "configure_middleware",
+    "build_app",
+    "create_app",
+]

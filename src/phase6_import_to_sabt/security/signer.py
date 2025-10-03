@@ -9,8 +9,8 @@ from datetime import datetime
 from typing import Iterable, Mapping, MutableMapping
 from urllib.parse import parse_qs, urlparse
 
-from ..models import SignedURLProvider
-from .config import SigningKeyDefinition
+from phase6_import_to_sabt.models import SignedURLProvider
+from phase6_import_to_sabt.security.config import SigningKeyDefinition
 
 
 logger = logging.getLogger(__name__)

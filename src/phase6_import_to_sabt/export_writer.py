@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -106,7 +107,7 @@ class ExportWriter:
 
     def write_csv(
         self,
-        rows: Sequence[dict[str, Any]],
+        rows: Iterable[dict[str, Any]],
         *,
         path_factory: Callable[[int], Path],
     ) -> ExportResult:
@@ -139,10 +140,12 @@ class ExportWriter:
 
     def write_xlsx(
         self,
-        rows: Sequence[dict[str, Any]],
+        rows: Iterable[dict[str, Any]],
         *,
         path_factory: Callable[[int], Path],
     ) -> ExportResult:
+        # openpyxl write-only mode keeps memory usage low without introducing
+        # the heavier xlsxwriter dependency, which aligns with CI constraints.
         workbook = Workbook(write_only=True)
         default = workbook.active
         if default is not None:
@@ -245,14 +248,16 @@ class ExportWriter:
 
 
 def _prepared_chunks(
-    rows: Sequence[dict[str, Any]],
+    rows: Iterable[dict[str, Any]],
     size: int,
     prepare: Callable[[dict[str, Any]], list[str]],
 ) -> Iterable[list[list[str]]]:
-    total = len(rows)
-    for start in range(0, total, size):
-        chunk = [prepare(rows[index]) for index in range(start, min(start + size, total))]
-        yield chunk
+    iterator = iter(rows)
+    while True:
+        batch = list(itertools.islice(iterator, size))
+        if not batch:
+            break
+        yield [prepare(item) for item in batch]
 
 
 def _sha256_file(path: Path) -> str:

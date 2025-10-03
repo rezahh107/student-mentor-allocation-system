@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Callable, Iterable, Optional
-from zoneinfo import ZoneInfo
+import core.clock as core_clock
 
 from phase6_import_to_sabt.sanitization import sanitize_text
 from phase6_import_to_sabt.models import SignedURLProvider
@@ -71,7 +71,7 @@ class ImportToSabtWorkflow:
         self.chunk_size = chunk_size
         self._upload_reader = XLSXUploadReader()
         self._xlsx_writer = XLSXStreamWriter(chunk_size=chunk_size)
-        self._timezone = ZoneInfo("Asia/Tehran")
+        self._timezone = core_clock.validate_timezone("Asia/Tehran")
         self._counter = itertools.count(1)
         self._lock = threading.Lock()
         self._uploads: dict[str, UploadRecord] = {}

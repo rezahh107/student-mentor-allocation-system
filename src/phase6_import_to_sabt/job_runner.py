@@ -167,6 +167,7 @@ class ExportJobRunner:
                     snapshot=job.snapshot,
                     clock_now=start_time,
                     stats=stats,
+                    correlation_id=job.correlation_id,
                 )
                 duration = (self.clock.now() - start_time).total_seconds()
                 self.metrics.observe_duration("total", duration, format_label)

@@ -14,6 +14,8 @@ from functools import lru_cache
 from typing import Callable, Protocol, runtime_checkable, Union
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import core.clock as core_clock
+
 # ----- Normalization helpers (from main) --------------------------------------
 
 _PERSIAN_DIGIT_MAP = {ord(ch): str(idx) for idx, ch in enumerate("۰۱۲۳۴۵۶۷۸۹")}
@@ -42,7 +44,7 @@ def _normalise_timezone_name(timezone: str) -> str:
 
 @lru_cache(maxsize=32)
 def _load_zone_info(timezone: str) -> ZoneInfo:
-    return ZoneInfo(timezone)
+    return core_clock.validate_timezone(timezone)
 
 
 def _coerce_aware(value: dt.datetime, tz: ZoneInfo) -> dt.datetime:
@@ -82,11 +84,14 @@ class SystemClock:
     """Clock backed by :class:`datetime.datetime.now` with an IANA timezone."""
     timezone: ZoneInfo
     _timezone_key: str = field(init=False, repr=False)
+    _delegate: core_clock.Clock = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.timezone, ZoneInfo):  # defensive
             raise TypeError("timezone must be a ZoneInfo instance")
-        object.__setattr__(self, "_timezone_key", getattr(self.timezone, "key", str(self.timezone)))
+        key = getattr(self.timezone, "key", str(self.timezone))
+        object.__setattr__(self, "_timezone_key", key)
+        object.__setattr__(self, "_delegate", core_clock.Clock.for_timezone(key))
 
     @property
     def timezone_name(self) -> str:
@@ -95,7 +100,7 @@ class SystemClock:
 
     def now(self) -> dt.datetime:
         """Return the current timezone-aware datetime in the configured zone."""
-        return dt.datetime.now(tz=self.timezone)
+        return self._delegate.now()
 
 
 def build_system_clock(timezone: str) -> SystemClock:

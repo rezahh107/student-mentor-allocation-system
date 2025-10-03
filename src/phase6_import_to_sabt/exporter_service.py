@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import os
 import re
 import time
@@ -11,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Sequence
 
+from core.clock import Clock as CoreClock, tehran_clock
+from core.retry import RetryPolicy, build_sync_clock_sleeper, execute_with_retry
 from phase6_import_to_sabt.models import (
     COUNTER_PREFIX,
     ExportExecutionStats,
@@ -30,6 +33,7 @@ from phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
 from shared.counter_rules import validate_counter
 
 PHONE_RE = re.compile(r"^09\d{9}$")
+RETRYABLE_EXPORT_ERRORS: tuple[type[Exception], ...] = (ConnectionError, TimeoutError, OSError)
 
 
 class ExportValidationError(ValueError):
@@ -45,6 +49,10 @@ class ImportToSabtExporter:
         output_dir: Path,
         profile: ExportProfile = SABT_V1_PROFILE,
         duration_clock: Callable[[], float] | None = None,
+        clock: CoreClock | None = None,
+        retry_policy: RetryPolicy | None = None,
+        retryable_exceptions: Iterable[type[Exception]] | None = None,
+        operation_namespace: str = "import_to_sabt.exporter",
     ) -> None:
         self.data_source = data_source
         self.roster = roster
@@ -53,6 +61,11 @@ class ImportToSabtExporter:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._duration_clock = duration_clock or time.perf_counter
         self._last_stats: ExportExecutionStats | None = None
+        self._clock = clock or tehran_clock()
+        self._retry_policy = retry_policy or RetryPolicy()
+        self._retryable_exceptions = tuple(retryable_exceptions or RETRYABLE_EXPORT_ERRORS)
+        self._sleeper = build_sync_clock_sleeper(self._clock)
+        self._operation_namespace = operation_namespace
         self._cleanup_partials()
 
     def _cleanup_partials(self) -> None:
@@ -62,6 +75,14 @@ class ImportToSabtExporter:
             except FileNotFoundError:
                 continue
 
+    def _remove_manifest(self) -> None:
+        manifest_path = self.output_dir / "export_manifest.json"
+        if manifest_path.exists():
+            try:
+                manifest_path.unlink()
+            except FileNotFoundError:  # pragma: no cover - race resistant cleanup
+                pass
+
     def run(
         self,
         *,
@@ -70,36 +91,61 @@ class ImportToSabtExporter:
         snapshot: ExportSnapshot,
         clock_now: datetime,
         stats: ExportExecutionStats | None = None,
+        correlation_id: str = "import_to_sabt_export",
     ) -> ExportManifest:
         if options.chunk_size <= 0:
             raise ExportValidationError("EXPORT_VALIDATION_ERROR:chunk_size")
         stats = stats or ExportExecutionStats()
         self._cleanup_partials()
-        with self._measure_phase(stats, "query"):
-            rows = list(self.data_source.fetch_rows(filters, snapshot))
-            if not rows:
-                raise ExportValidationError("EXPORT_EMPTY")
-            normalized_rows = [self._normalize_row(row, filters) for row in rows]
-            sorted_rows = self._sort_rows(normalized_rows)
+        self._remove_manifest()
+
+        def _query_phase() -> list[dict[str, str]]:
+            with self._measure_phase(stats, "query"):
+                rows = list(self.data_source.fetch_rows(filters, snapshot))
+                if not rows:
+                    raise ExportValidationError("EXPORT_EMPTY")
+                normalized_rows = [self._normalize_row(row, filters) for row in rows]
+                return self._sort_rows(normalized_rows)
+
+        sorted_rows = execute_with_retry(
+            _query_phase,
+            policy=self._retry_policy,
+            clock=self._clock,
+            sleeper=self._sleeper,
+            retryable=self._retryable_exceptions,
+            correlation_id=correlation_id,
+            op=f"{self._operation_namespace}.query",
+        )
         timestamp = clock_now.strftime("%Y%m%d%H%M%S")
         format_label = options.output_format
 
-        if format_label == "csv":
-            files, total_rows, excel_safety = self._write_csv_exports(
+        def _write_phase() -> tuple[list[ExportManifestFile], int, dict[str, Any]]:
+            self._cleanup_partials()
+            if format_label == "csv":
+                return self._write_csv_exports(
+                    filters=filters,
+                    rows=sorted_rows,
+                    options=options,
+                    timestamp=timestamp,
+                    stats=stats,
+                )
+            return self._write_xlsx_export(
                 filters=filters,
                 rows=sorted_rows,
                 options=options,
                 timestamp=timestamp,
                 stats=stats,
             )
-        else:
-            files, total_rows, excel_safety = self._write_xlsx_export(
-                filters=filters,
-                rows=sorted_rows,
-                options=options,
-                timestamp=timestamp,
-                stats=stats,
-            )
+
+        files, total_rows, excel_safety = execute_with_retry(
+            _write_phase,
+            policy=self._retry_policy,
+            clock=self._clock,
+            sleeper=self._sleeper,
+            retryable=self._retryable_exceptions,
+            correlation_id=correlation_id,
+            op=f"{self._operation_namespace}.write",
+        )
 
         manifest = ExportManifest(
             profile=self.profile,
@@ -118,42 +164,52 @@ class ImportToSabtExporter:
             excel_safety=excel_safety,
         )
         manifest_path = self.output_dir / "export_manifest.json"
-        with self._measure_phase(stats, "finalize"):
-            with atomic_writer(manifest_path) as fh:
-                import json
-
-                filters_payload: dict[str, object] = {"year": filters.year, "center": filters.center}
-                if filters.delta:
-                    filters_payload["delta"] = {
-                        "created_at_watermark": filters.delta.created_at_watermark.isoformat(),
-                        "id_watermark": filters.delta.id_watermark,
-                    }
-                payload = {
-                    "profile": self.profile.full_name,
-                    "filters": filters_payload,
-                    "snapshot": {
-                        "marker": snapshot.marker,
-                        "created_at": snapshot.created_at.isoformat(),
-                    },
-                    "generated_at": clock_now.isoformat(),
-                    "total_rows": total_rows,
-                    "files": [
-                        {
-                            **asdict(file),
-                            "sheets": [list(item) for item in file.sheets] if file.sheets else [],
-                        }
-                        for file in files
-                    ],
-                    "metadata": manifest.metadata,
-                    "format": format_label,
-                    "excel_safety": excel_safety,
+        filters_payload: dict[str, object] = {"year": filters.year, "center": filters.center}
+        if filters.delta:
+            filters_payload["delta"] = {
+                "created_at_watermark": filters.delta.created_at_watermark.isoformat(),
+                "id_watermark": filters.delta.id_watermark,
+            }
+        payload = {
+            "profile": self.profile.full_name,
+            "filters": filters_payload,
+            "snapshot": {
+                "marker": snapshot.marker,
+                "created_at": snapshot.created_at.isoformat(),
+            },
+            "generated_at": clock_now.isoformat(),
+            "total_rows": total_rows,
+            "files": [
+                {
+                    **asdict(file),
+                    "sheets": [list(item) for item in file.sheets] if file.sheets else [],
                 }
-                if filters.delta:
-                    payload["delta_window"] = {
-                        "created_at_watermark": filters.delta.created_at_watermark.isoformat(),
-                        "id_watermark": filters.delta.id_watermark,
-                    }
-                json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+                for file in files
+            ],
+            "metadata": manifest.metadata,
+            "format": format_label,
+            "excel_safety": excel_safety,
+        }
+        if filters.delta:
+            payload["delta_window"] = {
+                "created_at_watermark": filters.delta.created_at_watermark.isoformat(),
+                "id_watermark": filters.delta.id_watermark,
+            }
+
+        def _finalize_phase() -> None:
+            with self._measure_phase(stats, "finalize"):
+                with atomic_writer(manifest_path) as fh:
+                    json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+        execute_with_retry(
+            _finalize_phase,
+            policy=self._retry_policy,
+            clock=self._clock,
+            sleeper=self._sleeper,
+            retryable=self._retryable_exceptions,
+            correlation_id=correlation_id,
+            op=f"{self._operation_namespace}.finalize",
+        )
         self._last_stats = stats
         return manifest
 

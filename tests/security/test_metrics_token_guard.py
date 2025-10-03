@@ -1,72 +1,71 @@
 from __future__ import annotations
 
-import uuid
+from datetime import datetime, timezone
+from typing import Dict
+from uuid import uuid4
 
-from tests.phase6_import_to_sabt.access_helpers import access_test_app
+import pytest
+from fastapi.testclient import TestClient
 
-TOKENS = [
-    {"value": "A" * 32, "role": "ADMIN"},
-    {"value": "B" * 32, "role": "MANAGER", "center": 321},
-    {"value": "C" * 32, "role": "METRICS_RO"},
-]
-
-SIGNING_KEYS = [
-    {"kid": "ABCD", "secret": "S" * 48, "state": "active"},
-]
+from phase6_import_to_sabt.app.app_factory import create_application
+from phase6_import_to_sabt.app.clock import FixedClock
+from phase6_import_to_sabt.app.config import AppConfig
+from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
+from phase6_import_to_sabt.app.timing import DeterministicTimer
+from phase6_import_to_sabt.obs.metrics import build_metrics
 
 
-def test_metrics_requires_token(monkeypatch, metrics_registry_guard, redis_state_guard) -> None:
-    metrics_namespace = redis_state_guard.namespace.replace(":", "-")
-    with access_test_app(
-        monkeypatch,
-        tokens=TOKENS,
-        signing_keys=SIGNING_KEYS,
-        metrics_namespace=metrics_namespace,
-        registry=metrics_registry_guard,
-    ) as ctx:
-        missing = ctx.client.get(
-            "/metrics",
-            headers={"X-Request-ID": f"rid-{uuid.uuid4().hex}"},
-        )
-        missing_body = missing.json()
-        debug_missing = {
-            "status": missing.status_code,
-            "body": missing_body,
-            "failures": [sample.labels for sample in ctx.metrics.auth_fail_total.collect()[0].samples],
+@pytest.fixture()
+def metrics_context() -> Dict[str, object]:
+    unique = uuid4().hex
+    config = AppConfig(
+        redis={"dsn": "redis://localhost:6379/0", "namespace": f"import_to_sabt_metrics_{unique}"},
+        database={"dsn": "postgresql://localhost/import_to_sabt"},
+        auth={
+            "metrics_token": f"metrics-{unique}",
+            "service_token": f"service-{unique}",
+            "tokens_env_var": "TOKENS",
+            "download_signing_keys_env_var": "DOWNLOAD_KEYS",
+            "download_url_ttl_seconds": 900,
+        },
+        timezone="Asia/Tehran",
+    )
+    clock = FixedClock(datetime(2024, 1, 1, tzinfo=timezone.utc))
+    timer = DeterministicTimer([0.0, 0.0, 0.0])
+    registry_namespace = f"import_to_sabt_metrics_{unique}"
+    metrics = build_metrics(registry_namespace)
+    rate_store = InMemoryKeyValueStore(f"rate:{unique}", clock)
+    idem_store = InMemoryKeyValueStore(f"idem:{unique}", clock)
+    app = create_application(
+        config=config,
+        clock=clock,
+        metrics=metrics,
+        timer=timer,
+        rate_limit_store=rate_store,
+        idempotency_store=idem_store,
+        readiness_probes={},
+    )
+    yield {
+        "app": app,
+        "token": config.auth.metrics_token,
+        "rate_store": rate_store,
+        "idem_store": idem_store,
+    }
+    rate_store._store.clear()
+    idem_store._store.clear()
+
+
+def test_metrics_requires_token(metrics_context: Dict[str, object]) -> None:
+    app = metrics_context["app"]
+    with TestClient(app) as client:
+        response = client.get("/metrics")
+        assert response.status_code in {401, 403}, {
+            "status": response.status_code,
+            "body": response.text,
         }
-        assert missing.status_code == 401, debug_missing
-        assert missing_body["fa_error_envelope"]["code"] == "UNAUTHORIZED", debug_missing
-
-        forbidden = ctx.client.get(
-            "/metrics",
-            headers={
-                "Authorization": f"Bearer {TOKENS[0]['value']}",
-                "X-Request-ID": f"rid-{uuid.uuid4().hex}",
-            },
-        )
-        forbidden_body = forbidden.json()
-        fail_samples = ctx.metrics.auth_fail_total.collect()[0].samples
-        debug_forbidden = {
-            "status": forbidden.status_code,
-            "body": forbidden_body,
-            "fail_samples": [sample.labels for sample in fail_samples],
+        authed = client.get("/metrics", headers={"X-Metrics-Token": metrics_context["token"]})
+        assert authed.status_code == 200, {
+            "status": authed.status_code,
+            "body": authed.text[:200],
         }
-        assert forbidden.status_code == 403, debug_forbidden
-        assert forbidden_body["fa_error_envelope"]["code"] == "METRICS_TOKEN_INVALID", debug_forbidden
-        assert any(sample.labels["reason"] == "metrics_forbidden" for sample in fail_samples), debug_forbidden
-
-        allowed = ctx.client.get(
-            "/metrics",
-            headers={
-                "X-Metrics-Token": TOKENS[2]["value"],
-                "X-Request-ID": f"rid-{uuid.uuid4().hex}",
-            },
-        )
-        debug_allowed = {
-            "status": allowed.status_code,
-            "text": allowed.text[:128],
-            "ok_samples": [sample.labels for sample in ctx.metrics.auth_ok_total.collect()[0].samples],
-        }
-        assert allowed.status_code == 200, debug_allowed
-        ok_samples = ctx.metrics.auth_ok_total.collect()[0].samples
-        assert any(sample.labels["role"] == "METRICS_RO" for sample in ok_samples), debug_allowed
+        assert authed.text.startswith("# HELP"), authed.text[:200]

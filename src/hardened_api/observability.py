@@ -8,8 +8,7 @@ import re
 import threading
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator, Mapping, MutableMapping
 
 from opentelemetry import trace
@@ -20,6 +19,9 @@ from prometheus_client import Counter, Gauge, Histogram
 _PII_PHONE_PATTERN = re.compile(r"^(09)(\d{6})(\d{2})$")
 
 _logger_lock = threading.Lock()
+
+
+from src.core.clock import Clock, tehran_clock
 
 
 @dataclass(slots=True)
@@ -38,10 +40,11 @@ class LogRecord:
     outcome: str
     error_code: str | None = None
     extra: Mapping[str, Any] | None = None
+    clock: Clock = field(default_factory=tehran_clock, repr=False)
 
     def to_json(self) -> str:
         payload: MutableMapping[str, Any] = {
-            "ts": datetime.now(tz=timezone.utc).isoformat(),
+            "ts": self.clock.now().isoformat(),
             "level": self.level,
             "msg": self.msg,
             "correlation_id": self.correlation_id,
@@ -210,9 +213,11 @@ def emit_redis_retry_exhausted(
     attempts: int,
     last_error: str,
     namespace: str,
+    clock: Clock | None = None,
 ) -> None:
+    active_clock = clock or tehran_clock()
     payload = {
-        "ts": datetime.now(tz=timezone.utc).isoformat(),
+        "ts": active_clock.now().isoformat(),
         "level": "warning",
         "event": "redis.retry_exhausted",
         "rid": correlation_id,

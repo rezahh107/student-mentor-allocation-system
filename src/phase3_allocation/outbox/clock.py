@@ -2,25 +2,29 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
 from typing import Protocol
+
+from src.core.clock import Clock as AppClock, tehran_clock
 
 
 class Clock(Protocol):
     """Clock abstraction for deterministic tests."""
 
-    def now(self) -> datetime:
-        """Return a timezone-aware wall-clock timestamp."""
+    def now(self):  # pragma: no cover - protocol
+        ...
 
-    def monotonic(self) -> float:
-        """Return a monotonic reference in seconds."""
+    def monotonic(self) -> float:  # pragma: no cover - protocol
+        ...
 
 
 class SystemClock(Clock):
     """Default implementation backed by stdlib clocks."""
 
-    def now(self) -> datetime:
-        return datetime.now(timezone.utc)
+    def __init__(self, *, clock: AppClock | None = None) -> None:
+        self._clock = clock or tehran_clock()
+
+    def now(self):
+        return self._clock.now()
 
     def monotonic(self) -> float:
         return time.monotonic()

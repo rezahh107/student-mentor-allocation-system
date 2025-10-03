@@ -22,7 +22,7 @@ class CountingIterable:
 
 
 def test_streaming_no_buffer_blowup(tmp_path) -> None:
-    clock = Clock(ZoneInfo("Asia/Baku"), lambda: datetime(2024, 3, 20, 10, tzinfo=ZoneInfo("UTC")))
+    clock = Clock(ZoneInfo("Asia/Tehran"), lambda: datetime(2024, 3, 20, 10, tzinfo=ZoneInfo("UTC")))
     source = CountingIterable(2000)
     meter = StreamingPilotMeter(source=source, clock=clock, tmp_root=tmp_path / "spool")
     stats = meter.prepare()

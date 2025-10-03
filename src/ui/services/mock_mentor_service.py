@@ -1,15 +1,17 @@
 """Mock service for mentor management to support UI development."""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 import copy
+
+from src.core.clock import SupportsNow, tehran_clock
 
 
 class MockMentorService:
     """In-memory mentor service used during UI prototyping."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: SupportsNow | None = None) -> None:
+        self._clock = clock or tehran_clock()
         self._mentors: List[Dict[str, Any]] = [
             {
                 "id": 1,
@@ -21,7 +23,7 @@ class MockMentorService:
                 "remaining_capacity": 7,
                 "is_active": True,
                 "phone": "09123456789",
-                "created_at": datetime.now(),
+                "created_at": self._clock.now(),
                 "groups": ["کنکوری", "متوسطه دوم"],
             },
             {
@@ -34,7 +36,7 @@ class MockMentorService:
                 "remaining_capacity": 7,
                 "is_active": True,
                 "phone": "09987654321",
-                "created_at": datetime.now(),
+                "created_at": self._clock.now(),
                 "groups": ["متوسطه اول", "دبستان"],
             },
             {
@@ -47,7 +49,7 @@ class MockMentorService:
                 "remaining_capacity": 2,
                 "is_active": True,
                 "phone": "09111222333",
-                "created_at": datetime.now(),
+                "created_at": self._clock.now(),
                 "groups": ["کنکوری", "هنرستان"],
             },
             {
@@ -60,7 +62,7 @@ class MockMentorService:
                 "remaining_capacity": 0,
                 "is_active": False,
                 "phone": "09444555666",
-                "created_at": datetime.now(),
+                "created_at": self._clock.now(),
                 "groups": ["متوسطه اول"],
             },
         ]
@@ -102,7 +104,7 @@ class MockMentorService:
             "remaining_capacity": mentor_data["capacity"],
             "is_active": mentor_data.get("is_active", True),
             "phone": mentor_data.get("phone", ""),
-            "created_at": datetime.now(),
+            "created_at": self._clock.now(),
             "groups": mentor_data.get("groups", []),
             "notes": mentor_data.get("notes", ""),
         }

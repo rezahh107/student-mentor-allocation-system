@@ -8,6 +8,7 @@ from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 import qasync
 
 from src.api.client import APIClient
+from src.core.clock import SupportsNow, tehran_clock
 from src.services.analytics_service import AnalyticsService, DashboardData
 from src.services.realtime_service import RealtimeService
 from src.services.report_service import DashboardReportGenerator
@@ -21,11 +22,12 @@ class DashboardPresenter(QObject):
     loading_finished = pyqtSignal()
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, api_client: Optional[APIClient] = None) -> None:
+    def __init__(self, api_client: Optional[APIClient] = None, *, clock: SupportsNow | None = None) -> None:
         super().__init__()
         self.api_client = api_client or APIClient(use_mock=True)
-        self.analytics_service = AnalyticsService(self.api_client)
-        self.report_generator = DashboardReportGenerator()
+        self.clock = clock or tehran_clock()
+        self.analytics_service = AnalyticsService(self.api_client, clock=self.clock)
+        self.report_generator = DashboardReportGenerator(clock=self.clock)
 
         self.auto_refresh_timer = QTimer()
         self.auto_refresh_timer.timeout.connect(lambda: qasync.asyncSlot()(self.refresh_data)())

@@ -17,15 +17,19 @@
 | AGENTS.md::6 Observability & Security (/metrics token) | tests/security/test_metrics_token_guard.py::test_metrics_requires_token |
 | AGENTS.md::7 Performance & Reliability | tests/perf/test_export_100k_perf.py::test_p95_latency_and_memory_budget |
 | AGENTS.md::7 Performance & Reliability (Retry) | tests/retry/test_retry_backoff.py::test_retry_jitter_and_metrics_without_sleep |
+| AGENTS.md::7 Performance & Reliability (Exporter retry integration) | tests/exports/test_job_runner_retry_metrics.py::test_export_job_runner_retry_deterministic_backoff |
+| AGENTS.md::7 Performance & Reliability (Retry exhaustion metrics) | tests/exports/test_job_runner_retry_metrics.py::test_export_job_runner_retry_exhaustion_records_failure_metrics |
 | AGENTS.md::8 Testing & CI Gates (State hygiene) | tests/fixtures/state.py::cleanup_fixtures |
 | AGENTS.md::8 Testing & CI Gates (CollectorRegistry reset) | tests/conftest.py::metrics_registry_guard |
 | AGENTS.md::8 Testing & CI Gates (Redis namespace guard) | tests/conftest.py::redis_state_guard |
 | AGENTS.md::8 Testing & CI Gates (Strict Scoring Parser) | scripts/ci_pytest_summary_parser.py::main |
 | AGENTS.md::8 Testing & CI Gates (Strict Scoring Parser Test) | tests/ci/test_ci_pytest_summary_parser.py::test_strict_scoring_v2_all_axes_and_caps |
+| AGENTS.md::8 Testing & CI Gates (Export retry hygiene) | tests/exports/test_job_runner_retry_metrics.py::test_export_job_runner_retry_exhaustion_records_failure_metrics |
 | AGENTS.md::3 Absolute Guardrails (Middleware Order) | tests/mw/test_order_uploads.py::test_rate_then_idem_then_auth |
 | AGENTS.md::3 Absolute Guardrails (Middleware Order POST) | tests/mw/test_order_post.py::test_middleware_order_post_exports_xlsx |
 | AGENTS.md::3 Absolute Guardrails (Middleware Order GET) | tests/mw/test_order_get.py::test_middleware_order_get_paths |
 | AGENTS.md::3 Absolute Guardrails (RateLimit→Idempotency→Auth) | tests/mw/test_order_clocked.py::test_post_chain_order |
+| AGENTS.md::3 Absolute Guardrails (Diagnostics chain proof) | tests/mw/test_middleware_diagnostics_chain.py::test_middleware_chain_recorded_rate_limit_idem_auth |
 | AGENTS.md::3 Absolute Guardrails (Idempotency concurrency) | tests/idem/test_concurrent_posts.py::test_only_one_succeeds |
 | AGENTS.md::3 Absolute Guardrails (Rate limit Persian errors) | tests/ratelimit/test_limits.py::test_exceed_limit_persian_error |
 | AGENTS.md::3 Absolute Guardrails (Persian errors) | tests/i18n/test_persian_errors.py::test_export_validation_error_message_exact |

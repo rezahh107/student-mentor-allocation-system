@@ -22,13 +22,13 @@ from .perf_harness import PerfBaseline, PerfHarness
 from .sbom import generate_sbom
 from .versioning import resolve_build_version
 
-_BAKU_TZ = ZoneInfo("Asia/Baku")
+_TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
 
-def _ensure_baku(dt: datetime) -> datetime:
+def _ensure_tehran(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=_BAKU_TZ)
-    return dt.astimezone(_BAKU_TZ)
+        return dt.replace(tzinfo=_TEHRAN_TZ)
+    return dt.astimezone(_TEHRAN_TZ)
 
 
 @dataclass(frozen=True)
@@ -106,7 +106,7 @@ class ReleaseBuilder:
         git_sha = self._env.get("GIT_SHA", "unknown")
         build_tag = self._env.get("BUILD_TAG")
         version = resolve_build_version(build_tag, git_sha)
-        build_time = _ensure_baku(self._clock())
+        build_time = _ensure_tehran(self._clock())
 
         wheel_path = release_dir / f"importtosabt-{version}-py3-none-any.whl"
         self._build_wheel(wheel_path=wheel_path, version=version)

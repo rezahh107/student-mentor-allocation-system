@@ -34,7 +34,7 @@ class StaticConnection:
 
 class FrozenClock:
     def __init__(self) -> None:
-        self._now = dt.datetime(2024, 1, 1, 12, 0, tzinfo=ZoneInfo("Asia/Baku"))
+        self._now = dt.datetime(2024, 1, 1, 12, 0, tzinfo=ZoneInfo("Asia/Tehran"))
 
     def now(self) -> dt.datetime:
         return self._now

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from datetime import datetime
 from typing import Dict, List, Optional
 
 from faker import Faker
 
 from ...core.models import Mentor, Student
+from ...core.clock import SupportsNow, tehran_clock
 
 
 class IBackendService(ABC):
@@ -33,8 +33,15 @@ class IBackendService(ABC):
 class MockBackendService(IBackendService):
     """Simple in-memory backend used for tests and demos."""
 
-    def __init__(self, *, student_count: int = 150, mentor_count: int = 25) -> None:
+    def __init__(
+        self,
+        *,
+        student_count: int = 150,
+        mentor_count: int = 25,
+        clock: SupportsNow | None = None,
+    ) -> None:
         self._faker = Faker("fa_IR")
+        self._clock = clock or tehran_clock()
         self.students: List[Student] = self._generate_sample_students(student_count)
         self.mentors: List[Mentor] = self._generate_sample_mentors(mentor_count)
         self.assignments: List[Dict[str, object]] = []
@@ -57,7 +64,7 @@ class MockBackendService(IBackendService):
                 record = {
                     "student_id": assignment["student_id"],
                     "mentor_id": assignment["mentor_id"],
-                    "assigned_at": datetime.now(),
+                    "assigned_at": self._clock.now(),
                     "priority_score": assignment.get("priority_score", 0),
                 }
                 self.assignments.append(record)

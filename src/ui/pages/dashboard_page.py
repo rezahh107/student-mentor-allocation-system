@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Dict
 import logging
 import os
 
@@ -32,6 +33,7 @@ from PyQt5.QtWidgets import (
 )
 from qasync import asyncSlot
 
+from src.core.clock import tehran_clock
 from src.ui._safety import is_minimal_mode, log_minimal_mode, swallow_ui_error
 from src.ui.pages.dashboard_presenter import DashboardPresenter
 from src.ui.widgets.charts.age_distribution_chart import AgeDistributionChart
@@ -52,6 +54,7 @@ class DashboardPage(QWidget):
     def __init__(self, presenter: DashboardPresenter) -> None:
         super().__init__()
         self.presenter = presenter
+        self._clock = getattr(presenter, "clock", tehran_clock())
         self.charts: Dict[str, QWidget] = {}
         self.cards: Dict[str, StatisticCard] = {}
         self.overlay: LoadingOverlay | None = None
@@ -260,7 +263,7 @@ def showEvent(self, event) -> None:  # noqa: D401, N802
 
     def _selected_date_range(self) -> tuple[datetime, datetime]:
         txt = self.date_range_combo.currentText()
-        end = datetime.now()
+        end = self._clock.now()
         if txt == "امروز":
             start = end.replace(hour=0, minute=0, second=0, microsecond=0)
         elif txt == "7 روز گذشته":
@@ -278,8 +281,17 @@ def showEvent(self, event) -> None:  # noqa: D401, N802
             end = self.end_date.date().toPyDate()
             if hasattr(end, "toPyDate"):
                 end = end.toPyDate()
-        return (datetime.combine(start, datetime.min.time()) if not isinstance(start, datetime) else start,  # type: ignore[arg-type]
-                datetime.combine(end, datetime.max.time()) if not isinstance(end, datetime) else end)  # type: ignore[arg-type]
+        tz = end.tzinfo
+
+        def _ensure_aware(value: datetime | object, default_time: datetime) -> datetime:
+            if isinstance(value, datetime):
+                return value if value.tzinfo else value.replace(tzinfo=tz)
+            combined = datetime.combine(value, default_time.time())  # type: ignore[arg-type]
+            return combined.replace(tzinfo=tz)
+
+        start_dt = _ensure_aware(start, datetime.min)
+        end_dt = _ensure_aware(end, datetime.max)
+        return start_dt, end_dt
 
     def _on_date_range_changed(self, text: str) -> None:
         self.custom_dates.setVisible(text == "بازه سفارشی...")
@@ -333,7 +345,9 @@ def showEvent(self, event) -> None:  # noqa: D401, N802
     def _update_last_refresh_label(self) -> None:
         if self._skip_if_minimal("به‌روزرسانی برچسب زمان آخرین بروزرسانی"):
             return
-        self.last_update_label.setText(f"آخرین بروزرسانی: {datetime.now().strftime('%H:%M:%S')}")
+        self.last_update_label.setText(
+            f"آخرین بروزرسانی: {self._clock.now().strftime('%H:%M:%S')}"
+        )
 
     def _show_overlay(self, msg: str) -> None:
         if self._skip_if_minimal("نمایش لایه بارگذاری"):
@@ -396,7 +410,7 @@ def showEvent(self, event) -> None:  # noqa: D401, N802
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "���?�?�?�? �?���?�?�? PDF",
-            f"�?���?�?�?_�?�?�?�?�?�?�?_{jdatetime.datetime.now().strftime('%Y_%m_%d')}.pdf",
+            f"�?���?�?�?_�?�?�?�?�?�?�?_{jdatetime.datetime.fromgregorian(datetime=self._clock.now()).strftime('%Y_%m_%d')}",
             "PDF Files (*.pdf)",
         )
         if not filename:

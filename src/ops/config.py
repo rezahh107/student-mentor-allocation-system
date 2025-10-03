@@ -30,7 +30,7 @@ class OpsSettings(BaseSettings):
     reporting_replica_dsn: PostgresDsn = Field(..., alias="REPORTING_REPLICA_DSN")
     metrics_read_token: str = Field(..., min_length=16, alias="METRICS_READ_TOKEN")
     slo_thresholds: SLOThresholds
-    timezone: str = Field("Asia/Baku", alias="OPS_TIMEZONE")
+    timezone: str = Field("Asia/Tehran", alias="OPS_TIMEZONE")
 
     @field_validator("metrics_read_token")
     @classmethod

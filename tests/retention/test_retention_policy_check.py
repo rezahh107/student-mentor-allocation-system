@@ -31,7 +31,7 @@ def test_retention_fs_timestamp_validation(tmp_path) -> None:
     set_times(old, 30)
 
     policy = RetentionPolicy(max_age_days=7, max_total_size_mb=1, keep_latest=1, enforce=True)
-    clock = Clock(ZoneInfo("Asia/Baku"), lambda: now)
+    clock = Clock(ZoneInfo("Asia/Tehran"), lambda: now)
     validator = RetentionValidator(root=backups_root, clock=clock, policy=policy)
 
     result = validator.run()

@@ -87,7 +87,7 @@ async def _build_service(dsn: str) -> tuple[AuditService, ReleaseManifest]:
 def service_tz():
     from zoneinfo import ZoneInfo
 
-    return ZoneInfo("Asia/Baku")
+    return ZoneInfo("Asia/Tehran")
 
 
 async def _main(dsn: str = DEFAULT_DSN) -> None:

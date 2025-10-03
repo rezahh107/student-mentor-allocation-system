@@ -6,11 +6,13 @@ import shutil
 import sys
 import time
 import urllib.request
-from datetime import datetime, timezone
+from datetime import timezone
 from pathlib import Path
 from typing import Iterable, List
 
 import typer
+
+from src.core.clock import tehran_clock
 
 from .atomic import atomic_write
 from .backup import BackupManager
@@ -18,6 +20,12 @@ from .deploy import ReadinessGate, ZeroDowntimeHandoff
 
 
 app = typer.Typer(help="ImportToSabt operational utilities")
+
+_TEHRAN_CLOCK = tehran_clock()
+
+
+def _utc_from_tehran():
+    return _TEHRAN_CLOCK.now().astimezone(timezone.utc)
 
 
 @app.command("deploy")
@@ -140,7 +148,7 @@ def backup_command(
     destination: Path = typer.Option(..., "--destination"),
     sources: List[Path] = typer.Argument(..., help="Files to archive"),
 ) -> None:
-    manager = BackupManager(clock=lambda: datetime.now(timezone.utc))
+    manager = BackupManager(clock=_utc_from_tehran)
     bundle = manager.backup(sources=sources, destination=destination)
     typer.echo(
         json.dumps(
@@ -159,7 +167,7 @@ def restore_command(
     manifest: Path = typer.Option(..., "--manifest"),
     destination: Path = typer.Option(..., "--destination"),
 ) -> None:
-    manager = BackupManager(clock=lambda: datetime.now(timezone.utc))
+    manager = BackupManager(clock=_utc_from_tehran)
     manager.restore(manifest=manifest, destination=destination)
     typer.echo(json.dumps({"restored": True}, ensure_ascii=False))
 
@@ -171,7 +179,7 @@ def retention_command(
     max_total_bytes: int = typer.Option(..., "--max-total-bytes"),
     enforce: bool = typer.Option(False, "--enforce/--dry-run"),
 ) -> None:
-    manager = BackupManager(clock=lambda: datetime.now(timezone.utc))
+    manager = BackupManager(clock=_utc_from_tehran)
     plan = manager.plan_retention(root=root, max_age_days=max_age_days, max_total_bytes=max_total_bytes)
     manager.apply_retention(plan=plan, enforce=enforce)
     typer.echo(

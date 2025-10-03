@@ -74,7 +74,7 @@ def metrics(clean_state: dict[str, Any]) -> ReadinessMetrics:
 
 @pytest.fixture(scope="function")
 def clock() -> Clock:
-    return Clock(ZoneInfo("Asia/Baku"))
+    return Clock(ZoneInfo("Asia/Tehran"))
 
 
 @pytest.fixture(scope="function")

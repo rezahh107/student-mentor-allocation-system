@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Callable, Protocol
 
+from src.core.clock import SupportsNow, tehran_clock
+
 
 class SignedURLVerifier(Protocol):
     """Minimal protocol for signing and verifying download URLs."""
@@ -38,11 +40,16 @@ class AuditSignedURLProvider:
         self,
         secret: str | bytes,
         *,
-        clock: Callable[[], datetime] | None = None,
+        clock: SupportsNow | Callable[[], datetime] | None = None,
         default_ttl: int = 300,
     ) -> None:
         self.secret = secret if isinstance(secret, bytes) else secret.encode("utf-8")
-        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        if clock is None:
+            self.clock = tehran_clock().now
+        elif hasattr(clock, "now"):
+            self.clock = getattr(clock, "now")  # type: ignore[assignment]
+        else:
+            self.clock = clock
         self.default_ttl = default_ttl
 
     def sign(self, resource: str, *, expires_in: int | None = None) -> str:

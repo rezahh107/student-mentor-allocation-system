@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import math
-import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, Protocol
 
 from src.application.commands.allocation import StartBatchAllocation
 from src.application.services.allocation_service import AllocationService
 from src.domain.shared.types import AllocationStatus
+from src.core.clock import Clock, ensure_clock
 
 
 class JobStore(Protocol):
@@ -27,10 +26,12 @@ class StudentBatchSource(Protocol):
 class BatchProcessor:
     service: AllocationService
     job_store: JobStore
+    clock: Clock = field(default_factory=Clock.for_tehran)
 
     def run(self, cmd: StartBatchAllocation, source: StudentBatchSource, *, chunk_size: int = 1000) -> dict:
         total = source.count()
-        job_id = cmd.job_id or f"job-{int(time.time())}"
+        job_clock = ensure_clock(self.clock, default=Clock.for_tehran())
+        job_id = cmd.job_id or f"job-{int(job_clock.unix_timestamp())}"
         self.job_store.start(job_id, total)
 
         processed = 0

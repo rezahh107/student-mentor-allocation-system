@@ -11,10 +11,11 @@ import hashlib
 import logging
 import re
 import secrets
-import time
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
 from collections import deque
+
+from src.core.clock import Clock, ensure_clock
 
 __all__ = [
     "SecurityViolationError",
@@ -192,10 +193,11 @@ def check_persian_injection(text: str) -> bool:
 class SecurityMonitor:
     """Collects and summarises security related events."""
 
-    def __init__(self, log_file: Optional[str] = None) -> None:
+    def __init__(self, log_file: Optional[str] = None, *, clock: Clock | None = None) -> None:
         self.events: List[Dict[str, Any]] = []
         self.log_file = log_file
         self.rate_limiter = RateLimiter(max_calls=100, time_window=60)
+        self._clock = ensure_clock(clock, default=Clock.for_tehran())
 
     def log_event(
         self,
@@ -205,7 +207,7 @@ class SecurityMonitor:
         source: str = "unknown",
     ) -> None:
         masked_details = {key: mask_pii(str(value)) for key, value in details.items()}
-        timestamp = time.time()
+        timestamp = self._clock.unix_timestamp()
         event = {
             "type": event_type,
             "details": masked_details,

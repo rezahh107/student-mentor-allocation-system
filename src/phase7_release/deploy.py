@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator
 
+from src.core.clock import Clock
 from .atomic import atomic_write
 from .hashing import sha256_bytes
 
@@ -124,15 +124,20 @@ def get_debug_context(
     rate_limit_state: Callable[[], dict[str, object]] | None = None,
     middleware_chain: Callable[[], list[str]] | None = None,
     env_fetcher: Callable[[str, str], str] | None = None,
-    clock: Callable[[], float] | None = None,
+    clock: Clock | Callable[[], float] | None = None,
 ) -> dict[str, object]:
-    now = clock() if clock is not None else time.time()
+    if isinstance(clock, Clock):
+        timestamp = clock.unix_timestamp()
+    elif callable(clock):
+        timestamp = float(clock())
+    else:
+        timestamp = Clock.for_tehran().unix_timestamp()
     return {
         "redis_keys": [] if redis_keys is None else sorted(redis_keys()),
         "rate_limit_state": {} if rate_limit_state is None else rate_limit_state(),
         "middleware_order": [] if middleware_chain is None else middleware_chain(),
         "env": (env_fetcher or os.getenv)("GITHUB_ACTIONS", "local"),
-        "timestamp": now,
+        "timestamp": timestamp,
     }
 
 

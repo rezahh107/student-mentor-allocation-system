@@ -21,7 +21,7 @@ _PII_PHONE_PATTERN = re.compile(r"^(09)(\d{6})(\d{2})$")
 _logger_lock = threading.Lock()
 
 
-from src.core.clock import Clock, tehran_clock
+from src.core.clock import Clock, ensure_clock, tehran_clock
 
 
 @dataclass(slots=True)
@@ -225,7 +225,7 @@ def emit_redis_retry_exhausted(
     namespace: str,
     clock: Clock | None = None,
 ) -> None:
-    active_clock = clock or tehran_clock()
+    active_clock = ensure_clock(clock, default=Clock.for_tehran())
     payload = {
         "ts": active_clock.now().isoformat(),
         "level": "warning",
@@ -277,7 +277,7 @@ class TraceContext:
     method: str
 
 
-def start_trace(context: TraceContext):
+def start_trace(context: TraceContext, *, clock: Clock | None = None):
     tracer = trace.get_tracer(__name__)
     span = tracer.start_span(
         name=f"{context.method} {context.path}",
@@ -289,7 +289,8 @@ def start_trace(context: TraceContext):
             "http.route": context.path,
         },
     )
-    span.start_time = time.time()
+    active_clock = ensure_clock(clock, default=Clock.for_tehran())
+    span.start_time = active_clock.unix_timestamp()
     return span
 
 

@@ -5,6 +5,8 @@ import time
 from functools import wraps
 from typing import Any, Callable, Type
 
+from src.core.clock import Clock, ensure_clock
+
 
 def retry(
     *,
@@ -12,7 +14,12 @@ def retry(
     attempts: int = 5,
     backoff_initial: float = 0.1,
     backoff_factor: float = 2.0,
+    clock: Clock | None = None,
+    sleep_fn: Callable[[float], None] | None = None,
 ):
+    ensure_clock(clock, default=Clock.for_tehran())
+    sleep_callable = sleep_fn or time.sleep
+
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(fn)
         def wrapper(*args, **kwargs):
@@ -25,7 +32,7 @@ def retry(
                     last_exc = ex
                     if attempt == attempts - 1:
                         break
-                    time.sleep(delay)
+                    sleep_callable(delay)
                     delay *= backoff_factor
             if last_exc is None:
                 raise RuntimeError("RETRY_INCONSISTENT_STATE: هیچ استثنایی برای بازپخش ثبت نشد")
@@ -37,16 +44,24 @@ def retry(
 
 
 class CircuitBreaker:
-    def __init__(self, threshold: int = 5, window_sec: float = 30.0, half_open_after: float = 5.0):
+    def __init__(
+        self,
+        threshold: int = 5,
+        window_sec: float = 30.0,
+        half_open_after: float = 5.0,
+        *,
+        clock: Clock | None = None,
+    ):
         self.threshold = threshold
         self.window_sec = window_sec
         self.half_open_after = half_open_after
         self._state = "closed"
         self._fail_count = 0
         self._opened_at = 0.0
+        self._clock = ensure_clock(clock, default=Clock.for_tehran())
 
     def call(self, fn: Callable[..., Any], *args, **kwargs):  # pragma: no cover - time-based
-        now = time.time()
+        now = self._clock.unix_timestamp()
         if self._state == "open" and (now - self._opened_at) < self.half_open_after:
             raise RuntimeError("Circuit open")
         try:

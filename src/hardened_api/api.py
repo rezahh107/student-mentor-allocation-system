@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.routing import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from src.core.clock import Clock, ensure_clock
 from src.phase3_allocation.allocation_tx import AtomicAllocator, AllocationRequest
 from src.phase2_counter_service.academic_year import AcademicYearProvider
 from src.phase2_counter_service.counter_runtime import (
@@ -755,15 +756,16 @@ def create_app(
     return app
 
 
-def get_debug_context(app: FastAPI) -> dict[str, Any]:
+def get_debug_context(app: FastAPI, *, clock: Clock | None = None) -> dict[str, Any]:
     api_state: APIState = getattr(app.state, "api_state")
     middleware_state: MiddlewareState = getattr(app.state, "middleware_state")
+    active_clock = ensure_clock(clock, default=Clock.for_tehran())
     return {
         "redis_namespace": api_state.namespaces.base,
         "rate_limit_state": get_rate_limit_info(),
         "middlewares": [mw.cls.__name__ for mw in app.user_middleware],
         "metrics_token_configured": bool(middleware_state.metrics_token),
-        "timestamp": time.time(),
+        "timestamp": active_clock.unix_timestamp(),
     }
 
 

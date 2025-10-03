@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import time
 import uuid
 from typing import Any, Callable, Dict, TypeVar
 
 import pytest
+
+from src.core.clock import Clock
 
 T = TypeVar("T")
 
@@ -27,7 +28,7 @@ def _debug_context(namespace: str, attempts: int, delays: tuple[float, ...]) -> 
         "state_registry": sorted(_STATE_REGISTRY),
         "middleware_chain": ("RateLimit", "Idempotency", "Auth"),
         "env": "ci",
-        "timestamp": time.time(),
+        "timestamp": Clock.for_tehran().unix_timestamp(),
     }
 
 

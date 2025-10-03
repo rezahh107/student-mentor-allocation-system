@@ -26,6 +26,9 @@ from infrastructure.monitoring.logging_adapter import (
 )
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from src.core.clock import Clock
+from src.web.deps.clock import provide_clock
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: FastAPI, limiter: RateLimiter) -> None:
@@ -214,8 +217,9 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Student-Mentor Allocation API", version="1.0")
     app.add_middleware(CorrelationIdMiddleware)
 
+    system_clock: Clock = provide_clock()
     try:
-        limiter = RateLimiter(limit=100)
+        limiter = RateLimiter(limit=100, clock=system_clock)
     except RuntimeError:
         class _NoopLimiter:
             def allow(self, key: str) -> bool:  # noqa: D401 - simple stub

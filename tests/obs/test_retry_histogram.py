@@ -1,75 +1,36 @@
-import uuid
+from __future__ import annotations
 
-import pytest
+from datetime import datetime, timezone
 
-from src.hardened_api.observability import get_metric
-from src.hardened_api.redis_support import RedisOperationError
-from tests.hardened_api.conftest import setup_test_data
+from core.retry import retry_backoff_seconds
 
-pytest_plugins = ("pytest_asyncio.plugin", "tests.hardened_api.conftest")
-pytestmark = [pytest.mark.asyncio]
+from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
+
+from tests.export.helpers import build_exporter, make_row
 
 
-async def test_rate_limit_and_idem_retry_buckets_present(client, clean_state):
-    rate_metric = get_metric("rate_limit_events_total")
-    idem_metric = get_metric("idempotency_events_total")
+def test_retry_histogram_present(tmp_path, monkeypatch) -> None:
+    rows = [make_row(idx=i) for i in range(1, 4)]
+    exporter = build_exporter(tmp_path, rows)
+    filters = ExportFilters(year=1402, center=1)
+    options = ExportOptions(output_format="csv")
+    snapshot = ExportSnapshot(marker="retry", created_at=datetime(2024, 3, 1, tzinfo=timezone.utc))
+    attempts = {"count": 0}
 
-    original_limiter = client.app.state.middleware_state.rate_limiter
+    original = exporter._write_exports
 
-    class _FailOpenLimiter:
-        async def allow(self, *args, **kwargs):  # pragma: no cover - simple stub
-            raise RedisOperationError("unavailable")
+    def _flaky_write(**kwargs):  # noqa: ANN001
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise OSError("transient failure")
+        return original(**kwargs)
 
-    client.app.state.middleware_state.rate_limiter = _FailOpenLimiter()
-    try:
-        resp = await client.get(
-            "/status",
-            headers={"Authorization": "Bearer TESTTOKEN1234567890"},
-        )
-    finally:
-        client.app.state.middleware_state.rate_limiter = original_limiter
-    assert resp.status_code == 200
-    assert (
-        rate_metric.labels(op="GET", endpoint="/status", outcome="fail_open", reason="redis_unavailable")._value.get()
-        == 1
-    )
-
-    class _FailClosedLimiter:
-        async def allow(self, *args, **kwargs):  # pragma: no cover - simple stub
-            raise RedisOperationError("offline")
-
-    client.app.state.middleware_state.rate_limiter = _FailClosedLimiter()
-    payload = setup_test_data(f"{uuid.uuid4().int % 1_000_000:06d}")
-    headers = {
-        "Authorization": "Bearer TESTTOKEN1234567890",
-        "Idempotency-Key": f"idem-hist-fail-{uuid.uuid4().hex[:10]}",
-        "Content-Type": "application/json; charset=utf-8",
-    }
-    failure = await client.post("/allocations", json=payload, headers=headers)
-    client.app.state.middleware_state.rate_limiter = original_limiter
-    assert failure.status_code == 500
-    assert (
-        rate_metric.labels(op="POST", endpoint="/allocations", outcome="error", reason="redis_unavailable")._value.get()
-        == 1
-    )
-
-    headers["Idempotency-Key"] = f"idem-hist-pass-{uuid.uuid4().hex[:10]}"
-    success = await client.post("/allocations", json=payload, headers=headers)
-    assert success.status_code == 200
-    assert (
-        idem_metric.labels(op="POST", endpoint="/allocations", outcome="committed", reason="completed")._value.get()
-        >= 1
-    )
-
-    histogram = get_metric("redis_operation_latency_seconds")
-    samples = histogram.collect()[0].samples
-    reserve_buckets = [
-        sample for sample in samples if sample.name.endswith("_bucket") and sample.labels.get("op") == "idempotency.reserve"
+    monkeypatch.setattr(exporter, "_write_exports", _flaky_write)
+    exporter.run(filters=filters, options=options, snapshot=snapshot, clock_now=snapshot.created_at)
+    histogram = retry_backoff_seconds.collect()[0].samples
+    observed = [
+        sample.value
+        for sample in histogram
+        if sample.name.endswith("_sum") and sample.labels.get("op") == "import_to_sabt.exporter.write"
     ]
-    assert any(sample.value > 0 for sample in reserve_buckets)
-    ratelimit_buckets = [
-        sample
-        for sample in samples
-        if sample.name.endswith("_bucket") and sample.labels.get("op", "").startswith("ratelimit.")
-    ]
-    assert ratelimit_buckets and any(sample.value > 0 for sample in ratelimit_buckets)
+    assert observed and observed[0] > 0.0

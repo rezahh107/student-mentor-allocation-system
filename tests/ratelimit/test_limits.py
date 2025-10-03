@@ -1,44 +1,73 @@
-import uuid
+from __future__ import annotations
 
+import httpx
 import pytest
 
-from src.hardened_api.middleware import RateLimitRule
-from src.hardened_api.observability import get_metric
-from tests.hardened_api.conftest import setup_test_data, temporary_rate_limit_config
+from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
+from phase6_import_to_sabt.errors import RATE_LIMIT_FA_MESSAGE
+from phase6_import_to_sabt.security.rate_limit import RateLimitSettings
+from phase7_release.deploy import ReadinessGate
 
-pytest_plugins = ("pytest_asyncio.plugin", "tests.hardened_api.conftest")
-pytestmark = [pytest.mark.asyncio]
+from tests.export.helpers import build_job_runner, make_row
 
 
-async def test_exceed_limit_persian_error(client, clean_state):
-    with temporary_rate_limit_config(client.app) as config:
-        config.default_rule.requests = 1
-        config.default_rule.window_seconds = 60
-        config.per_route["/allocations"] = RateLimitRule(1, 60.0)
+def _ready_gate() -> ReadinessGate:
+    gate = ReadinessGate(clock=lambda: 0.0)
+    gate.record_cache_warm()
+    gate.record_dependency(name="redis", healthy=True)
+    gate.record_dependency(name="database", healthy=True)
+    return gate
 
-        suffix = f"{uuid.uuid4().int % 1_000_000:06d}"
-        payload = setup_test_data(suffix)
-        headers_first = {
-            "Authorization": "Bearer TESTTOKEN1234567890",
-            "Idempotency-Key": f"idem:limit:{uuid.uuid4().hex[:10]}",
-            "Content-Type": "application/json; charset=utf-8",
-        }
 
-        first = await client.post("/allocations", json=payload, headers=headers_first)
+def _build_app(tmp_path):
+    rows = [make_row(idx=1), make_row(idx=2)]
+    runner, metrics = build_job_runner(tmp_path, rows)
+    app = create_export_api(
+        runner=runner,
+        signer=HMACSignedURLProvider("secret"),
+        metrics=metrics,
+        logger=runner.logger,
+        readiness_gate=_ready_gate(),
+    )
+    return app, runner, metrics
+
+
+@pytest.mark.asyncio
+async def test_exceed_limit_persian_error(tmp_path) -> None:
+    app, runner, metrics = _build_app(tmp_path)
+    app.state.rate_limit_configure(RateLimitSettings(requests=1, window_seconds=60, penalty_seconds=120))
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        first = await client.post(
+            "/exports",
+            json={"year": 1402, "center": 1},
+            headers={"Idempotency-Key": "rl-1", "X-Role": "ADMIN", "X-Client-ID": "limitee"},
+        )
         assert first.status_code == 200, first.text
-
-        headers_second = dict(headers_first)
-        headers_second["Idempotency-Key"] = f"idem:limit:{uuid.uuid4().hex[:10]}"
-
-        second = await client.post("/allocations", json=payload, headers=headers_second)
-
+        second = await client.post(
+            "/exports",
+            json={"year": 1402, "center": 1},
+            headers={"Idempotency-Key": "rl-2", "X-Role": "ADMIN", "X-Client-ID": "limitee"},
+        )
     assert second.status_code == 429, second.text
+    detail = second.json()["detail"]
+    assert detail["error_code"] == "RATE_LIMIT_EXCEEDED"
+    assert detail["message"] == RATE_LIMIT_FA_MESSAGE
+    assert int(second.headers["Retry-After"]) == 120
+    limited_counter = metrics.rate_limit_total.labels(outcome="limited", reason="quota_exceeded")._value.get()
+    assert limited_counter >= 1
+    runner.await_completion(first.json()["job_id"])  # flush background thread
 
-    envelope = second.json()["error"]
-    assert envelope["code"] == "RATE_LIMIT_EXCEEDED"
-    assert envelope["message_fa"] == "تعداد درخواست‌ها از حد مجاز عبور کرده است؛ بعداً تلاش کنید."
-    assert int(second.headers["Retry-After"]) >= 1
 
-    metric = get_metric("rate_limit_events_total")
-    limited = metric.labels(op="POST", endpoint="/allocations", outcome="limited", reason="quota_exceeded")._value.get()
-    assert limited >= 1
+@pytest.mark.asyncio
+async def test_config_snapshot_restore(tmp_path) -> None:
+    app, _runner, _metrics = _build_app(tmp_path)
+    snapshot = app.state.rate_limit_snapshot()
+    app.state.rate_limit_configure(RateLimitSettings(requests=5, window_seconds=30, penalty_seconds=90))
+    configured = app.state.export_rate_limiter.settings
+    assert configured.requests == 5
+    assert configured.window_seconds == 30
+    app.state.rate_limit_restore(snapshot)
+    restored = app.state.export_rate_limiter.settings
+    assert restored.requests == snapshot.requests
+    assert restored.window_seconds == snapshot.window_seconds

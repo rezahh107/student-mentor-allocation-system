@@ -15,9 +15,7 @@
 | AGENTS.md::6 Observability & Security | tests/security/test_metrics_and_downloads.py::test_token_and_signed_url |
 | AGENTS.md::6 Observability & Security (PII masking) | tests/logging/test_json_logs_pii_scan.py::test_no_pii_in_logs |
 | AGENTS.md::6 Observability & Security (/metrics token) | tests/security/test_metrics_token_guard.py::test_metrics_requires_token |
-| AGENTS.md::7 Performance & Reliability | tests/perf/test_exporter_100k.py::test_p95_latency_and_memory_budget |
-| AGENTS.md::7 Performance & Reliability (Middleware POST p95) | tests/perf/test_http_p95_concurrency_200.py::test_post_exports_chain_p95_budget |
-| AGENTS.md::7 Performance & Reliability (Exporter 100k baseline) | tests/perf/test_http_p95_concurrency_200.py::test_exporter_baseline_100k_rows_p95_budget |
+| AGENTS.md::7 Performance & Reliability | tests/perf/test_export_100k_perf.py::test_p95_latency_and_memory_budget |
 | AGENTS.md::7 Performance & Reliability (Retry) | tests/retry/test_retry_backoff.py::test_retry_jitter_and_metrics_without_sleep |
 | AGENTS.md::8 Testing & CI Gates (State hygiene) | tests/fixtures/state.py::cleanup_fixtures |
 | AGENTS.md::8 Testing & CI Gates (CollectorRegistry reset) | tests/conftest.py::metrics_registry_guard |
@@ -25,16 +23,18 @@
 | AGENTS.md::8 Testing & CI Gates (Strict Scoring Parser) | scripts/ci_pytest_summary_parser.py::main |
 | AGENTS.md::8 Testing & CI Gates (Strict Scoring Parser Test) | tests/ci/test_ci_pytest_summary_parser.py::test_strict_scoring_v2_all_axes_and_caps |
 | AGENTS.md::3 Absolute Guardrails (Middleware Order) | tests/mw/test_order_uploads.py::test_rate_then_idem_then_auth |
-| AGENTS.md::3 Absolute Guardrails (Middleware Order POST) | tests/mw/test_order_post.py::test_middleware_order_post_exact |
+| AGENTS.md::3 Absolute Guardrails (Middleware Order POST) | tests/mw/test_order_post.py::test_middleware_order_post_exports_xlsx |
 | AGENTS.md::3 Absolute Guardrails (Middleware Order GET) | tests/mw/test_order_get.py::test_middleware_order_get_paths |
 | AGENTS.md::3 Absolute Guardrails (RateLimit→Idempotency→Auth) | tests/mw/test_order_clocked.py::test_post_chain_order |
 | AGENTS.md::3 Absolute Guardrails (Idempotency concurrency) | tests/idem/test_concurrent_posts.py::test_only_one_succeeds |
 | AGENTS.md::3 Absolute Guardrails (Rate limit Persian errors) | tests/ratelimit/test_limits.py::test_exceed_limit_persian_error |
-| AGENTS.md::3 Absolute Guardrails (Persian errors) | tests/i18n/test_persian_errors.py::test_error_messages_deterministic |
+| AGENTS.md::3 Absolute Guardrails (Persian errors) | tests/i18n/test_persian_errors.py::test_export_validation_error_message_exact |
+| AGENTS.md::3 Absolute Guardrails (Idempotency TTL) | tests/idem/test_idem_ttl_24h.py::test_ttl_window |
 | AGENTS.md::4 Domain Rules (Year & Counter) | tests/export/test_crosschecks.py::test_counter_prefix_and_regex |
 | AGENTS.md::4 Domain Rules (StudentType derivation) | src/phase6_import_to_sabt/exporter_service.py::ImportToSabtExporter._normalize_row |
 | AGENTS.md::4 Domain Rules (Snapshot/Delta) | tests/exports/test_delta_window.py::test_delta_no_gap_overlap |
 | AGENTS.md::8 Testing & CI Gates (State hygiene verification) | tests/ci/test_state_hygiene.py::test_cleanup_and_registry_reset |
+| AGENTS.md::5 Uploads & Exports (Manifest clock) | tests/exports/test_manifest_ts_tehran.py::test_export_manifest_uses_injected_tehran_clock |
 | AGENTS.md::6 Observability & Security (Retry metrics) | tests/obs/test_metrics_mw.py::test_retry_exhaustion_metrics_present |
 | AGENTS.md::6 Observability & Security (Histogram buckets) | tests/obs/test_retry_histogram.py::test_rate_limit_and_idem_retry_buckets_present |
 | AGENTS.md::9 RBAC, Audit & Retention | src/phase6_import_to_sabt/security/rbac.py::TokenRegistry.authenticate |

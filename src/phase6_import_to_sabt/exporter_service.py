@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import csv
-import hashlib
 import json
 import os
 import re
@@ -28,16 +26,34 @@ from phase6_import_to_sabt.models import (
     SABT_V1_PROFILE,
     SpecialSchoolsRoster,
 )
-from phase6_import_to_sabt.sanitization import guard_formula, sanitize_phone, sanitize_text
-from phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
+from phase6_import_to_sabt.export_writer import (
+    EXPORT_COLUMNS,
+    ExportWriter,
+    atomic_writer,
+)
+from phase6_import_to_sabt.sanitization import sanitize_phone, sanitize_text
 from shared.counter_rules import validate_counter
 
 PHONE_RE = re.compile(r"^09\d{9}$")
 RETRYABLE_EXPORT_ERRORS: tuple[type[Exception], ...] = (ConnectionError, TimeoutError, OSError)
+SORT_KEYS: tuple[str, ...] = (
+    "year_code",
+    "reg_center",
+    "group_code",
+    "school_code",
+    "national_id",
+)
 
 
 class ExportValidationError(ValueError):
     pass
+
+
+class ExportIOError(RuntimeError):
+    """Raised when IO operations fail during export finalization."""
+
+    def __init__(self, message: str = "EXPORT_IO_ERROR") -> None:
+        super().__init__(message)
 
 
 class ImportToSabtExporter:
@@ -121,15 +137,7 @@ class ImportToSabtExporter:
 
         def _write_phase() -> tuple[list[ExportManifestFile], int, dict[str, Any]]:
             self._cleanup_partials()
-            if format_label == "csv":
-                return self._write_csv_exports(
-                    filters=filters,
-                    rows=sorted_rows,
-                    options=options,
-                    timestamp=timestamp,
-                    stats=stats,
-                )
-            return self._write_xlsx_export(
+            return self._write_exports(
                 filters=filters,
                 rows=sorted_rows,
                 options=options,
@@ -147,6 +155,12 @@ class ImportToSabtExporter:
             op=f"{self._operation_namespace}.write",
         )
 
+        config_flags = {
+            "format": format_label,
+            "csv_bom": bool(options.include_bom) if format_label == "csv" else False,
+            "crlf": options.newline == "\r\n",
+        }
+
         manifest = ExportManifest(
             profile=self.profile,
             filters=filters,
@@ -159,6 +173,8 @@ class ImportToSabtExporter:
                 "timestamp": timestamp,
                 "files_order": [file.name for file in files],
                 "chunk_size": options.chunk_size,
+                "sort_keys": list(SORT_KEYS),
+                "config": config_flags,
             },
             format=format_label,
             excel_safety=excel_safety,
@@ -189,6 +205,7 @@ class ImportToSabtExporter:
             "metadata": manifest.metadata,
             "format": format_label,
             "excel_safety": excel_safety,
+            "config": config_flags,
         }
         if filters.delta:
             payload["delta_window"] = {
@@ -213,65 +230,52 @@ class ImportToSabtExporter:
         self._last_stats = stats
         return manifest
 
-    def _write_csv_exports(
-        self,
-        *,
-        filters: ExportFilters,
-        rows: Sequence[dict[str, str]],
-        options: ExportOptions,
-        timestamp: str,
-        stats: ExportExecutionStats,
-    ) -> tuple[list[ExportManifestFile], int, dict[str, Any]]:
-        files: list[ExportManifestFile] = []
-        total_rows = 0
-        excel_safety = {
-            "normalized": True,
-            "digit_folded": True,
-            "formula_guard": bool(options.excel_mode),
-            "always_quote": True,
-            "sensitive_columns": list(self.profile.sensitive_columns),
-        }
-        for index, chunk in enumerate(_chunk(rows, options.chunk_size), start=1):
-            filename = self._build_filename(filters, timestamp, index, extension="csv")
-            path = self.output_dir / filename
-            with self._measure_phase(stats, "write_chunk"):
-                byte_size = self._write_chunk(path, chunk, options)
-                sha256 = _sha256_file(path)
-            files.append(
-                ExportManifestFile(
-                    name=filename,
-                    sha256=sha256,
-                    row_count=len(chunk),
-                    byte_size=byte_size,
-                )
-            )
-            total_rows += len(chunk)
-        return files, total_rows, excel_safety
-
-    def _write_xlsx_export(
-        self,
-        *,
-        filters: ExportFilters,
-        rows: Sequence[dict[str, str]],
-        options: ExportOptions,
-        timestamp: str,
-        stats: ExportExecutionStats,
-    ) -> tuple[list[ExportManifestFile], int, dict[str, Any]]:
-        writer = XLSXStreamWriter(chunk_size=options.chunk_size)
-        filename = self._build_filename(filters, timestamp, 1, extension="xlsx")
-        path = self.output_dir / filename
-        with self._measure_phase(stats, "write_chunk"):
-            artifact = writer.write(rows, path, format_label="xlsx")
-        sheets = tuple(sorted(artifact.row_counts.items()))
-        total_rows = sum(count for _, count in sheets)
-        manifest_file = ExportManifestFile(
-            name=filename,
-            sha256=artifact.sha256,
-            row_count=total_rows,
-            byte_size=artifact.byte_size,
-            sheets=sheets,
+    def _create_writer(self, options: ExportOptions) -> ExportWriter:
+        return ExportWriter(
+            columns=EXPORT_COLUMNS,
+            sensitive_columns=self.profile.sensitive_columns,
+            newline=options.newline,
+            include_bom=options.include_bom,
+            chunk_size=options.chunk_size,
+            formula_guard=bool(options.excel_mode),
         )
-        return [manifest_file], total_rows, artifact.excel_safety
+
+    def _write_exports(
+        self,
+        *,
+        filters: ExportFilters,
+        rows: Sequence[dict[str, str]],
+        options: ExportOptions,
+        timestamp: str,
+        stats: ExportExecutionStats,
+    ) -> tuple[list[ExportManifestFile], int, dict[str, Any]]:
+        writer = self._create_writer(options)
+        format_label = options.output_format
+
+        if format_label == "csv":
+            result = writer.write_csv(
+                rows,
+                path_factory=lambda index: self.output_dir
+                / self._build_filename(filters, timestamp, index, extension="csv"),
+            )
+        else:
+            result = writer.write_xlsx(
+                rows,
+                path_factory=lambda index: self.output_dir
+                / self._build_filename(filters, timestamp, index, extension="xlsx"),
+            )
+
+        files = [
+            ExportManifestFile(
+                name=file.name,
+                sha256=file.sha256,
+                row_count=file.row_count,
+                byte_size=file.byte_size,
+                sheets=file.sheets,
+            )
+            for file in result.files
+        ]
+        return files, result.total_rows, result.excel_safety
 
     def _measure_phase(self, stats: ExportExecutionStats, phase: str):
         @contextmanager
@@ -351,76 +355,3 @@ class ImportToSabtExporter:
         center_part = str(filters.center) if filters.center is not None else "ALL"
         return f"export_{self.profile.full_name}_{filters.year}-{center_part}_{timestamp}_{seq:03d}.{extension}"
 
-    def _write_chunk(
-        self,
-        path: Path,
-        rows: Sequence[dict[str, str]],
-        options: ExportOptions,
-    ) -> int:
-        newline = options.newline
-        encoding = "utf-8-sig" if options.include_bom else "utf-8"
-        columns = [
-            "national_id",
-            "counter",
-            "first_name",
-            "last_name",
-            "gender",
-            "mobile",
-            "reg_center",
-            "reg_status",
-            "group_code",
-            "student_type",
-            "school_code",
-            "mentor_id",
-            "mentor_name",
-            "mentor_mobile",
-            "allocation_date",
-            "year_code",
-        ]
-        total_bytes = 0
-        with atomic_writer(path, newline="", encoding=encoding) as fh:
-            writer = csv.DictWriter(
-                fh,
-                fieldnames=columns,
-                quoting=csv.QUOTE_ALL,
-                lineterminator=newline,
-            )
-            writer.writeheader()
-            for row in rows:
-                prepared = {column: str(row.get(column, "")) for column in columns}
-                if options.excel_mode:
-                    for column in columns:
-                        prepared[column] = guard_formula(prepared[column])
-                writer.writerow(prepared)
-        total_bytes = path.stat().st_size
-        return total_bytes
-
-
-def _chunk(rows: Sequence[dict[str, str]], size: int) -> Iterator[Sequence[dict[str, str]]]:
-    for start in range(0, len(rows), size):
-        yield rows[start : start + size]
-
-
-@contextmanager
-def atomic_writer(path: Path, newline: str = "\n", encoding: str = "utf-8"):
-    temp_path = path.with_suffix(path.suffix + ".part")
-    temp_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(temp_path, "w", encoding=encoding, newline=newline) as fh:
-        try:
-            yield fh
-            fh.flush()
-            os.fsync(fh.fileno())
-        except Exception:
-            fh.close()
-            if temp_path.exists():
-                temp_path.unlink()
-            raise
-    os.replace(temp_path, path)
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()

@@ -1,27 +1,39 @@
-import uuid
+from __future__ import annotations
 
+import httpx
 import pytest
 
-from tests.hardened_api.conftest import setup_test_data
-from src.hardened_api.middleware_chain import POST_CHAIN
+from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
+from phase7_release.deploy import ReadinessGate
 
-pytest_plugins = ("pytest_asyncio.plugin", "tests.hardened_api.conftest")
-pytestmark = [pytest.mark.asyncio]
+from tests.export.helpers import build_job_runner, make_row
 
 
-async def test_middleware_order_post_exact(client, clean_state):
-    suffix = f"{uuid.uuid4().int % 1_000_000:06d}"
-    payload = setup_test_data(suffix)
-    headers = {
-        "Authorization": "Bearer TESTTOKEN1234567890",
-        "Idempotency-Key": f"idem-test-{uuid.uuid4().hex[:12]}",
-        "X-Debug-MW-Probe": "trace",
-        "Content-Type": "application/json; charset=utf-8",
-    }
+def _ready_gate() -> ReadinessGate:
+    gate = ReadinessGate(clock=lambda: 0.0)
+    gate.record_cache_warm()
+    gate.record_dependency(name="redis", healthy=True)
+    gate.record_dependency(name="database", healthy=True)
+    return gate
 
-    response = await client.post("/allocations", json=payload, headers=headers)
 
-    assert response.status_code == 200, response.text
-    correlation_id = response.headers["X-Correlation-ID"]
-    assert response.headers["X-MW-Trace"] == f"{correlation_id}|RateLimit>Idempotency>Auth"
-    assert tuple(client.app.state.middleware_post_chain) == POST_CHAIN
+@pytest.mark.asyncio
+async def test_middleware_order_post_exports_xlsx(tmp_path) -> None:
+    rows = [make_row(idx=1)]
+    runner, metrics = build_job_runner(tmp_path, rows)
+    app = create_export_api(
+        runner=runner,
+        signer=HMACSignedURLProvider("secret"),
+        metrics=metrics,
+        logger=runner.logger,
+        readiness_gate=_ready_gate(),
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post(
+            "/exports",
+            json={"year": 1402, "center": 1, "format": "xlsx"},
+            headers={"Idempotency-Key": "mw-1", "X-Role": "ADMIN", "X-Client-ID": "order"},
+        )
+    assert response.status_code == 200
+    assert response.json()["middleware_chain"] == ["ratelimit", "idempotency", "auth"]

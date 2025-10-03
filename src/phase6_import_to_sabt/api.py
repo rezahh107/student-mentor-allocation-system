@@ -19,6 +19,11 @@ from uuid import uuid4
 from phase7_release.deploy import CircuitBreaker, ReadinessGate, get_debug_context
 
 from phase6_import_to_sabt.clock import Clock, ensure_clock
+from phase6_import_to_sabt.errors import (
+    EXPORT_IO_FA_MESSAGE,
+    EXPORT_VALIDATION_FA_MESSAGE,
+    RATE_LIMIT_FA_MESSAGE,
+)
 from phase6_import_to_sabt.job_runner import ExportJobRunner
 from phase6_import_to_sabt.logging_utils import ExportLogger
 from phase6_import_to_sabt.metrics import ExporterMetrics
@@ -29,6 +34,7 @@ from phase6_import_to_sabt.models import (
     ExportOptions,
     SignedURLProvider,
 )
+from phase6_import_to_sabt.security.rate_limit import ExportRateLimiter, RateLimitSettings
 
 
 class ExportRequest(BaseModel):
@@ -54,6 +60,8 @@ class ExportStatusResponse(BaseModel):
     status: ExportJobStatus
     files: list[dict[str, Any]]
     manifest: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+    middleware_chain: list[str] = Field(default_factory=list)
 
 
 class DualKeyHMACSignedURLProvider(SignedURLProvider):
@@ -135,12 +143,54 @@ class HMACSignedURLProvider(DualKeyHMACSignedURLProvider):
         super().__init__(active=("legacy", secret), next_=None, base_url=base_url, clock=clock)
 
 
+def _init_chain(request: Request) -> list[str]:
+    chain = list(getattr(request.state, "middleware_chain", []))
+    request.state.middleware_chain = chain
+    return chain
+
+
+def _rate_limit_identifier(request: Request) -> str:
+    correlation_id = getattr(request.state, "correlation_id", "export")
+    client_id = request.headers.get("X-Client-ID")
+    role = request.headers.get("X-Role")
+    idem = request.headers.get("Idempotency-Key")
+    components = [value.strip() for value in (client_id, role) if value]
+    if not components and idem:
+        components.append(idem.strip())
+    components.append(correlation_id)
+    return "|".join(components)
+
+
 def rate_limit_dependency(request: Request) -> None:
     request.state.middleware_chain = ["ratelimit"]
+    limiter: ExportRateLimiter | None = getattr(request.app.state, "export_rate_limiter", None)
+    metrics: ExporterMetrics | None = getattr(request.app.state, "export_metrics", None)
+    identifier = _rate_limit_identifier(request)
+    if limiter is None:
+        if metrics is not None:
+            metrics.inc_rate_limit(outcome="allowed", reason="no_limiter")
+        request.state.rate_limit_state = {"decision": "bypass", "remaining": None}
+        return
+    decision = limiter.check(identifier)
+    outcome = "allowed" if decision.allowed else "limited"
+    reason = "ok" if decision.allowed else "quota_exceeded"
+    if metrics is not None:
+        metrics.inc_rate_limit(outcome=outcome, reason=reason)
+    request.state.rate_limit_state = {"decision": outcome, "remaining": decision.remaining}
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_code": "RATE_LIMIT_EXCEEDED",
+                "message": RATE_LIMIT_FA_MESSAGE,
+                "retry_after": decision.retry_after,
+            },
+            headers={"Retry-After": str(decision.retry_after)},
+        )
 
 
 def idempotency_dependency(request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key")) -> str:
-    chain = getattr(request.state, "middleware_chain", [])
+    chain = _init_chain(request)
     chain.append("idempotency")
     request.state.middleware_chain = chain
     return idempotency_key
@@ -149,7 +199,7 @@ def idempotency_dependency(request: Request, idempotency_key: str = Header(..., 
 def optional_idempotency_dependency(
     request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")
 ) -> Optional[str]:
-    chain = getattr(request.state, "middleware_chain", [])
+    chain = _init_chain(request)
     chain.append("idempotency")
     request.state.middleware_chain = chain
     return idempotency_key
@@ -160,7 +210,7 @@ def auth_dependency(
     role: str = Header(..., alias="X-Role"),
     center_scope: Optional[int] = Header(default=None, alias="X-Center"),
 ) -> tuple[str, Optional[int]]:
-    chain = getattr(request.state, "middleware_chain", [])
+    chain = _init_chain(request)
     chain.append("auth")
     request.state.middleware_chain = chain
     if role not in {"ADMIN", "MANAGER"}:
@@ -175,7 +225,7 @@ def optional_auth_dependency(
     role: str | None = Header(default=None, alias="X-Role"),
     center_scope: Optional[int] = Header(default=None, alias="X-Center"),
 ) -> tuple[Optional[str], Optional[int]]:
-    chain = getattr(request.state, "middleware_chain", [])
+    chain = _init_chain(request)
     chain.append("auth")
     request.state.middleware_chain = chain
     return role, center_scope
@@ -194,6 +244,7 @@ class ExportAPI:
         redis_probe: Callable[[], Awaitable[bool]] | None = None,
         db_probe: Callable[[], Awaitable[bool]] | None = None,
         duration_clock: Callable[[], float] | None = None,
+        rate_limiter: ExportRateLimiter | None = None,
     ) -> None:
         self.runner = runner
         self.signer = signer
@@ -207,6 +258,20 @@ class ExportAPI:
         self._db_breaker = CircuitBreaker(clock=time.monotonic, failure_threshold=2, reset_timeout=5.0)
         self._probe_timeout = 2.5
         self._duration_clock = duration_clock or time.perf_counter
+        self._rate_limiter = rate_limiter or ExportRateLimiter(clock=self.runner.clock)
+
+    @property
+    def rate_limiter(self) -> ExportRateLimiter:
+        return self._rate_limiter
+
+    def snapshot_rate_limit(self) -> RateLimitSettings:
+        return self._rate_limiter.snapshot()
+
+    def restore_rate_limit(self, settings: RateLimitSettings) -> None:
+        self._rate_limiter.restore(settings)
+
+    def configure_rate_limit(self, settings: RateLimitSettings) -> None:
+        self._rate_limiter.configure(settings)
 
     def create_router(self) -> APIRouter:
         router = APIRouter()
@@ -275,7 +340,7 @@ class ExportAPI:
                 namespace=namespace,
                 correlation_id=correlation_id,
             )
-            chain = getattr(request.state, "middleware_chain", [])
+            chain = list(getattr(request.state, "middleware_chain", []))
             return ExportResponse(
                 job_id=job.id,
                 status=job.status,
@@ -284,7 +349,13 @@ class ExportAPI:
             )
 
         @router.get("/exports/{job_id}", response_model=ExportStatusResponse)
-        async def get_export(job_id: str, request: Request) -> ExportStatusResponse:
+        async def get_export(
+            job_id: str,
+            request: Request,
+            _: None = Depends(rate_limit_dependency),
+            __: Optional[str] = Depends(optional_idempotency_dependency),
+            ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency),
+        ) -> ExportStatusResponse:
             job = self.runner.get_job(job_id)
             if not job:
                 raise HTTPException(status_code=404, detail="یافت نشد")
@@ -330,7 +401,15 @@ class ExportAPI:
                 }
             else:
                 manifest_payload = None
-            return ExportStatusResponse(job_id=job.id, status=job.status, files=files, manifest=manifest_payload)
+            chain = list(getattr(request.state, "middleware_chain", []))
+            return ExportStatusResponse(
+                job_id=job.id,
+                status=job.status,
+                files=files,
+                manifest=manifest_payload,
+                error=job.error,
+                middleware_chain=chain,
+            )
 
         @router.get("/healthz")
         async def healthz(
@@ -446,7 +525,7 @@ class ExportAPI:
             status_code=400,
             detail={
                 "error_code": "EXPORT_VALIDATION_ERROR",
-                "message": "درخواست نامعتبر است.",
+                "message": EXPORT_VALIDATION_FA_MESSAGE,
                 "details": details,
             },
         )
@@ -463,8 +542,10 @@ def create_export_api(
     redis_probe: Callable[[], Awaitable[bool]] | None = None,
     db_probe: Callable[[], Awaitable[bool]] | None = None,
     duration_clock: Callable[[], float] | None = None,
+    rate_limit_settings: RateLimitSettings | None = None,
 ) -> FastAPI:
     api = FastAPI()
+    limiter = ExportRateLimiter(settings=rate_limit_settings, clock=runner.clock)
     export_api = ExportAPI(
         runner=runner,
         signer=signer,
@@ -475,6 +556,12 @@ def create_export_api(
         redis_probe=redis_probe,
         db_probe=db_probe,
         duration_clock=duration_clock,
+        rate_limiter=limiter,
     )
     api.include_router(export_api.create_router())
+    api.state.export_rate_limiter = export_api.rate_limiter
+    api.state.export_metrics = metrics
+    api.state.rate_limit_snapshot = export_api.snapshot_rate_limit
+    api.state.rate_limit_restore = export_api.restore_rate_limit
+    api.state.rate_limit_configure = export_api.configure_rate_limit
     return api

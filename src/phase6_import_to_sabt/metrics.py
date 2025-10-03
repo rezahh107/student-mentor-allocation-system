@@ -36,6 +36,12 @@ class ExporterMetrics:
             labelnames=("type", "format"),
             registry=self.registry,
         )
+        self.rate_limit_total = Counter(
+            "export_rate_limit_total",
+            "Rate limit decisions for export API",
+            labelnames=("outcome", "reason"),
+            registry=self.registry,
+        )
 
     def observe_rows(self, rows: int, format_label: str) -> None:
         self.rows_total.labels(format=format_label).inc(rows)
@@ -51,6 +57,9 @@ class ExporterMetrics:
 
     def inc_error(self, error_type: str, format_label: str) -> None:
         self.errors_total.labels(type=error_type, format=format_label).inc()
+
+    def inc_rate_limit(self, *, outcome: str, reason: str) -> None:
+        self.rate_limit_total.labels(outcome=outcome, reason=reason).inc()
 
 
 def reset_registry(registry: CollectorRegistry) -> None:

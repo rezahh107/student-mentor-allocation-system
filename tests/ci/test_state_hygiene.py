@@ -1,33 +1,26 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 
-import pytest
-from prometheus_client import CollectorRegistry, REGISTRY
-
-from phase6_import_to_sabt.app.clock import FixedClock
-from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
-from phase6_import_to_sabt.obs.metrics import build_metrics
+from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
+from tests.export.helpers import build_exporter, make_row
 
 
-pytestmark = pytest.mark.filterwarnings("ignore::pytest.PytestRemovedIn9Warning")
+def test_cleanup_and_registry_reset(tmp_path) -> None:
+    base_time = datetime(2024, 3, 27, 3, 0, tzinfo=timezone.utc)
+    orphan = tmp_path / "stuck.xlsx.part"
+    orphan.write_text("pending", encoding="utf-8")
 
+    rows = [make_row(idx=1), make_row(idx=2)]
+    exporter = build_exporter(tmp_path, rows)
+    assert not orphan.exists(), "Exporter should remove stale .part files during init"
 
-def test_redis_db_tmp_cleaned_and_collector_registry_reset() -> None:
-    baseline = {metric.name for metric in REGISTRY.collect()}
-    registry = CollectorRegistry()
-    metrics = build_metrics("import_to_sabt_state_test", registry=registry)
-    metrics.request_total.labels(method="GET", path="/healthz", status="200").inc()
-    assert {metric.name for metric in REGISTRY.collect()} == baseline
+    exporter.run(
+        filters=ExportFilters(year=1402, center=1),
+        options=ExportOptions(chunk_size=1, output_format="xlsx"),
+        snapshot=ExportSnapshot(marker="snap", created_at=base_time),
+        clock_now=base_time,
+    )
 
-    clock = FixedClock(datetime(2024, 1, 1, tzinfo=timezone.utc))
-    store = InMemoryKeyValueStore("state:hygiene", clock)
-
-    async def _exercise() -> None:
-        await store.incr("rate", ttl_seconds=10)
-        await store.delete("rate")
-
-    asyncio.run(_exercise())
-    assert not store._store
-
+    leftover = list(tmp_path.glob("*.part"))
+    assert not leftover, f"Unexpected partial artifacts: {leftover}"

@@ -161,7 +161,7 @@ class ExportJob:
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     manifest: Optional[ExportManifest] = None
-    error: Optional[str] = None
+    error: Optional[dict[str, str]] = None
 
 
 class ExporterDataSource:

@@ -85,6 +85,10 @@ def fold_digits(value: str) -> str:
 def sanitize_text(value: Optional[str]) -> str:
     if value is None:
         return ""
+    if value and value.isascii():
+        stripped = value.strip()
+        if all(" " <= ch <= "~" for ch in stripped):
+            return stripped
     normalized = unicodedata.normalize("NFKC", value)
     normalized = normalized.replace("ي", "ی").replace("ك", "ک")
     for zw in ZERO_WIDTH:
@@ -104,7 +108,13 @@ def sanitize_phone(value: Optional[str]) -> str:
 def guard_formula(value: str) -> str:
     if not value:
         return value
-    if value[0] in "=+-@":
+    risky_prefixes = ("=", "+", "-", "@", "\t", "'", '"')
+    first = value[0]
+    if first in risky_prefixes:
+        if value.startswith("'") and len(value) > 1:
+            second = value[1]
+            if second in ("=", "+", "-", "@", "\t", '"', "'"):
+                return value
         return "'" + value
     return value
 

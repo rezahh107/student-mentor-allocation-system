@@ -105,10 +105,20 @@ _metrics_registry = {
         "Rate limit rejections",
         ["route"],
     ),
+    "rate_limit_events_total": Counter(
+        "rate_limit_events_total",
+        "Rate limit outcomes by endpoint",
+        ["op", "endpoint", "outcome", "reason"],
+    ),
     "alloc_attempt_total": Counter(
         "alloc_attempt_total",
         "Allocation attempts outcome",
         ["outcome"],
+    ),
+    "idempotency_events_total": Counter(
+        "idempotency_events_total",
+        "Idempotency middleware events",
+        ["op", "endpoint", "outcome", "reason"],
     ),
     "redis_retry_exhausted_total": Counter(
         "redis_retry_exhausted_total",

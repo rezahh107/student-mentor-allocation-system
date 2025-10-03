@@ -363,10 +363,18 @@ def clean_metrics_registry() -> Iterator[None]:
 @pytest_asyncio.fixture(scope="function")
 async def clean_state(app, redis_client: FakeRedis, frozen_clock: FrozenClock):
     await redis_client.flushdb()
+    if hasattr(redis_client, "_data"):
+        assert getattr(redis_client, "_data") == {}
+        assert getattr(redis_client, "_zsets") == {}
+        assert getattr(redis_client, "_expiry") == {}
     await app.state.api_state.reset()
     await frozen_clock.reset()
     yield
     await redis_client.flushdb()
+    if hasattr(redis_client, "_data"):
+        assert getattr(redis_client, "_data") == {}
+        assert getattr(redis_client, "_zsets") == {}
+        assert getattr(redis_client, "_expiry") == {}
     await app.state.api_state.reset()
     await frozen_clock.reset()
 

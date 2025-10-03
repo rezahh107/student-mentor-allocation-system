@@ -12,7 +12,7 @@ from ops.replica_adapter import ReplicaAdapter
 class FrozenClock:
     def __init__(self) -> None:
         self.calls = 0
-        self._moment = dt.datetime(2024, 1, 1, 12, 0, tzinfo=ZoneInfo("Asia/Baku"))
+        self._moment = dt.datetime(2024, 1, 1, 12, 0, tzinfo=ZoneInfo("Asia/Tehran"))
 
     def now(self) -> dt.datetime:
         self.calls += 1

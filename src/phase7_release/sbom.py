@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable
 
 from importlib import metadata as importlib_metadata
 
+from src.core.clock import tehran_clock
 from .atomic import atomic_write
 from .hashing import sha256_bytes
 
@@ -53,7 +54,8 @@ def generate_sbom(
 ) -> list[SbomComponent]:
     dists = list(distributions or importlib_metadata.distributions())
     components = sorted((_to_component(dist) for dist in dists), key=lambda item: item.name.lower())
-    now = clock() if clock is not None else datetime.now(tz=timezone.utc)
+    now_factory = clock or tehran_clock().now
+    now = now_factory()
     document = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.4",

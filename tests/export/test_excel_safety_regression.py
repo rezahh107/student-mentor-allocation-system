@@ -40,7 +40,7 @@ def test_formula_injection_guard(tmp_path: Path) -> None:
 def test_always_quote_and_formula_guard(tmp_path: Path) -> None:
     registry = CollectorRegistry()
     metrics = build_import_export_metrics(registry)
-    clock = FixedClock(datetime(2024, 1, 1, 0, 0, tzinfo=ZoneInfo("Asia/Baku")))
+    clock = FixedClock(datetime(2024, 1, 1, 0, 0, tzinfo=ZoneInfo("Asia/Tehran")))
     signer = DualKeySigner(
         keys=SigningKeySet([SigningKeyDefinition("TEST", "S" * 48, "active")]),
         clock=clock,

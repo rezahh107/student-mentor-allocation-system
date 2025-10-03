@@ -5,9 +5,14 @@ from dataclasses import dataclass
 from typing import Callable
 from zoneinfo import ZoneInfo
 
+from src.core.clock import tehran_clock
+
+
+_DEFAULT_CLOCK = tehran_clock()
+
 
 def _utc_now() -> _dt.datetime:
-    return _dt.datetime.now(_dt.UTC)
+    return _DEFAULT_CLOCK.now()
 
 
 @dataclass(slots=True)

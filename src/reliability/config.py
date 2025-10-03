@@ -93,7 +93,7 @@ class ReliabilitySettings(BaseSettings):
     retention: RetentionConfig
     cleanup: CleanupConfig
     tokens: TokenConfig
-    timezone: str = Field(default="Asia/Baku")
+    timezone: str = Field(default="Asia/Tehran")
     rate_limit: RateLimitConfigModel
     idempotency: IdempotencyConfig = Field(default_factory=IdempotencyConfig)
 

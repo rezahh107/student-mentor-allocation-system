@@ -15,13 +15,14 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Table, TableStyle, PageBreak
 import os
 
+from src.core.clock import SupportsNow, tehran_clock
 from src.services.analytics_service import DashboardData
 
 
 class DashboardReportGenerator:
     """تولید گزارش PDF از داده‌های داشبورد با پشتیبانی فارسی."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: SupportsNow | None = None) -> None:
         # تلاش برای ثبت فونت فارسی در صورت وجود
         try:
             pdfmetrics.registerFont(TTFont("Vazir", "assets/fonts/Vazir.ttf"))
@@ -30,6 +31,7 @@ class DashboardReportGenerator:
             logging.getLogger(__name__).warning("فونت Vazir در دسترس نبود؛ Helvetica استفاده شد", exc_info=exc)
             self.font_name = "Helvetica"
         self.dpi = 300
+        self._clock = clock or tehran_clock()
 
     async def generate_dashboard_pdf(self, dashboard_data: DashboardData, filepath: str) -> str:
         doc = SimpleDocTemplate(filepath, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -49,7 +51,7 @@ class DashboardReportGenerator:
         story.append(title)
 
         # Date
-        date_str = jdatetime.datetime.now().strftime("%Y/%m/%d - %H:%M")
+        date_str = jdatetime.datetime.fromgregorian(datetime=self._clock.now()).strftime("%Y/%m/%d - %H:%M")
         story.append(Paragraph(f"تاریخ گزارش: {date_str}", persian))
 
         story.append(Paragraph("\n", persian))
@@ -62,7 +64,11 @@ class DashboardReportGenerator:
             ["کل دانش‌آموزان", f"{dashboard_data.total_students:,}", dashboard_data.growth_rate],
             ["ثبت‌نام فعال", f"{dashboard_data.active_students:,}", active_pct],
             ["در انتظار تخصیص", f"{dashboard_data.pending_allocations}", pending_pct],
-            ["آخرین بروزرسانی", jdatetime.datetime.fromgregorian(datetime=dashboard_data.last_updated).strftime("%Y/%m/%d %H:%M"), ""],
+            [
+                "آخرین بروزرسانی",
+                jdatetime.datetime.fromgregorian(datetime=dashboard_data.last_updated).strftime("%Y/%m/%d %H:%M"),
+                "",
+            ],
         ]
 
         table = Table(summary_data)
@@ -144,7 +150,12 @@ class DashboardReportGenerator:
             except Exception as exc:  # noqa: BLE001
                 logging.getLogger(__name__).warning("بارگذاری لوگوی سفارشی در گزارش ناموفق بود", exc_info=exc)
         story.append(Paragraph("گزارش داشبورد مدیریتی دانش‌آموزان", persian))
-        story.append(Paragraph(jdatetime.datetime.now().strftime("%Y/%m/%d - %H:%M"), persian))
+        story.append(
+            Paragraph(
+                jdatetime.datetime.fromgregorian(datetime=self._clock.now()).strftime("%Y/%m/%d - %H:%M"),
+                persian,
+            )
+        )
 
         # Executive summary
         summary = [

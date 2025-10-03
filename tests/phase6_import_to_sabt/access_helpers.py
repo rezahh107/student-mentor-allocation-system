@@ -79,7 +79,7 @@ def access_test_app(
 
     registry = registry or CollectorRegistry()
     metrics = build_metrics(namespace, registry=registry)
-    clock = FixedClock(datetime(2024, 1, 1, 12, 0, tzinfo=ZoneInfo("Asia/Baku")))
+    clock = FixedClock(datetime(2024, 1, 1, 12, 0, tzinfo=ZoneInfo("Asia/Tehran")))
     scripted_durations = list(timer_durations) if timer_durations is not None else [0.001, 0.001, 0.001]
     timer = DeterministicTimer(scripted_durations)
     rate_limit_store = InMemoryKeyValueStore(namespace=f"{namespace}:rate", clock=clock)
@@ -97,7 +97,7 @@ def access_test_app(
         ),
         ratelimit=RateLimitConfig(namespace=namespace, requests=100, window_seconds=60, penalty_seconds=60),
         observability=ObservabilityConfig(service_name="import-to-sabt-test", metrics_namespace=namespace),
-        timezone="Asia/Baku",
+        timezone="Asia/Tehran",
         readiness_timeout_seconds=0.1,
         health_timeout_seconds=0.1,
         enable_debug_logs=True,

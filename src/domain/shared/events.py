@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Sequence
 from uuid import UUID, uuid4
 
+from src.core.clock import tehran_clock
+
+_CLOCK = tehran_clock()
 
 @dataclass(slots=True)
 class DomainEvent:
@@ -27,7 +30,7 @@ class DomainEvent:
             event_id=uuid4(),
             event_type=event_type,
             version=version,
-            occurred_at=datetime.now(timezone.utc),
+            occurred_at=_CLOCK.now(),
             correlation_id=correlation_id,
             causation_id=causation_id,
             tenant=tenant,

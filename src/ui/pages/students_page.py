@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Dict, List, Optional
 from datetime import datetime
+from typing import Dict, List, Optional
 
 from PyQt5.QtCore import QAbstractTableModel, QModelIndex, Qt, QTimer, QVariant, pyqtSignal
 from PyQt5.QtGui import QIcon
@@ -34,6 +34,7 @@ from src.services.excel_service import ExcelExportService
 from src.services.excel_import_service import ExcelImportService, ImportValidationResult
 from src.ui.pages.dialogs.export_progress_dialog import ExportProgressDialog, ImportProgressDialog
 from src.ui.pages.dialogs.import_preview_dialog import ImportPreviewDialog
+from src.core.clock import tehran_clock
 from src.ui._safety import is_minimal_mode, log_minimal_mode, swallow_ui_error
 
 
@@ -318,6 +319,7 @@ class StudentsPage(QWidget):
         self.api_client = api_client
         self.event_bus = event_bus
         self.presenter = StudentsPresenter(api_client, event_bus)
+        self._clock = tehran_clock()
 
         # State
         self.current_page = 1
@@ -632,7 +634,7 @@ class StudentsPage(QWidget):
             return
         if not students:
             return
-        dt = datetime.now().strftime("%Y_%m_%d_%H_%M")
+        dt = self._clock.now().strftime("%Y_%m_%d_%H_%M")
         default = f"{prefix}_{dt}.xlsx"
         path, _ = QFileDialog.getSaveFileName(self, "ذخیره فایل اکسل", default, "Excel Files (*.xlsx)")
         if not path:

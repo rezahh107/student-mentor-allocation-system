@@ -35,7 +35,7 @@ def test_accepts_active_and_next(monkeypatch, capsys) -> None:
 
     registry = CollectorRegistry()
     metrics = build_metrics("rotation_ops", registry=registry)
-    clock = FixedClock(datetime(2024, 1, 1, 0, 0, tzinfo=ZoneInfo("Asia/Baku")))
+    clock = FixedClock(datetime(2024, 1, 1, 0, 0, tzinfo=ZoneInfo("Asia/Tehran")))
     signer = DualKeySigner(
         keys=SigningKeySet(settings.signing_keys),
         clock=clock,

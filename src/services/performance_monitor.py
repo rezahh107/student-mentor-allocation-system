@@ -6,17 +6,21 @@ from typing import Dict
 
 import psutil
 
+from src.core.clock import SupportsNow, tehran_clock
 
 class PerformanceMonitor:
     """مانیتورینگ ساده برای ثبت سرعت تخصیص و وضعیت سیستم."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: SupportsNow | None = None) -> None:
+        default_clock = tehran_clock()
         self.start_time = time.time()
         self._allocation_count = 0
         self._allocation_times: list[float] = []
         self._successful_students = 0
         self._total_students = 0
         self._last_update: datetime | None = None
+        self._clock = clock or default_clock
+        self._timezone = getattr(self._clock, "timezone", default_clock.timezone)
 
     def record_allocation(self, duration: float, *, total_students: int = 0, successful_students: int = 0) -> None:
         self._allocation_count += 1
@@ -25,7 +29,7 @@ class PerformanceMonitor:
             self._allocation_times.pop(0)
         self._total_students += total_students
         self._successful_students += successful_students
-        self._last_update = datetime.now()
+        self._last_update = self._clock.now()
 
     def get_stats(self) -> Dict[str, object]:
         avg_time = sum(self._allocation_times) / len(self._allocation_times) if self._allocation_times else 0.0
@@ -42,7 +46,9 @@ class PerformanceMonitor:
             "memory_usage": round(memory, 1),
             "uptime_seconds": uptime,
             "success_rate": round(success_rate, 1),
-            "last_update": self._last_update.strftime("%H:%M:%S") if self._last_update else "---",
+            "last_update": self._last_update.astimezone(self._timezone).strftime("%H:%M:%S")
+            if self._last_update
+            else "---",
         }
 
 

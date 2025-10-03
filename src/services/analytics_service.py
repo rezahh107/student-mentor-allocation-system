@@ -8,6 +8,7 @@ import jdatetime
 
 from src.api.client import APIClient
 from src.api.models import StudentDTO
+from src.core.clock import SupportsNow, tehran_clock
 
 
 @dataclass
@@ -33,12 +34,13 @@ class DashboardData:
 class AnalyticsService:
     """سرویس تحلیل داده برای داشبورد."""
 
-    def __init__(self, api_client: APIClient) -> None:
+    def __init__(self, api_client: APIClient, *, clock: SupportsNow | None = None) -> None:
         self.api_client = api_client
         self._cache: Dict[str, DashboardData] = {}
         self._cache_time: Dict[str, datetime] = {}
         self.cache_ttl = timedelta(minutes=5)
         self.max_records_threshold = 10_000
+        self._clock = clock or tehran_clock()
 
     async def load_dashboard_data(
         self,
@@ -49,7 +51,7 @@ class AnalyticsService:
         """بارگذاری داده‌های داشبورد با بهینه‌سازی عملکرد و کش."""
 
         if not date_range:
-            end = datetime.now()
+            end = self._clock.now()
             start = end - timedelta(days=30)
             date_range = (start, end)
 
@@ -57,7 +59,7 @@ class AnalyticsService:
         key = f"{start_date.isoformat()}_{end_date.isoformat()}"
         if not force_refresh and key in self._cache:
             ts = self._cache_time.get(key)
-            if ts and datetime.now() - ts < self.cache_ttl:
+            if ts and self._clock.now() - ts < self.cache_ttl:
                 return self._cache[key]
 
         # تصمیم‌گیری بر اساس حجم داده‌ها در سرور (در Mock تقریبی)
@@ -75,7 +77,7 @@ class AnalyticsService:
             data = await self._load_with_client_filtering(date_range)
 
         self._cache[key] = data
-        self._cache_time[key] = datetime.now()
+        self._cache_time[key] = self._clock.now()
         return data
 
     async def _load_with_client_filtering(self, date_range: Tuple[datetime, datetime]) -> DashboardData:
@@ -140,7 +142,7 @@ class AnalyticsService:
             age_distribution=ages,
             recent_activities=activities,
             performance_metrics=performance,
-            last_updated=datetime.now(),
+            last_updated=self._clock.now(),
         )
 
     def _growth_rate(self, students_all: List[StudentDTO], date_range: Tuple[datetime, datetime]) -> Dict[str, str]:
@@ -189,7 +191,7 @@ class AnalyticsService:
 
     def _age_dist(self, students: List[StudentDTO]) -> List[int]:
         out: List[int] = []
-        today = datetime.now().date()
+        today = self._clock.now().date()
         for s in students:
             if s.birth_date:
                 age = (today - s.birth_date).days // 365

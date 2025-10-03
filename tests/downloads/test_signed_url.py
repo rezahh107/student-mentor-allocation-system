@@ -19,7 +19,7 @@ from src.phase6_import_to_sabt.security.signer import (
 def test_dual_key_acceptance_and_ttl() -> None:
     registry = CollectorRegistry()
     metrics = build_metrics("download_security", registry=registry)
-    clock = FixedClock(datetime(2024, 1, 1, 0, 0, tzinfo=ZoneInfo("Asia/Baku")))
+    clock = FixedClock(datetime(2024, 1, 1, 0, 0, tzinfo=ZoneInfo("Asia/Tehran")))
     keys = SigningKeySet(
         [
             SigningKeyDefinition("ACTV", "a" * 48, "active"),

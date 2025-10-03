@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from src.api.client import APIClient
+from src.core.clock import tehran_clock
 from src.ui.core.app_state import AppState
 from src.ui.core.event_bus import EventBus
 
@@ -22,6 +22,7 @@ class MainPresenter:
         self.api_client = api_client
         self.state = AppState(api_mode=("mock" if api_client.use_mock else "real"))
         self.event_bus = EventBus()
+        self.clock = tehran_clock()
 
     async def initialize(self) -> None:
         """بارگذاری اولیه برنامه و بررسی سلامت API."""
@@ -57,7 +58,7 @@ class MainPresenter:
                     elif i == 2:
                         self.state.stats = result
 
-            self.state.last_update = datetime.now()
+            self.state.last_update = self.clock.now()
             await self.event_bus.emit("data_updated", self.state)
         finally:
             await self.event_bus.emit("loading_end")

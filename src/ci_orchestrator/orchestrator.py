@@ -20,6 +20,8 @@ from prometheus_client import CollectorRegistry, Counter, generate_latest
 from starlette.responses import PlainTextResponse
 from zoneinfo import ZoneInfo
 
+from src.core.clock import tehran_clock
+
 ARTIFACT_DIR = pathlib.Path("artifacts")
 LAST_CMD_ARTIFACT = ARTIFACT_DIR / "last_cmd.txt"
 WARNINGS_ARTIFACT = ARTIFACT_DIR / "ci_warnings_report.json"
@@ -141,7 +143,7 @@ class Orchestrator:
 
     def _default_clock(self) -> dt.datetime:
         tz = ZoneInfo(self.config.timezone)
-        return dt.datetime.now(tz)
+        return tehran_clock().now().astimezone(tz)
 
     def _derive_correlation_id(self) -> str:
         return (

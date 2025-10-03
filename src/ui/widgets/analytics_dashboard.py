@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Dict, Optional
 
 from src.ui.qt_optional import QtCore, QtWidgets, require_qt
@@ -16,6 +15,7 @@ QWidget = QtWidgets.QWidget
 
 from ...services.config_manager import ConfigManager
 from ...services.performance_monitor import PerformanceMonitor
+from ...core.clock import SupportsNow, tehran_clock
 
 
 class AnalyticsDashboard(QWidget):
@@ -27,10 +27,12 @@ class AnalyticsDashboard(QWidget):
         performance_monitor: Optional[PerformanceMonitor] = None,
         config_manager: Optional[ConfigManager] = None,
         parent: Optional[QWidget] = None,
+        clock: SupportsNow | None = None,
     ) -> None:
         super().__init__(parent)
         self.monitor = performance_monitor
         self.config = config_manager or ConfigManager()
+        self._clock = clock or tehran_clock()
         self._allocation_summary: Dict[str, object] = {}
         self._last_refresh = None
         self._build_ui()
@@ -64,7 +66,7 @@ class AnalyticsDashboard(QWidget):
     def refresh_report(self) -> None:
         report = self.generate_text_report()
         self.report_text.setPlainText(report)
-        self._last_refresh = datetime.now()
+        self._last_refresh = self._clock.now()
 
     def generate_text_report(self) -> str:
         stats = self.monitor.get_stats() if self.monitor else {}
@@ -104,7 +106,7 @@ class AnalyticsDashboard(QWidget):
 • استفاده از حافظه: {stats.get('memory_usage', 0.0)}٪
 • مدت فعالیت سیستم: {stats.get('uptime_seconds', 0)} ثانیه
 
-🕒 آخرین بروزرسانی: {datetime.now().strftime('%H:%M:%S')}
+🕒 آخرین بروزرسانی: {self._clock.now().strftime('%H:%M:%S')}
 """
         return report.strip()
 

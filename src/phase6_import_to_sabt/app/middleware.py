@@ -2,13 +2,20 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.concurrency import iterate_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from core.retry import (
+    AsyncSleeper,
+    RetryExhaustedError,
+    RetryPolicy,
+    build_async_clock_sleeper,
+    execute_with_retry_async,
+)
 from phase6_import_to_sabt.middleware.metrics import MiddlewareMetrics
 from phase6_import_to_sabt.obs.metrics import ServiceMetrics
 from phase6_import_to_sabt.security.rbac import AuthorizationError, TokenRegistry
@@ -19,6 +26,9 @@ from phase6_import_to_sabt.app.timing import Timer
 from phase6_import_to_sabt.app.utils import ensure_no_control_chars, normalize_token
 
 logger = logging.getLogger(__name__)
+
+
+TRANSIENT_EXCEPTIONS: tuple[type[Exception], ...] = (ConnectionError, TimeoutError, OSError)
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
@@ -52,6 +62,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         clock: Clock,
         metrics: MiddlewareMetrics,
         timer: Timer,
+        *,
+        retry_policy: RetryPolicy | None = None,
+        sleeper: AsyncSleeper | None = None,
+        retryable: tuple[type[Exception], ...] = TRANSIENT_EXCEPTIONS,
     ) -> None:  # type: ignore[override]
         super().__init__(app)
         self._store = store
@@ -59,6 +73,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._clock = clock
         self._metrics = metrics
         self._timer = timer
+        self._retry_policy = retry_policy or RetryPolicy()
+        self._retryable = retryable
+        self._sleeper = sleeper or build_async_clock_sleeper(clock)
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         request.state.middleware_chain = getattr(request.state, "middleware_chain", []) + ["RateLimit"]
@@ -82,7 +99,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         identifier = request.headers.get("X-Client-ID") or request.client.host if request.client else "anonymous"
         ensure_no_control_chars([identifier])
         bucket = f"{self._config.namespace}:rl:{identifier}:{int(self._clock.now().timestamp()) // self._config.window_seconds}"
-        current = await self._store.incr(bucket, ttl_seconds=self._config.window_seconds)
+        try:
+            current = await self._with_retry(
+                request,
+                op="ratelimit.incr",
+                func=lambda: self._store.incr(bucket, ttl_seconds=self._config.window_seconds),
+            )
+        except RetryExhaustedError as exc:
+            return self._retry_failure(
+                request,
+                handle,
+                route,
+                capacity,
+                exc,
+                namespace=bucket,
+            )
         remaining = max(self._config.requests - current, 0)
         if current > self._config.requests:
             logger.warning("rate.limit.exceeded", extra={"correlation_id": getattr(request.state, "correlation_id", None)})
@@ -124,6 +155,63 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             diagnostics["last_rate_limit"] = {"decision": decision, "duration": duration}
         return response
 
+    async def _with_retry(self, request: Request, *, op: str, func: Callable[[], Awaitable[Any]]) -> Any:
+        correlation_id = getattr(request.state, "correlation_id", "ratelimit-missing")
+        return await execute_with_retry_async(
+            func,
+            policy=self._retry_policy,
+            clock=self._clock,
+            sleeper=self._sleeper,
+            retryable=self._retryable,
+            correlation_id=correlation_id,
+            op=op,
+        )
+
+    def _retry_failure(
+        self,
+        request: Request,
+        handle,
+        route: str,
+        capacity: int,
+        exc: RetryExhaustedError,
+        *,
+        namespace: str,
+    ) -> Response:
+        duration = handle.elapsed()
+        self._metrics.observe_rate_limit(
+            "error",
+            duration,
+            route=route,
+            remaining=capacity,
+            capacity=capacity,
+        )
+        diagnostics = getattr(request.app.state, "diagnostics", None)
+        if diagnostics and diagnostics.get("enabled"):
+            diagnostics["last_rate_limit"] = {
+                "decision": "error",
+                "duration": duration,
+                "last_error": str(exc.last_error),
+            }
+        logger.error(
+            "rate.limit.retry_exhausted",
+            extra={
+                "correlation_id": getattr(request.state, "correlation_id", None),
+                "op": exc.op,
+                "namespace": namespace,
+                "last_error": str(exc.last_error),
+                "retry_attempts": self._retry_policy.max_attempts,
+            },
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "fa_error_envelope": {
+                    "code": "RETRY_EXHAUSTED",
+                    "message": "در حال حاضر امکان انجام عملیات نیست؛ لطفاً بعداً دوباره تلاش کنید.",
+                }
+            },
+        )
+
 
 class IdempotencyMiddleware(BaseHTTPMiddleware):
     IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
@@ -134,11 +222,20 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         store: KeyValueStore,
         metrics: MiddlewareMetrics,
         timer: Timer,
+        *,
+        clock: Clock,
+        retry_policy: RetryPolicy | None = None,
+        sleeper: AsyncSleeper | None = None,
+        retryable: tuple[type[Exception], ...] = TRANSIENT_EXCEPTIONS,
     ) -> None:  # type: ignore[override]
         super().__init__(app)
         self._store = store
         self._metrics = metrics
         self._timer = timer
+        self._clock = clock
+        self._retry_policy = retry_policy or RetryPolicy()
+        self._retryable = retryable
+        self._sleeper = sleeper or build_async_clock_sleeper(clock)
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         chain = getattr(request.state, "middleware_chain", [])
@@ -165,7 +262,14 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
                 },
             )
         namespaced_key = f"idem:{key}"
-        cached = await self._store.get(namespaced_key)
+        try:
+            cached = await self._with_retry(
+                request,
+                op="idempotency.get",
+                func=lambda: self._store.get(namespaced_key),
+            )
+        except RetryExhaustedError as exc:
+            return self._retry_failure(request, handle, exc, namespace=namespaced_key)
         if cached:
             payload = decode_response(cached)
             headers = payload.get("headers", {})
@@ -180,9 +284,27 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
                 diagnostics["last_idempotency"] = {"outcome": "hit", "duration": duration}
             return Response(content=body, status_code=status, headers=headers, media_type=media_type)
 
-        stored = await self._store.set_if_not_exists(namespaced_key, encode_response({"status": 425, "body": "processing"}), self.IDEMPOTENCY_TTL_SECONDS)
+        try:
+            stored = await self._with_retry(
+                request,
+                op="idempotency.set_if_not_exists",
+                func=lambda: self._store.set_if_not_exists(
+                    namespaced_key,
+                    encode_response({"status": 425, "body": "processing"}),
+                    self.IDEMPOTENCY_TTL_SECONDS,
+                ),
+            )
+        except RetryExhaustedError as exc:
+            return self._retry_failure(request, handle, exc, namespace=namespaced_key)
         if not stored:
-            cached = await self._store.get(namespaced_key)
+            try:
+                cached = await self._with_retry(
+                    request,
+                    op="idempotency.get",
+                    func=lambda: self._store.get(namespaced_key),
+                )
+            except RetryExhaustedError as exc:
+                return self._retry_failure(request, handle, exc, namespace=namespaced_key)
             if cached:
                 payload = decode_response(cached)
                 duration = handle.elapsed()
@@ -220,13 +342,66 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             "body": body_payload,
             "media_type": response.media_type or "application/json",
         }
-        await self._store.set(namespaced_key, encode_response(payload), self.IDEMPOTENCY_TTL_SECONDS)
+        try:
+            await self._with_retry(
+                request,
+                op="idempotency.set",
+                func=lambda: self._store.set(
+                    namespaced_key,
+                    encode_response(payload),
+                    self.IDEMPOTENCY_TTL_SECONDS,
+                ),
+            )
+        except RetryExhaustedError as exc:
+            return self._retry_failure(request, handle, exc, namespace=namespaced_key)
         duration = handle.elapsed()
         self._metrics.observe_idempotency("miss", duration)
         diagnostics = getattr(request.app.state, "diagnostics", None)
         if diagnostics and diagnostics.get("enabled"):
             diagnostics["last_idempotency"] = {"outcome": "miss", "duration": duration}
         return response
+
+    async def _with_retry(self, request: Request, *, op: str, func: Callable[[], Awaitable[Any]]) -> Any:
+        correlation_id = getattr(request.state, "correlation_id", "idempotency-missing")
+        return await execute_with_retry_async(
+            func,
+            policy=self._retry_policy,
+            clock=self._clock,
+            sleeper=self._sleeper,
+            retryable=self._retryable,
+            correlation_id=correlation_id,
+            op=op,
+        )
+
+    def _retry_failure(self, request: Request, handle, exc: RetryExhaustedError, *, namespace: str) -> Response:
+        duration = handle.elapsed()
+        self._metrics.observe_idempotency("error", duration)
+        diagnostics = getattr(request.app.state, "diagnostics", None)
+        if diagnostics and diagnostics.get("enabled"):
+            diagnostics["last_idempotency"] = {
+                "outcome": "error",
+                "duration": duration,
+                "last_error": str(exc.last_error),
+            }
+        logger.error(
+            "idempotency.retry_exhausted",
+            extra={
+                "correlation_id": getattr(request.state, "correlation_id", None),
+                "op": exc.op,
+                "namespace": namespace,
+                "last_error": str(exc.last_error),
+                "retry_attempts": self._retry_policy.max_attempts,
+            },
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "fa_error_envelope": {
+                    "code": "RETRY_EXHAUSTED",
+                    "message": "در حال حاضر امکان انجام عملیات نیست؛ لطفاً بعداً دوباره تلاش کنید.",
+                }
+            },
+        )
 
 
 class AuthMiddleware(BaseHTTPMiddleware):

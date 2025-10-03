@@ -84,6 +84,7 @@ def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
         store=container.idempotency_store,
         metrics=container.metrics.middleware,
         timer=container.timer,
+        clock=container.clock,
     )
     app.add_middleware(
         RateLimitMiddleware,

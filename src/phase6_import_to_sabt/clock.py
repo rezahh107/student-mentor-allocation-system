@@ -3,7 +3,8 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 from typing import Callable, Protocol, Union
-from zoneinfo import ZoneInfo
+
+import core.clock as core_clock
 
 
 class Clock(Protocol):
@@ -45,17 +46,17 @@ class CallableClock:
 
 @dataclass
 class SystemClock:
-    timezone: ZoneInfo
+    delegate: core_clock.Clock
 
     def now(self) -> dt.datetime:
-        return dt.datetime.now(tz=self.timezone)
+        return self.delegate.now()
 
     def __call__(self) -> dt.datetime:
         return self.now()
 
 
 def build_system_clock(timezone: str) -> SystemClock:
-    return SystemClock(timezone=ZoneInfo(timezone))
+    return SystemClock(delegate=core_clock.Clock.for_timezone(timezone))
 
 
 def ensure_clock(

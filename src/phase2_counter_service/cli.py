@@ -9,12 +9,12 @@ import sys
 import time
 import uuid
 from dataclasses import asdict
-from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
 from src.infrastructure.export.excel_safe import make_excel_safe_writer
+from src.core.clock import Clock, tehran_clock
 
 from . import assign_counter, get_config, get_service
 from .backfill import BackfillStats, run_backfill
@@ -32,10 +32,11 @@ PERSIAN_BOOLEAN = {True: "بله", False: "خیر"}
 """Mapping used to localize boolean values for CSV serialization."""
 
 
-def _timestamp_suffix() -> str:
+def _timestamp_suffix(clock: Clock | None = None) -> str:
     """Return an ISO-like timestamp suitable for file names."""
 
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    active_clock = clock or tehran_clock()
+    return active_clock.now().strftime("%Y%m%dT%H%M%S")
 
 
 def _ensure_unique_path(path: Path, *, overwrite: bool, original: Optional[str] = None) -> Path:

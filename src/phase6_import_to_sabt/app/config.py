@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import unicodedata
 from typing import Optional
 
-from pydantic import BaseModel, Field
+import core.clock as core_clock
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
+_ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+_ZERO_WIDTH = ("\u200c", "\u200d", "\ufeff")
+_MAX_TZ_LENGTH = 255
+_TZ_ERROR = "CONFIG_TZ_INVALID: «مقدار TIMEZONE نامعتبر است؛ لطفاً یک ناحیهٔ زمانی IANA معتبر وارد کنید.»"
 
 
 class RateLimitConfig(BaseModel):
@@ -51,6 +59,31 @@ class AppConfig(BaseSettings):
     health_timeout_seconds: float = Field(default=0.2, ge=0.1, le=5.0)
     enable_debug_logs: bool = Field(default=False)
     enable_diagnostics: bool = Field(default=False)
+
+    @field_validator("timezone", mode="before")
+    @classmethod
+    def _validate_timezone(cls, value: object) -> str:
+        """Normalize and validate the configured IANA timezone name."""
+
+        if value is None:
+            raise ValueError(_TZ_ERROR)
+
+        raw = str(value)
+        normalized = unicodedata.normalize("NFKC", raw)
+        normalized = normalized.translate(_PERSIAN_DIGITS).translate(_ARABIC_DIGITS)
+        for char in _ZERO_WIDTH:
+            normalized = normalized.replace(char, "")
+        normalized = normalized.strip()
+
+        if not normalized or len(normalized) > _MAX_TZ_LENGTH:
+            raise ValueError(_TZ_ERROR)
+
+        try:
+            core_clock.validate_timezone(normalized)
+        except ValueError as exc:  # pragma: no cover - defensive guard
+            raise ValueError(_TZ_ERROR) from exc
+
+        return normalized
 
 
     @classmethod

@@ -41,6 +41,7 @@ dependencies = [
     "packaging>=23.2",
     "platformdirs>=3.11",
     "jsonschema>=4.23",
+    "structlog>=24.1",
 ]
 
 [project.optional-dependencies]

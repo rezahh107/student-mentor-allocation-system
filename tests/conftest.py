@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+pytest_plugins = ("tests.fixtures.state",)
+
 LEGACY_MARKERS: tuple[str, ...] = (
     "slow",
     "integration",

@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from .bootstrap import BootstrapError, bilingual_message
+from .bootstrap import BootstrapError
 from .evidence import EvidenceLedger, EvidenceResult, verify_evidence
 from .fs_atomic import atomic_write_text, ensure_directories, rotate_directory
-from .logging_utils import correlation_id, log_event
+from .logging_utils import bilingual_message, correlation_id, log_event
 from .redis_utils import RedisHandle
 from .schemas import validate_pytest_json
 

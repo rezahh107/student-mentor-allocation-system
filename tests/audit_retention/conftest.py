@@ -21,6 +21,9 @@ from src.audit.service import AuditMetrics, build_metrics
 from src.reliability.clock import Clock
 
 
+FROZEN_INSTANT = datetime(2024, 3, 20, 8, 30, tzinfo=ZoneInfo("Asia/Tehran"))
+
+
 @pytest.fixture(scope="function")
 def tz() -> ZoneInfo:
     return ZoneInfo("Asia/Tehran")
@@ -29,7 +32,7 @@ def tz() -> ZoneInfo:
 @pytest.fixture(scope="function")
 def frozen_time() -> Iterator[datetime]:
     with freeze_time("2024-03-20T08:30:00+03:30"):
-        yield datetime.now(tz=ZoneInfo("Asia/Tehran"))
+        yield FROZEN_INSTANT
 
 
 @pytest.fixture(scope="function")

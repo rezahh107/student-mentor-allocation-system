@@ -6,11 +6,12 @@ import os
 import secrets
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from sqlalchemy import Column, MetaData, String, Table, create_engine, select, update
 from sqlalchemy.sql import insert
 
+from src.core.clock import Clock
 from src.hardened_api.observability import hash_national_id
 
 
@@ -42,13 +43,19 @@ def list_keys(config: CLIConfig) -> list[tuple[str, str, str | None, str | None]
     return [(row.name, row.key_hash, row.expires_at, row.revoked_at) for row in rows]
 
 
-def _format_expiry(hours: int | None) -> str | None:
+def _format_expiry(hours: int | None, *, clock: Clock) -> str | None:
     if hours is None:
         return None
-    return (datetime.now(tz=timezone.utc) + timedelta(hours=hours)).isoformat()
+    return (clock.now() + timedelta(hours=hours)).isoformat()
 
 
-def create_key(name: str, *, config: CLIConfig, expires_in_hours: int | None = None) -> str:
+def create_key(
+    name: str,
+    *,
+    config: CLIConfig,
+    expires_in_hours: int | None = None,
+    clock: Clock | None = None,
+) -> str:
     engine = create_engine(config.database_url)
     metadata = MetaData()
     table = Table(
@@ -60,9 +67,10 @@ def create_key(name: str, *, config: CLIConfig, expires_in_hours: int | None = N
         Column("revoked_at", String(32)),
     )
     metadata.create_all(engine, checkfirst=True)
+    active_clock = clock or Clock.for_tehran()
     token = secrets.token_urlsafe(32)
     hashed = hash_national_id(token, salt=config.api_key_salt)
-    expires_at = _format_expiry(expires_in_hours)
+    expires_at = _format_expiry(expires_in_hours, clock=active_clock)
     with engine.begin() as conn:
         conn.execute(
             insert(table).values(
@@ -91,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.database_url:
         raise SystemExit("DATABASE_URL is required")
     config = CLIConfig(database_url=args.database_url, api_key_salt=args.api_key_salt)
+    clock = Clock.for_tehran()
     if args.command == "list":
         rows = list_keys(config)
         for name, key_hash, expires_at, revoked_at in rows:
@@ -99,7 +108,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "create":
         if not args.name:
             raise SystemExit("--name is required for create")
-        token = create_key(args.name, config=config, expires_in_hours=args.expires_in_hours)
+        token = create_key(
+            args.name,
+            config=config,
+            expires_in_hours=args.expires_in_hours,
+            clock=clock,
+        )
         print(token)
         return 0
     if args.command == "revoke":
@@ -112,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             conn.execute(
                 update(table)
                 .where(table.c.key_hash == args.key_hash)
-                .values(revoked_at=datetime.now(tz=timezone.utc).isoformat())
+                .values(revoked_at=clock.now().isoformat())
             )
         print("revoked")
         return 0

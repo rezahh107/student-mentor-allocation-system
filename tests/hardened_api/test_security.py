@@ -18,6 +18,9 @@ from tests.hardened_api.conftest import (
 from src.hardened_api.observability import hash_national_id
 
 
+FIXED_NOW = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+
 def _default_headers(**extra):
     headers = {
         "Authorization": "Bearer TESTTOKEN1234567890",
@@ -155,7 +158,7 @@ async def test_expired_api_key_rejected(clean_state, client, auth_config):
     expired_record = APIKeyRecord(
         name="expired",
         key_hash=hashed,
-        expires_at=datetime.now(tz=timezone.utc) - timedelta(hours=1),
+        expires_at=FIXED_NOW - timedelta(hours=1),
     )
     auth_config.api_key_repository.add(expired_record)
     headers = {

@@ -10,6 +10,9 @@ from src.infrastructure.persistence.models import Base, OutboxMessageModel
 from src.phase3_allocation.outbox import BackoffPolicy, OutboxDispatcher, OutboxEvent, SystemClock
 
 
+FIXED_NOW = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+
 def test_outbox_event_rejects_large_payload() -> None:
     payload = {"data": "x" * 40000}
     event = OutboxEvent(
@@ -18,8 +21,8 @@ def test_outbox_event_rejects_large_payload() -> None:
         aggregate_id="1",
         event_type="MentorAssigned",
         payload=payload,
-        occurred_at=datetime.now(timezone.utc),
-        available_at=datetime.now(timezone.utc),
+        occurred_at=FIXED_NOW,
+        available_at=FIXED_NOW,
     )
     with pytest.raises(ValueError) as exc:
         event.to_model()
@@ -33,8 +36,8 @@ def test_outbox_event_rejects_invalid_status() -> None:
         aggregate_id="1",
         event_type="MentorAssigned",
         payload={},
-        occurred_at=datetime.now(timezone.utc),
-        available_at=datetime.now(timezone.utc),
+        occurred_at=FIXED_NOW,
+        available_at=FIXED_NOW,
         status="UNKNOWN",  # type: ignore[arg-type]
     )
     with pytest.raises(ValueError) as exc:
@@ -47,7 +50,7 @@ def test_dispatcher_marks_failed_after_max_retries(tmp_path, caplog) -> None:
     Base.metadata.create_all(engine, tables=[OutboxMessageModel.__table__])
     Session = sessionmaker(bind=engine, expire_on_commit=False, future=True)
     session = Session()
-    now = datetime.now(timezone.utc)
+    now = FIXED_NOW
     model = OutboxMessageModel(
         id="row",
         event_id="evt-1",

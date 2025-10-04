@@ -64,6 +64,23 @@ class ExportStatusResponse(BaseModel):
     middleware_chain: list[str] = Field(default_factory=list)
 
 
+class SabtExportQuery(BaseModel):
+    year: int
+    center: int | None = Field(default=None)
+    format: str = Field(default="xlsx")
+    chunk_size: int | None = None
+    bom: bool | None = None
+    excel_mode: bool | None = None
+
+
+class SabtExportResponse(BaseModel):
+    job_id: str
+    format: str
+    files: list[dict[str, Any]]
+    manifest: dict[str, Any]
+    middleware_chain: list[str] = Field(default_factory=list)
+
+
 class DualKeyHMACSignedURLProvider(SignedURLProvider):
     """Generate and validate signed URLs using dual rotating keys."""
 
@@ -408,6 +425,100 @@ class ExportAPI:
                 files=files,
                 manifest=manifest_payload,
                 error=job.error,
+                middleware_chain=chain,
+            )
+
+        @router.get("/export/sabt/v1", response_model=SabtExportResponse)
+        async def export_sabt_v1(
+            request: Request,
+            query: SabtExportQuery = Depends(),
+            _: None = Depends(rate_limit_dependency),
+            idempotency_key: Optional[str] = Depends(optional_idempotency_dependency),
+            auth: tuple[str, Optional[int]] = Depends(auth_dependency),
+        ) -> SabtExportResponse:
+            role, center_scope = auth
+            if role == "MANAGER" and query.center != center_scope:
+                raise HTTPException(status_code=403, detail="اجازه دسترسی ندارید")
+            fmt = (query.format or "xlsx").lower()
+            if fmt not in {"csv", "xlsx"}:
+                raise self._validation_error({"format": "فرمت خروجی نامعتبر است؛ فقط CSV یا XLSX پشتیبانی می‌شود."})
+            chunk_size = query.chunk_size or 50_000
+            if chunk_size <= 0:
+                raise self._validation_error({"chunk_size": "اندازه قطعه باید بزرگتر از صفر باشد."})
+            try:
+                options = ExportOptions(
+                    chunk_size=chunk_size,
+                    include_bom=query.bom or False,
+                    excel_mode=query.excel_mode if query.excel_mode is not None else True,
+                    output_format=fmt,
+                )
+            except ValueError as exc:
+                raise self._validation_error({"options": str(exc)}) from exc
+            filters = ExportFilters(year=query.year, center=query.center)
+            namespace_components = [
+                role,
+                str(center_scope or "ALL"),
+                str(query.year),
+                options.output_format,
+                "sabt-v1",
+            ]
+            namespace = ":".join(namespace_components)
+            correlation_id = request.headers.get("X-Request-ID") or str(uuid4())
+            idem = idempotency_key or f"sabt:{namespace}:{correlation_id}"
+            job = self.runner.submit(
+                filters=filters,
+                options=options,
+                idempotency_key=idem,
+                namespace=namespace,
+                correlation_id=correlation_id,
+            )
+            start = self._duration_clock()
+            completed = await asyncio.to_thread(self.runner.await_completion, job.id)
+            elapsed = self._duration_clock() - start
+            if elapsed >= 0:
+                self.metrics.observe_duration("sync_export", elapsed, options.output_format)
+            if completed.status != ExportJobStatus.SUCCESS or not completed.manifest:
+                error_detail = completed.error or {"message": "خطا در تولید فایل؛ لطفاً دوباره تلاش کنید."}
+                raise HTTPException(status_code=500, detail=error_detail)
+            manifest = completed.manifest
+            signed_files: list[dict[str, Any]] = []
+            sign_start = self._duration_clock()
+            for file in manifest.files:
+                file_path = Path(self.runner.exporter.output_dir) / file.name
+                signed_files.append(
+                    {
+                        "name": file.name,
+                        "rows": file.row_count,
+                        "sha256": file.sha256,
+                        "sheets": [list(item) for item in file.sheets] if file.sheets else [],
+                        "url": self.signer.sign(str(file_path)),
+                    }
+                )
+            sign_elapsed = self._duration_clock() - sign_start
+            if sign_elapsed >= 0:
+                self.metrics.observe_duration("sign_links", sign_elapsed, manifest.format)
+            manifest_payload = {
+                "total_rows": manifest.total_rows,
+                "generated_at": manifest.generated_at.isoformat(),
+                "format": manifest.format,
+                "excel_safety": manifest.excel_safety,
+                "files": [
+                    {
+                        "name": file.name,
+                        "sha256": file.sha256,
+                        "row_count": file.row_count,
+                        "byte_size": file.byte_size,
+                        "sheets": [list(item) for item in file.sheets] if file.sheets else [],
+                    }
+                    for file in manifest.files
+                ],
+            }
+            chain = list(getattr(request.state, "middleware_chain", []))
+            return SabtExportResponse(
+                job_id=completed.id,
+                format=manifest.format,
+                files=signed_files,
+                manifest=manifest_payload,
                 middleware_chain=chain,
             )
 

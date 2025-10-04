@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+pytest_plugins = ("tests.fixtures.state",)
+
 LEGACY_MARKERS: tuple[str, ...] = (
     "slow",
     "integration",
@@ -47,6 +49,14 @@ _ALLOWED_RELATIVE_TESTS: tuple[str, ...] = (
     "tests/api/test_phase6_persian_errors.py",
     "tests/retry/test_retry_jitter_determinism.py",
     "tests/retry/test_retry_metrics.py",
+    "tests/exports/test_csv_excel_safety.py",
+    "tests/exports/test_crlf_and_bom.py",
+    "tests/exports/test_atomic_finalize.py",
+    "tests/exports/test_streaming_perf.py",
+    "tests/exports/test_signed_url.py",
+    "tests/mw/test_export_middleware_order.py",
+    "tests/ci/test_state_hygiene.py",
+    "tests/obs/test_retry_metrics.py",
 )
 
 _ALLOWED_DIRECTORIES = {
@@ -54,6 +64,7 @@ _ALLOWED_DIRECTORIES = {
     "tests/excel",
     "tests/domain",
     "tests/api",
+    "tests/downloads",
 }
 
 _DEFAULT_TZ = ZoneInfo("Asia/Tehran")
@@ -144,6 +155,8 @@ def pytest_ignore_collect(collection_path, config):  # type: ignore[no-untyped-d
             if allowed.startswith(f"{rel_posix}/"):
                 return False
         return True
+    if rel.parent.as_posix() in _ALLOWED_DIRECTORIES:
+        return False
     return rel_posix not in _ALLOWED_RELATIVE_TESTS
 
 

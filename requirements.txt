@@ -18,6 +18,7 @@ qasync>=0.23.0
 # Excel/Data
 openpyxl>=3.1.0
 pandas>=2.0.0
+XlsxWriter>=3.1.0
 
 # System
 psutil>=5.9.0

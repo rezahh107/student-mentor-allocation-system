@@ -32,6 +32,8 @@ with override_clock(FrozenClock(timezone=Clock.for_tehran().timezone)) as clock:
 
 ## تضمین قطعی بودن
 
-- گارد `tools/guards/wallclock_repo_guard.py` هر استفادهٔ مستقیم از `datetime.now` یا `time.time` را مسدود می‌کند.
+- گارد `tools/guards/wallclock_repo_guard.py` هر استفادهٔ مستقیم از `datetime.now`، `time.time`، `date.today` و `pandas.Timestamp.now` را در کد زمان اجرای پروژه مسدود می‌کند.
+- تنها استثناء برای استفاده از ساعت سیستم، پوشهٔ `scripts/`، `migrations/` و ماژول‌هایی است که با نظر مشخص (`# WALLCLOCK_ALLOW`) علامت‌گذاری شده‌اند.
+- استفاده از `Asia/Baku` خارج از `tools/guards/*` و نمونه‌های مستندات (`docs/`) ممنوع است؛ خط لولهٔ CI این موضوع را بررسی می‌کند.
 - تست‌های `tests/time/` و `tests/mw/` رفتار ساعت و زنجیرهٔ RateLimit → Idempotency → Auth را پوشش می‌دهند.
 - برای سیستم‌هایی که پایگاه دادهٔ IANA ندارند (مثلاً Windows)، بستهٔ `tzdata` را نصب کنید تا `ZoneInfo("Asia/Tehran")` قابل resolves باشد.

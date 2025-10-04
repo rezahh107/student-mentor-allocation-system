@@ -7,12 +7,12 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import List
 
 from tools import gha_rerun
 from tools import gha_workflow_patcher
+from src.core.clock import Clock
 
 
 class BootstrapError(RuntimeError):
@@ -165,7 +165,8 @@ def run(argv: list[str] | None = None) -> int:
             print("تغییری برای commit وجود ندارد؛ CI در وضعیت جدید است")
             return 0
 
-        branch_name = args.branch or f"{args.branch_prefix}-{int(time.time())}"
+        branch_suffix = int(Clock.for_tehran().now().timestamp())
+        branch_name = args.branch or f"{args.branch_prefix}-{branch_suffix}"
         token_present = bool(os.environ.get("GITHUB_TOKEN"))
         if args.auto and token_present:
             _auto_flow(root, branch_name, args.workflow, args.remote)

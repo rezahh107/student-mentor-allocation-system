@@ -101,6 +101,7 @@ class ServiceController:
     executor: CommandExecutor = field(default_factory=lambda: _subprocess_executor)
     uvicorn_runner: Callable[[int], None] = field(default_factory=lambda: _run_uvicorn)
     clock: Clock = field(default_factory=tehran_clock)
+    port_override: int | None = None
 
     def handle(self, command: str) -> int:
         if command == "run":
@@ -112,8 +113,11 @@ class ServiceController:
     def _run(self) -> int:
         config = self._load_launcher_config()
         _validate_environment()
+        port = self.port_override if self.port_override is not None else config.port
+        os.environ.setdefault("STUDENT_MENTOR_APP_PORT", str(port))
+        logging.getLogger(__name__).info("service_run", extra={"port": port})
         try:
-            self.uvicorn_runner(config.port)
+            self.uvicorn_runner(port)
         except Exception as exc:  # pragma: no cover - defensive logging
             logging.getLogger(__name__).exception("service_run_failed", exc_info=exc)
             return EXIT_RUNTIME_ERROR
@@ -133,7 +137,7 @@ class ServiceController:
                 context={"path": str(self.winsw_xml)},
             )
         args = [str(self.winsw_executable), command]
-        logging.getLogger(__name__).info("winsw_exec", extra={"args": args})
+        logging.getLogger(__name__).info("winsw_exec", extra={"winsw_args": args})
         try:
             result = self.executor(args)
         except subprocess.CalledProcessError as exc:  # pragma: no cover - defensive
@@ -161,13 +165,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["install", "start", "stop", "uninstall", "run"],
         help="Operation to execute.",
     )
+    parser.add_argument(
+        "--port",
+        type=int,
+        help="Override backend port when using the 'run' command.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     configure_json_logging()
-    controller = ServiceController()
+    controller = ServiceController(port_override=args.port if args.command == "run" else None)
     try:
         return controller.handle(args.command)
     except ServiceError as exc:

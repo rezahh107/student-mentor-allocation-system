@@ -20,7 +20,7 @@ _TEMPLATE = dedent(
       <name>Student Mentor Allocation Service</name>
       <description>FastAPI backend for ImportToSabt exports (WinSW managed).</description>
       <executable>python</executable>
-      <arguments>-m windows_service.controller run</arguments>
+      <arguments>{arguments}</arguments>
       <workingdirectory>%BASE%</workingdirectory>
       <stoptimeout>15</stoptimeout>
       <startmode>Automatic</startmode>
@@ -39,13 +39,16 @@ _TEMPLATE = dedent(
 )
 
 
-def render(version: str = DEFAULT_VERSION) -> str:
+def render(version: str = DEFAULT_VERSION, *, port: int | None = None) -> str:
     log_path = "%APPDATA%\\StudentMentorApp\\logs"
-    return _TEMPLATE.format(version=version, log_path=log_path)
+    arguments = "-m windows_service.controller run"
+    if port is not None:
+        arguments = f"{arguments} --port {port}"
+    return _TEMPLATE.format(version=version, log_path=log_path, arguments=arguments)
 
 
-def generate(path: Path = TARGET_PATH, *, version: str = DEFAULT_VERSION) -> Path:
-    payload = render(version)
+def generate(path: Path = TARGET_PATH, *, version: str = DEFAULT_VERSION, port: int | None = None) -> Path:
+    payload = render(version, port=port)
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, payload)
     return path
@@ -55,13 +58,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate WinSW XML manifest.")
     parser.add_argument("--version", default=DEFAULT_VERSION, help="WinSW release version.")
     parser.add_argument("--output", default=str(TARGET_PATH), help="Destination XML path.")
+    parser.add_argument("--port", type=int, help="Optional fixed port for the backend service.")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    target = generate(Path(args.output), version=args.version)
-    print(f"Generated {target} for WinSW {args.version}")  # noqa: T201 - intentional CLI output
+    target = generate(Path(args.output), version=args.version, port=args.port)
+    message = f"Generated {target} for WinSW {args.version}"
+    if args.port is not None:
+        message += f" (port={args.port})"
+    print(message)  # noqa: T201 - intentional CLI output
     return 0
 
 

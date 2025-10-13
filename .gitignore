@@ -33,6 +33,7 @@ MANIFEST
 *.manifest
 *.spec
 !windows_launcher/specs/*.spec
+!StudentMentorApp.spec
 
 # Installer logs
 pip-log.txt

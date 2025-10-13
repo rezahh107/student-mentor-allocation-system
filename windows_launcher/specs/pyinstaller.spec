@@ -26,6 +26,12 @@ datas += service_datas
 binaries += service_binaries
 hiddenimports += service_hidden
 
+for package in ("audit", "ui", "web", "windows_shared"):
+    pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
+    datas += pkg_datas
+    binaries += pkg_binaries
+    hiddenimports += pkg_hidden
+
 assets_dir = os.path.join("assets")
 if os.path.isdir(assets_dir):
     datas.append((assets_dir, "assets"))
@@ -47,7 +53,7 @@ hiddenimports = _unique(hiddenimports)
 
 a = Analysis(
     ["windows_launcher/launcher.py"],
-    pathex=[],
+    pathex=["."],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

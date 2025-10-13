@@ -8,6 +8,7 @@ import json
 import logging
 import multiprocessing
 import os
+import subprocess
 import socket
 import sys
 import time
@@ -126,33 +127,26 @@ def _allocate_port(host: str, preferred: int, *, attempts: int = 8) -> tuple[int
     return candidate, False
 
 
-def _backend_process_entry(port: int) -> None:
-    os.environ.setdefault("STUDENT_MENTOR_APP_PORT", str(port))
-    try:
-        from windows_service.controller import EXIT_SUCCESS, ServiceController
-    except Exception as exc:  # pragma: no cover - defensive guard
-        logging.getLogger(__name__).exception("backend_import_failed", exc_info=exc)
-        return
-
-    configure_json_logging()
-    controller = ServiceController()
-    try:
-        exit_code = controller.handle("run")
-    except Exception as exc:  # pragma: no cover - defensive guard
-        logging.getLogger(__name__).exception("backend_process_unhandled", exc_info=exc)
-        return
-    if exit_code != EXIT_SUCCESS:
-        logging.getLogger(__name__).error("backend_process_exit", extra={"code": exit_code, "port": port})
-
-
-def _spawn_backend_process(port: int) -> multiprocessing.Process:
-    ctx = multiprocessing.get_context("spawn")
-    process = ctx.Process(target=_backend_process_entry, args=(port,), daemon=True)
-    process.start()
+def _spawn_backend_process(port: int) -> subprocess.Popen[str]:
+    env = os.environ.copy()
+    env.setdefault("STUDENT_MENTOR_APP_PORT", str(port))
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    command = [sys.executable, "-m", "windows_service.controller", "run", "--port", str(port)]
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    process = subprocess.Popen(  # noqa: S603 - controlled command
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        creationflags=creation_flags,
+    )
     return process
 
 
-BackendLauncher = Callable[[int], multiprocessing.Process | None]
+BackendLauncher = Callable[[int], subprocess.Popen[str] | None]
 
 
 def ensure_agents_manifest(start: Path | None = None, *, max_depth: int = 6) -> Path:
@@ -246,11 +240,12 @@ def wait_for_backend(
     max_attempts: int = 6,
     jitter_base: float = 1.0,
     jitter_cap: float = 4.0,
+    diagnostics: Callable[[], str] | None = None,
 ) -> None:
     logger = logging.getLogger(__name__)
     seed = f"{port}:{correlation_id}"
     attempt_counter = {"value": 0}
-    last_detail: dict[str, str] = {"detail": ""}
+    last_detail: dict[str, str] = {"detail": "", "reason": "", "last_error": ""}
 
     def policy(attempt: int) -> float:
         delay = deterministic_jitter(jitter_base, attempt, seed)
@@ -263,6 +258,8 @@ def wait_for_backend(
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
             last_detail["detail"] = detail
+            last_detail["reason"] = "probe_exception"
+            last_detail["last_error"] = detail
             logger.warning(
                 "backend_probe_exception",
                 extra={"attempt": attempt_counter["value"], "port": port, "detail": detail},
@@ -270,12 +267,16 @@ def wait_for_backend(
             raise _BackendUnavailable(f"backend:{port}") from exc
         if not ready:
             last_detail["detail"] = "probe_not_ready"
+            last_detail["reason"] = "probe_not_ready"
+            last_detail["last_error"] = ""
             logger.info(
                 "backend_probe_retry",
                 extra={"attempt": attempt_counter["value"], "port": port},
             )
             raise _BackendUnavailable(f"backend:{port}")
         last_detail["detail"] = ""
+        last_detail["reason"] = ""
+        last_detail["last_error"] = ""
 
     try:
         execute_with_retry(
@@ -287,15 +288,26 @@ def wait_for_backend(
             operation_name=BACKEND_OPERATION,
         )
     except _BackendUnavailable as exc:
+        context: dict[str, str] = {
+            "port": str(port),
+            "url": f"http://127.0.0.1:{port}/readyz",
+            "reason": last_detail["reason"] or "unknown",
+            "attempts": str(attempt_counter["value"]),
+        }
+        if last_detail["last_error"]:
+            context["last_error"] = last_detail["last_error"]
+        if diagnostics is not None:
+            stderr_tail = diagnostics()
+            if stderr_tail:
+                context["stderr_tail"] = stderr_tail[-1024:]
+        logger.error(
+            "backend_probe_failed",
+            extra={"context": json.dumps(context, ensure_ascii=False)},
+        )
         raise LauncherError(
             "BACKEND_UNAVAILABLE",
             SERVICE_UNAVAILABLE_MSG,
-            context={
-                "port": str(port),
-                "url": f"http://127.0.0.1:{port}/readyz",
-                "reason": last_detail["detail"] or "unknown",
-                "attempts": str(attempt_counter["value"]),
-            },
+            context=context,
         ) from exc
 
 
@@ -328,7 +340,8 @@ class Launcher:
     cold_budget_seconds: float = 8.0
     memory_budget_mb: float = 200.0
     _startup_samples: list[float] = field(default_factory=list, init=False)
-    _backend_process: multiprocessing.Process | None = field(default=None, init=False, repr=False)
+    _backend_process: subprocess.Popen[str] | None = field(default=None, init=False, repr=False)
+    _backend_last_stderr: str | None = field(default=None, init=False, repr=False)
     _teardown_registered: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -408,15 +421,33 @@ class Launcher:
         if self.backend_launcher is None:
             logger.warning("backend_launcher_missing", extra={"port": config.port})
             return
-        if self._backend_process is not None and self._backend_process.is_alive():
-            logger.debug("backend_process_alive", extra={"port": config.port, "pid": self._backend_process.pid})
-            return
+        if self._backend_process is not None:
+            pid = getattr(self._backend_process, "pid", None)
+            returncode = self._backend_process.poll()
+            if returncode is None:
+                logger.debug("backend_process_alive", extra={"port": config.port, "pid": pid})
+                return
+            stderr_snapshot = self._collect_backend_stderr(timeout=0.0)
+            logger.warning(
+                "backend_process_exited",
+                extra={
+                    "port": config.port,
+                    "pid": pid,
+                    "returncode": returncode,
+                    "stderr_detail": stderr_snapshot[-512:] if stderr_snapshot else "",
+                },
+            )
+            self._backend_process = None
         try:
             process = self.backend_launcher(config.port)
         except Exception as exc:  # pragma: no cover - defensive
-            logger.exception("backend_spawn_failed", exc_info=exc, extra={"port": config.port})
+            logger.exception(
+                "backend_spawn_failed",
+                extra={"port": config.port, "detail": f"{type(exc).__name__}: {exc}"},
+            )
             return
         self._backend_process = process
+        self._backend_last_stderr = None
         if process is not None:
             if not self._teardown_registered:
                 atexit.register(self._terminate_backend_process)
@@ -426,18 +457,42 @@ class Launcher:
                 extra={"port": config.port, "pid": getattr(process, "pid", None)},
             )
 
+    def _collect_backend_stderr(self, *, timeout: float) -> str:
+        if self._backend_process is None:
+            return self._backend_last_stderr or ""
+        if self._backend_last_stderr is not None:
+            return self._backend_last_stderr
+        if self._backend_process.stderr is None:
+            return ""
+        try:
+            _, stderr = self._backend_process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return ""
+        except Exception:
+            return ""
+        self._backend_last_stderr = (stderr or "").strip()
+        return self._backend_last_stderr
+
     def _terminate_backend_process(self) -> None:
         process = self._backend_process
         if process is None:
             return
         try:
-            if process.is_alive():
+            if process.poll() is None:
                 process.terminate()
-                process.join(timeout=5)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
+            self._collect_backend_stderr(timeout=0.2)
         except Exception:  # pragma: no cover - defensive cleanup
             pass
         finally:
             self._backend_process = None
+
+    def _backend_stderr_snapshot(self) -> str:
+        return self._collect_backend_stderr(timeout=0.0)
 
     def _startup_url(self, config: LauncherConfig) -> str:
         ui_path = sanitize_text(config.ui_path) or "/ui"
@@ -471,6 +526,7 @@ class Launcher:
             config = load_launcher_config(clock=self.clock)
             with SingleInstanceLock(lock_path()):
                 config = self._ensure_port_availability(config)
+                print(f"[StudentMentorApp] backend port: {config.port}", flush=True)
                 self._ensure_backend_started(config, corr_id)
                 assert self.retry_metrics is not None
                 metrics = self.retry_metrics
@@ -480,6 +536,7 @@ class Launcher:
                     probe=self.probe,
                     sleep=self.sleep,
                     metrics=metrics,
+                    diagnostics=self._backend_stderr_snapshot,
                 )
                 self._record_startup_duration(started_at, self.clock.now().timestamp())
                 self.enforce_memory_budget()
@@ -521,9 +578,9 @@ class Launcher:
 
 
 def main() -> int:  # pragma: no cover - CLI helper
-    multiprocessing.freeze_support()
     return Launcher().run()
 
 
 if __name__ == "__main__":  # pragma: no cover - script execution guard
+    multiprocessing.freeze_support()
     raise SystemExit(main())

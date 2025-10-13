@@ -1,0 +1,182 @@
+{
+  "caps": [
+    {
+      "limit": 85,
+      "reason": "گزارش pytest در دسترس نبود؛ گزارش جایگزین ساخته شد"
+    },
+    {
+      "limit": 95,
+      "reason": "Next actions outstanding."
+    }
+  ],
+  "correlation_id": "c458106012db350a",
+  "counts": {
+    "failed": 0,
+    "passed": 0,
+    "skipped": 0,
+    "total": 0,
+    "warnings": 0,
+    "xfailed": 0,
+    "xpassed": 0
+  },
+  "created_at": "1402-01-20T20:33:00+03:30",
+  "diagnostics": {
+    "pythonwarnings": "",
+    "timezone": "Asia/Tehran",
+    "پیام": "گزارش pytest در دسترس نبود؛ گزارش جایگزین ساخته شد",
+    "کد": "STRICT_SCORE_SYNTH"
+  },
+  "evidence": {
+    "integration_count": 0,
+    "spec": {
+      "atomic_finalize": [],
+      "chunking_filenames": [],
+      "counter_year_code": [],
+      "excel_safety": [],
+      "observability_metrics": [],
+      "quality_gates": [],
+      "security_access": [],
+      "slo_baseline": [],
+      "snapshot_delta": [],
+      "stable_sort_keys": [],
+      "state_hygiene": []
+    }
+  },
+  "metadata": {
+    "clock_seed": "synthesize",
+    "path": "reports/strict_score.json"
+  },
+  "phase": "synthesize",
+  "reasons": [
+    "گزارش pytest در دسترس نبود؛ گزارش جایگزین ساخته شد",
+    "Next actions outstanding."
+  ],
+  "report_mode": "synth",
+  "scorecard": {
+    "axes": {
+      "excel": {
+        "deductions": 12.0,
+        "label": "Persian Excel",
+        "max_points": 40.0,
+        "value": 28.0
+      },
+      "gui": {
+        "deductions": 0.0,
+        "label": "GUI",
+        "max_points": 15.0,
+        "value": 15.0
+      },
+      "performance": {
+        "deductions": 39.0,
+        "label": "Performance & Core",
+        "max_points": 40.0,
+        "value": 1.0
+      },
+      "security": {
+        "deductions": 6.0,
+        "label": "Security",
+        "max_points": 5.0,
+        "value": 0.0
+      }
+    },
+    "deductions": [
+      {
+        "amount": 3.0,
+        "axis": "Performance & Core",
+        "reason": "Missing evidence: Stable sort keys (year_code, reg_center, group_code, coalesce(school_code,999999), national_id)."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Performance & Core",
+        "reason": "Missing evidence: State hygiene resets Redis/tmp directories and Prometheus CollectorRegistry."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Persian Excel",
+        "reason": "Missing evidence: Chunking size 50k with deterministic filenames export_{profile}_{year}-{centerOrALL}_{timestamp}_{seq3}."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Persian Excel",
+        "reason": "Missing evidence: Excel safety (quotes, formula guard, CRLF, BOM, digit folding)."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Performance & Core",
+        "reason": "Missing evidence: Snapshot/delta window by (created_at,id) without gaps or overlaps."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Persian Excel",
+        "reason": "Missing evidence: Atomic finalize writes files then manifest with sha256."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Performance & Core",
+        "reason": "Missing evidence: Counter prefix by gender and AcademicYearProvider derived year code."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Security",
+        "reason": "Missing evidence: Security guard: metrics token + signed URL HMAC with TTL."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Security",
+        "reason": "Missing evidence: Observability metrics exported with correct labels and protection."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Performance & Core",
+        "reason": "Missing evidence: 100k row export p95<15s and memory<150MB."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Performance & Core",
+        "reason": "Missing evidence: Quality gates enforce warnings=0 and strict evidence parsing."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Performance & Core",
+        "reason": "Integration evidence quota not met."
+      },
+      {
+        "amount": 3.0,
+        "axis": "Persian Excel",
+        "reason": "Integration evidence quota not met."
+      },
+      {
+        "amount": 8.0,
+        "axis": "Performance & Core",
+        "reason": "Missing global state cleanup fixture."
+      },
+      {
+        "amount": 10.0,
+        "axis": "Performance & Core",
+        "reason": "TODO/FIXME markers present (7)."
+      }
+    ],
+    "level": "Poor",
+    "next_actions": [
+      "تکمیل شواهد دقیق برای الزامات مشخصات.",
+      "افزودن حداقل سه شاهد از تست‌های یکپارچه.",
+      "افزودن فیکسچر پاکسازی state قبل و بعد از تست."
+    ],
+    "raw_total": 44.0,
+    "total": 44.0
+  },
+  "spec_statuses": {
+    "atomic_finalize": false,
+    "chunking_filenames": false,
+    "counter_year_code": false,
+    "excel_safety": false,
+    "observability_metrics": false,
+    "quality_gates": false,
+    "security_access": false,
+    "slo_baseline": false,
+    "snapshot_delta": false,
+    "stable_sort_keys": false,
+    "state_hygiene": false
+  },
+  "version": "2.0"
+}

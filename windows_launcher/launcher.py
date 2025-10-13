@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
+import multiprocessing
 import os
 import socket
 import sys
@@ -21,7 +23,14 @@ from src.infrastructure.monitoring.logging_adapter import (
 )
 from src.ops.retry import RetryMetrics, build_retry_metrics, execute_with_retry
 from src.phase6_import_to_sabt.sanitization import deterministic_jitter, sanitize_text
-from windows_shared.config import LauncherConfig, lock_path, load_launcher_config
+from windows_shared.config import (
+    LauncherConfig,
+    MAX_PORT,
+    MIN_PORT,
+    lock_path,
+    load_launcher_config,
+    persist_launcher_config,
+)
 
 AGENTS_MISSING_MSG = "پروندهٔ AGENTS.md در ریشهٔ مخزن یافت نشد؛ لطفاً مطابق استاندارد agents.md اضافه کنید."
 SERVICE_UNAVAILABLE_MSG = "راه‌اندازی سرویس ممکن نشد؛ لطفاً وضعیت سرویس پس‌زمینه را بررسی کنید."
@@ -90,6 +99,60 @@ def _select_backend() -> WebviewBackend:
 
 class _BackendUnavailable(Exception):
     """Raised when the HTTP readiness probe fails."""
+
+
+def _is_port_available(host: str, port: int) -> bool:
+    tester = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        tester.bind((host, port))
+    except OSError:
+        return False
+    finally:
+        tester.close()
+    return True
+
+
+def _allocate_port(host: str, preferred: int, *, attempts: int = 8) -> tuple[int, bool]:
+    candidate = max(MIN_PORT, min(preferred, MAX_PORT))
+    if _is_port_available(host, candidate):
+        return candidate, False
+    span = MAX_PORT - MIN_PORT
+    for offset in range(1, attempts + 1):
+        next_candidate = candidate + offset
+        if next_candidate > MAX_PORT:
+            next_candidate = MIN_PORT + ((candidate + offset) % span)
+        if _is_port_available(host, next_candidate):
+            return next_candidate, True
+    return candidate, False
+
+
+def _backend_process_entry(port: int) -> None:
+    os.environ.setdefault("STUDENT_MENTOR_APP_PORT", str(port))
+    try:
+        from windows_service.controller import EXIT_SUCCESS, ServiceController
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.getLogger(__name__).exception("backend_import_failed", exc_info=exc)
+        return
+
+    configure_json_logging()
+    controller = ServiceController()
+    try:
+        exit_code = controller.handle("run")
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logging.getLogger(__name__).exception("backend_process_unhandled", exc_info=exc)
+        return
+    if exit_code != EXIT_SUCCESS:
+        logging.getLogger(__name__).error("backend_process_exit", extra={"code": exit_code, "port": port})
+
+
+def _spawn_backend_process(port: int) -> multiprocessing.Process:
+    ctx = multiprocessing.get_context("spawn")
+    process = ctx.Process(target=_backend_process_entry, args=(port,), daemon=True)
+    process.start()
+    return process
+
+
+BackendLauncher = Callable[[int], multiprocessing.Process | None]
 
 
 def ensure_agents_manifest(start: Path | None = None, *, max_depth: int = 6) -> Path:
@@ -180,19 +243,39 @@ def wait_for_backend(
     probe: Callable[[int, str], bool],
     sleep: Callable[[float], None],
     metrics: RetryMetrics,
-    max_attempts: int = 5,
-    jitter_base: float = 0.6,
-    jitter_cap: float = 5.0,
+    max_attempts: int = 6,
+    jitter_base: float = 1.0,
+    jitter_cap: float = 4.0,
 ) -> None:
+    logger = logging.getLogger(__name__)
     seed = f"{port}:{correlation_id}"
+    attempt_counter = {"value": 0}
+    last_detail: dict[str, str] = {"detail": ""}
 
     def policy(attempt: int) -> float:
         delay = deterministic_jitter(jitter_base, attempt, seed)
         return min(delay, jitter_cap)
 
     def operation() -> None:
-        if not probe(port, correlation_id):
+        attempt_counter["value"] += 1
+        try:
+            ready = probe(port, correlation_id)
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            last_detail["detail"] = detail
+            logger.warning(
+                "backend_probe_exception",
+                extra={"attempt": attempt_counter["value"], "port": port, "detail": detail},
+            )
+            raise _BackendUnavailable(f"backend:{port}") from exc
+        if not ready:
+            last_detail["detail"] = "probe_not_ready"
+            logger.info(
+                "backend_probe_retry",
+                extra={"attempt": attempt_counter["value"], "port": port},
+            )
             raise _BackendUnavailable(f"backend:{port}")
+        last_detail["detail"] = ""
 
     try:
         execute_with_retry(
@@ -207,7 +290,12 @@ def wait_for_backend(
         raise LauncherError(
             "BACKEND_UNAVAILABLE",
             SERVICE_UNAVAILABLE_MSG,
-            context={"port": str(port)},
+            context={
+                "port": str(port),
+                "url": f"http://127.0.0.1:{port}/readyz",
+                "reason": last_detail["detail"] or "unknown",
+                "attempts": str(attempt_counter["value"]),
+            },
         ) from exc
 
 
@@ -235,15 +323,20 @@ class Launcher:
     probe: Callable[[int, str], bool] = field(default=_probe_backend)
     sleep: Callable[[float], None] = field(default=_sleep)
     retry_metrics: RetryMetrics | None = None
+    backend_launcher: BackendLauncher | None = None
     warm_budget_seconds: float = 3.0
     cold_budget_seconds: float = 8.0
     memory_budget_mb: float = 200.0
     _startup_samples: list[float] = field(default_factory=list, init=False)
+    _backend_process: multiprocessing.Process | None = field(default=None, init=False, repr=False)
+    _teardown_registered: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.webview_backend = self.webview_backend or _select_backend()
         if self.retry_metrics is None:
             self.retry_metrics = build_retry_metrics("launcher")
+        if self.backend_launcher is None:
+            self.backend_launcher = _spawn_backend_process
 
     def _record_startup_duration(self, started_at: float, completed_at: float) -> None:
         self._startup_samples.append(max(0.0, completed_at - started_at))
@@ -276,6 +369,76 @@ class Launcher:
                 context={"usage_mb": f"{usage:.1f}"},
             )
 
+    def _ensure_port_availability(self, config: LauncherConfig) -> LauncherConfig:
+        host = sanitize_text(config.host) or "127.0.0.1"
+        requested = int(config.port)
+        resolved, reassigned = _allocate_port(host, requested)
+        if not _is_port_available(host, resolved):
+            logging.getLogger(__name__).error(
+                "backend_port_unavailable",
+                extra={"host": host, "requested_port": requested},
+            )
+            return config
+        if reassigned and resolved != requested:
+            logging.getLogger(__name__).warning(
+                "backend_port_conflict",
+                extra={"host": host, "requested_port": requested, "fallback_port": resolved},
+            )
+            updated = LauncherConfig(
+                port=resolved,
+                host=host,
+                ui_path=config.ui_path,
+                version=config.version,
+            )
+            persist_launcher_config(updated, clock=self.clock)
+            return updated
+        return config
+
+    def _ensure_backend_started(self, config: LauncherConfig, correlation_id: str) -> None:
+        logger = logging.getLogger(__name__)
+        try:
+            if self.probe(config.port, correlation_id):
+                logger.info("backend_detected_ready", extra={"port": config.port})
+                return
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "backend_probe_precheck_failed",
+                extra={"port": config.port, "detail": f"{type(exc).__name__}: {exc}"},
+            )
+        if self.backend_launcher is None:
+            logger.warning("backend_launcher_missing", extra={"port": config.port})
+            return
+        if self._backend_process is not None and self._backend_process.is_alive():
+            logger.debug("backend_process_alive", extra={"port": config.port, "pid": self._backend_process.pid})
+            return
+        try:
+            process = self.backend_launcher(config.port)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("backend_spawn_failed", exc_info=exc, extra={"port": config.port})
+            return
+        self._backend_process = process
+        if process is not None:
+            if not self._teardown_registered:
+                atexit.register(self._terminate_backend_process)
+                self._teardown_registered = True
+            logger.info(
+                "backend_process_spawned",
+                extra={"port": config.port, "pid": getattr(process, "pid", None)},
+            )
+
+    def _terminate_backend_process(self) -> None:
+        process = self._backend_process
+        if process is None:
+            return
+        try:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+        except Exception:  # pragma: no cover - defensive cleanup
+            pass
+        finally:
+            self._backend_process = None
+
     def _startup_url(self, config: LauncherConfig) -> str:
         ui_path = sanitize_text(config.ui_path) or "/ui"
         return f"http://{config.host}:{config.port}{ui_path}"
@@ -307,6 +470,8 @@ class Launcher:
             ensure_agents_manifest(Path(__file__).resolve().parent)
             config = load_launcher_config(clock=self.clock)
             with SingleInstanceLock(lock_path()):
+                config = self._ensure_port_availability(config)
+                self._ensure_backend_started(config, corr_id)
                 assert self.retry_metrics is not None
                 metrics = self.retry_metrics
                 wait_for_backend(
@@ -326,7 +491,7 @@ class Launcher:
                 "launcher_error",
                 extra={
                     "code": exc.code,
-                    "message": exc.message,
+                    "detail": exc.message,
                     "context": json.dumps(exc.context, ensure_ascii=False),
                 },
             )
@@ -345,7 +510,7 @@ class Launcher:
             details = json.dumps(error.context, ensure_ascii=False)
             message = f"{message}\n{details}"
         if _should_use_fake_backend():
-            logging.getLogger(__name__).warning("gui_error", extra={"message": message})
+            logging.getLogger(__name__).warning("gui_error", extra={"detail": message})
             return
         try:
             import ctypes  # pragma: win32-cover
@@ -356,6 +521,7 @@ class Launcher:
 
 
 def main() -> int:  # pragma: no cover - CLI helper
+    multiprocessing.freeze_support()
     return Launcher().run()
 
 

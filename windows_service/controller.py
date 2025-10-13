@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
             "service_error",
             extra={
                 "code": exc.code,
-                "message": exc.message,
+                "detail": exc.message,
                 "context": json.dumps(exc.context, ensure_ascii=False),
             },
         )

@@ -3,38 +3,30 @@
 block_cipher = None
 
 import os
+from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 build_dir = os.path.join("build", "launcher")
 dist_dir = os.path.join("dist")
 
-datas = []
+datas = collect_data_files("tzdata")
 binaries = []
-hiddenimports = ["windows_service.controller"]
+hiddenimports = ["tenacity"] + collect_submodules("tenacity") + ["windows_service.controller"]
+hiddenimports += collect_submodules("windows_service")
 
-datas += collect_data_files("tzdata")
-hiddenimports += collect_submodules("tenacity")
+_STATIC_FOLDERS = [
+    ("windows_service/StudentMentorService.xml", "windows_service"),
+    ("src/ui", "ui"),
+    ("src/web", "web"),
+    ("windows_shared", "windows_shared"),
+    ("src/audit", "audit"),
+    ("src/phase6_import_to_sabt", "phase6_import_to_sabt"),
+]
 
-phase6_datas, phase6_binaries, phase6_hidden = collect_all("phase6_import_to_sabt")
-datas += phase6_datas
-binaries += phase6_binaries
-hiddenimports += phase6_hidden
-
-service_datas, service_binaries, service_hidden = collect_all("windows_service")
-datas += service_datas
-binaries += service_binaries
-hiddenimports += service_hidden
-
-for package in ("audit", "ui", "web", "windows_shared"):
-    pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
-    datas += pkg_datas
-    binaries += pkg_binaries
-    hiddenimports += pkg_hidden
-
-assets_dir = os.path.join("assets")
-if os.path.isdir(assets_dir):
-    datas.append((assets_dir, "assets"))
+for source, target in _STATIC_FOLDERS:
+    if Path(source).exists():
+        datas.append((source, target))
 
 # Deduplicate while preserving order
 def _unique(sequence):

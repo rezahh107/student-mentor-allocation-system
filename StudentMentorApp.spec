@@ -1,30 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files
-from PyInstaller.utils.hooks import collect_submodules
-from PyInstaller.utils.hooks import collect_all
+from pathlib import Path
 
-datas = []
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+datas = collect_data_files('tzdata')
 binaries = []
-hiddenimports = ['tenacity', 'windows_service.controller']
-datas += collect_data_files('tzdata')
-hiddenimports += collect_submodules('tenacity')
-tmp_ret = collect_all('phase6_import_to_sabt')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('windows_service')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('audit')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('ui')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('web')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('windows_shared')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = ['tenacity'] + collect_submodules('tenacity') + ['windows_service.controller']
+hiddenimports += collect_submodules('windows_service')
+
+_STATIC_FOLDERS = [
+    ('windows_service/StudentMentorService.xml', 'windows_service'),
+    ('src/ui', 'ui'),
+    ('src/web', 'web'),
+    ('windows_shared', 'windows_shared'),
+    ('src/audit', 'audit'),
+    ('src/phase6_import_to_sabt', 'phase6_import_to_sabt'),
+]
+
+for source, target in _STATIC_FOLDERS:
+    if Path(source).exists():
+        datas.append((source, target))
 
 
 a = Analysis(
     ['windows_launcher\\launcher.py'],
-    pathex=[],
+    pathex=['.'],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

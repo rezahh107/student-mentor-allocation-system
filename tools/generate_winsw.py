@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from textwrap import dedent
 
 from src.reliability.atomic import atomic_write_text
 
 DEFAULT_VERSION = "3.0.2"
+DEFAULT_PORT = 18000
 TARGET_PATH = Path("windows_service/StudentMentorService.xml")
 
 _TEMPLATE = dedent(
@@ -39,15 +41,23 @@ _TEMPLATE = dedent(
 )
 
 
-def render(version: str = DEFAULT_VERSION, *, port: int | None = None) -> str:
+def _environment_port_default() -> int:
+    raw = os.getenv("STUDENT_MENTOR_APP_PORT")
+    if raw is None:
+        return DEFAULT_PORT
+    try:
+        return int(raw)
+    except ValueError:
+        return DEFAULT_PORT
+
+
+def render(version: str = DEFAULT_VERSION, *, port: int = DEFAULT_PORT) -> str:
     log_path = "%APPDATA%\\StudentMentorApp\\logs"
-    arguments = "-m windows_service.controller run"
-    if port is not None:
-        arguments = f"{arguments} --port {port}"
+    arguments = f"-m windows_service.controller run --port {port}"
     return _TEMPLATE.format(version=version, log_path=log_path, arguments=arguments)
 
 
-def generate(path: Path = TARGET_PATH, *, version: str = DEFAULT_VERSION, port: int | None = None) -> Path:
+def generate(path: Path = TARGET_PATH, *, version: str = DEFAULT_VERSION, port: int = DEFAULT_PORT) -> Path:
     payload = render(version, port=port)
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, payload)
@@ -58,16 +68,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate WinSW XML manifest.")
     parser.add_argument("--version", default=DEFAULT_VERSION, help="WinSW release version.")
     parser.add_argument("--output", default=str(TARGET_PATH), help="Destination XML path.")
-    parser.add_argument("--port", type=int, help="Optional fixed port for the backend service.")
+    parser.add_argument("--port", type=int, default=None, help="Fixed port for the backend service.")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    target = generate(Path(args.output), version=args.version, port=args.port)
+    port = args.port if args.port is not None else _environment_port_default()
+    target = generate(Path(args.output), version=args.version, port=port)
     message = f"Generated {target} for WinSW {args.version}"
-    if args.port is not None:
-        message += f" (port={args.port})"
+    message += f" (port={port})"
     print(message)  # noqa: T201 - intentional CLI output
     return 0
 

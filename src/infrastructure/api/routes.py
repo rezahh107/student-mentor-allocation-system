@@ -12,8 +12,8 @@ from starlette.responses import Response as StarletteResponse
 from starlette.responses import JSONResponse as StarletteJSONResponse
 from starlette.concurrency import iterate_in_threadpool
 
-from fastapi import APIRouter, FastAPI, File, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, FastAPI, File, UploadFile, Response
+from fastapi.responses import JSONResponse
 
 from application.commands.allocation import GetJobStatus, StartBatchAllocation
 from infrastructure.api.error_handlers import install_error_handlers
@@ -147,6 +147,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         chain = getattr(request.state, "middleware_chain", [])
         request.state.middleware_chain = chain + ["Auth"]
+        if request.url.path in {"/readyz", "/healthz"}:
+            response = await call_next(request)
+            chain = getattr(request.state, "middleware_chain", [])
+            if chain:
+                response.headers["X-Middleware-Chain"] = ",".join(chain)
+            return response
         if request.url.path == "/metrics":
             provided = _normalize_token(request.headers.get("X-Metrics-Token"))
             if not provided or provided != self._metrics_token:
@@ -245,5 +251,13 @@ def create_app() -> FastAPI:
                 content={"fa_error_envelope": {"code": "METRICS_FORBIDDEN", "message": "توکن متریک نامعتبر است."}},
             )
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    @app.get("/readyz")
+    async def readyz():
+        return {"status": "ok"}
+
+    @app.head("/ui")
+    async def ui_head() -> Response:
+        return Response(status_code=200)
 
     return app

@@ -1,0 +1,7 @@
+# Windows packaging constraints to keep launcher/runtime deterministic
+fastapi==0.110.3
+starlette==0.37.2
+jdatetime==4.1.1
+tenacity==8.5.0
+tzdata==2025.2
+uvicorn==0.37.0

@@ -6,7 +6,6 @@ from __future__ import annotations
 import atexit
 import json
 import logging
-import multiprocessing
 import os
 import subprocess
 import socket
@@ -75,6 +74,21 @@ class FakeWebviewBackend:
         self.started = True
 
 
+WEBVIEW2_HINT = "Runtime WebView2 یافت نشد؛ با دستور winget install Microsoft.EdgeWebView2Runtime آن را نصب کنید."
+
+
+def _is_webview2_missing(exc: Exception) -> bool:
+    details: list[str] = []
+    current: BaseException | None = exc
+    while current is not None:
+        details.append(type(current).__name__)
+        details.append(str(current))
+        current = current.__cause__ if current.__cause__ is not None else current.__context__
+    haystack = " ".join(details)
+    keywords = ("WebView2", "EdgeChromiumInitializationError", "Edge Chromium")
+    return any(keyword in haystack for keyword in keywords)
+
+
 class _PyWebviewBackend:
     def __init__(self) -> None:
         import webview  # type: ignore[import-not-found]
@@ -85,7 +99,16 @@ class _PyWebviewBackend:
         return self._webview.create_window(title, url=url, **kwargs)
 
     def start(self, func: Callable[..., None] | None = None) -> None:
-        self._webview.start(func, debug=False)
+        try:
+            self._webview.start(func, debug=False)
+        except Exception as exc:  # pragma: no cover - Windows-specific runtime detection
+            if _is_webview2_missing(exc):
+                raise LauncherError(
+                    "WEBVIEW2_MISSING",
+                    WEBVIEW2_HINT,
+                    context={"detail": str(exc)},
+                ) from exc
+            raise
 
 
 def _should_use_fake_backend() -> bool:
@@ -129,8 +152,8 @@ def _allocate_port(host: str, preferred: int, *, attempts: int = 8) -> tuple[int
 
 def _spawn_backend_process(port: int) -> subprocess.Popen[str]:
     env = os.environ.copy()
-    env.setdefault("STUDENT_MENTOR_APP_PORT", str(port))
-    env.setdefault("PYTHONUNBUFFERED", "1")
+    env["STUDENT_MENTOR_APP_PORT"] = str(port)
+    env["PYTHONUNBUFFERED"] = "1"
     command = [sys.executable, "-m", "windows_service.controller", "run", "--port", str(port)]
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     process = subprocess.Popen(  # noqa: S603 - controlled command
@@ -297,13 +320,15 @@ def wait_for_backend(
         if last_detail["last_error"]:
             context["last_error"] = last_detail["last_error"]
         if diagnostics is not None:
-            stderr_tail = diagnostics()
+            stderr_tail = diagnostics() or ""
             if stderr_tail:
                 context["stderr_tail"] = stderr_tail[-1024:]
-        logger.error(
-            "backend_probe_failed",
-            extra={"context": json.dumps(context, ensure_ascii=False)},
-        )
+        payload = json.dumps(context, ensure_ascii=False)
+        logger.error("backend_probe_failed", extra={"context": payload})
+        try:
+            print(payload, file=sys.stderr, flush=True)
+        except OSError:
+            pass
         raise LauncherError(
             "BACKEND_UNAVAILABLE",
             SERVICE_UNAVAILABLE_MSG,
@@ -582,5 +607,7 @@ def main() -> int:  # pragma: no cover - CLI helper
 
 
 if __name__ == "__main__":  # pragma: no cover - script execution guard
+    import multiprocessing
+
     multiprocessing.freeze_support()
     raise SystemExit(main())

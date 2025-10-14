@@ -8,7 +8,7 @@ pydantic-settings>=2.11,<3
 
 # Date/Time
 python-dateutil>=2.8.0
-jdatetime>=4.1.0
+jdatetime>=4.1,<5
 
 # Async I/O
 aiohttp>=3.8.0
@@ -37,8 +37,8 @@ python-bidi>=0.4.2
 
 # Web framework
 fastapi>=0.110,<0.111
-starlette>=0.36,<0.37
-uvicorn>=0.29,<0.30
+starlette>=0.36,<0.38
+uvicorn>=0.37,<0.38
 
 # Database
 SQLAlchemy>=2.0,<3  # ✅ تغییر از 1.4 به 2.0!
@@ -93,7 +93,7 @@ pytest-freezegun>=0.4.2
 # Additional Tools
 # ═══════════════════════════════════════════════════════════════
 
-tenacity>=8.2,<9
+tenacity>=8,<9
 tzdata>=2024.1
 PyYAML>=6,<7
 Jinja2>=3.1,<4.0

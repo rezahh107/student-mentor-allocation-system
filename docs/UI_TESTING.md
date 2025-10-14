@@ -3,7 +3,7 @@
 این سند نحوه اجرای تست‌های خودکار UI و چک‌لیست تست دستی را ارائه می‌دهد.
 
 ## پیش‌نیازها
-- نصب وابستگی‌ها: `pip install -r requirements.txt`
+- نصب وابستگی‌ها: `pip install -r requirements.txt -c constraints-win.txt`
 - اطمینان از وجود فونت‌های فارسی در `assets/fonts/` (اختیاری اما توصیه‌شده)
 
 ## تست‌های خودکار
@@ -46,4 +46,5 @@ pytest tests/ui tests/integration --qt
 ## نکات
 - تست‌ها از `pytest-qt` برای تعامل با PyQt و `pytest-asyncio` برای async استفاده می‌کنند.
 - برای خروجی PDF بهتر، فونت `assets/fonts/Vazir.ttf` را قرار دهید.
+- در مسیر CI ویندوز، آماده‌بودن UI از طریق درخواست `HEAD /ui` (کد ۲۰۰) به‌صورت بدون‌رندر بررسی می‌شود.
 

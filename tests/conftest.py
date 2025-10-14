@@ -25,6 +25,7 @@ LEGACY_MARKERS: tuple[str, ...] = (
     "perf",
     "flaky",
     "smoke",
+    "timeout",
 )
 
 _IGNORED_SEGMENTS: tuple[str, ...] = (
@@ -57,6 +58,15 @@ _ALLOWED_RELATIVE_TESTS: tuple[str, ...] = (
     "tests/mw/test_export_middleware_order.py",
     "tests/ci/test_state_hygiene.py",
     "tests/obs/test_retry_metrics.py",
+    "tests/windows/test_readyz_local.py",
+    "tests/windows/test_webview_hint.py",
+    "tests/windows/test_wait_for_backend_clock.py",
+    "tests/windows/test_spawn_e2e.py",
+    "tests/spec/test_normalization_edgecases.py",
+    "tests/spec/test_business_rules.py",
+    "tests/spec/test_excel_exporter_safety.py",
+    "tests/spec/test_security_smoke.py",
+    "tests/spec/test_excel_perf_smoke.py",
 )
 
 _ALLOWED_DIRECTORIES = {
@@ -65,6 +75,7 @@ _ALLOWED_DIRECTORIES = {
     "tests/domain",
     "tests/api",
     "tests/downloads",
+    "tests/spec",
 }
 
 _DEFAULT_TZ = ZoneInfo("Asia/Tehran")

@@ -76,15 +76,19 @@ def _run_uvicorn(port: int) -> None:
 
     clock = tehran_clock()
     configure_json_logging(clock=clock)
-    correlation_id_var.set(str(uuid4()))
-    uvicorn.run(
-        "src.infrastructure.api.routes:create_app",
-        factory=True,
-        host="127.0.0.1",
-        port=port,
-        log_config=None,
-        access_log=False,
-    )
+    token = correlation_id_var.set(str(uuid4()))
+    try:
+        uvicorn.run(
+            "src.infrastructure.api.routes:create_app",
+            factory=True,
+            host="127.0.0.1",
+            port=port,
+            log_config=None,
+            access_log=False,
+            log_level="debug",
+        )
+    finally:
+        correlation_id_var.reset(token)
 
 
 CommandExecutor = Callable[[Sequence[str]], subprocess.CompletedProcess[bytes]]
@@ -119,7 +123,10 @@ class ServiceController:
         try:
             self.uvicorn_runner(port)
         except Exception as exc:  # pragma: no cover - defensive logging
-            logging.getLogger(__name__).exception("service_run_failed", exc_info=exc)
+            logging.getLogger(__name__).exception(
+                "service_run_failed",
+                extra={"detail": f"{type(exc).__name__}: {exc}"},
+            )
             return EXIT_RUNTIME_ERROR
         return EXIT_SUCCESS
 
@@ -175,12 +182,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    configure_json_logging()
-    controller = ServiceController(port_override=args.port if args.command == "run" else None)
+    if args.port is not None and args.command != "run":
+        raise ServiceError(
+            "PORT_NOT_SUPPORTED",
+            "گزینهٔ --port فقط برای دستور run مجاز است.",
+            context={"command": args.command},
+        )
+    clock = tehran_clock()
+    configure_json_logging(clock=clock)
+    controller = ServiceController(
+        port_override=args.port if args.command == "run" else None,
+        clock=clock,
+    )
     try:
         return controller.handle(args.command)
     except ServiceError as exc:
-        logging.getLogger(__name__).error(
+        logging.getLogger(__name__).exception(
             "service_error",
             extra={
                 "code": exc.code,
@@ -188,8 +205,11 @@ def main(argv: list[str] | None = None) -> int:
                 "context": json.dumps(exc.context, ensure_ascii=False),
             },
         )
-        return EXIT_CONFIG_ERROR
+        raise
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI execution
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except ServiceError as exc:
+        raise SystemExit(EXIT_CONFIG_ERROR) from exc

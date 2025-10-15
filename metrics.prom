@@ -1,0 +1,166 @@
+# HELP import_to_sabt_request_latency_seconds HTTP request latency seconds
+# TYPE import_to_sabt_request_latency_seconds histogram
+import_to_sabt_request_latency_seconds_bucket{le="0.05"} 4.0
+import_to_sabt_request_latency_seconds_bucket{le="0.1"} 4.0
+import_to_sabt_request_latency_seconds_bucket{le="0.2"} 4.0
+import_to_sabt_request_latency_seconds_bucket{le="0.5"} 4.0
+import_to_sabt_request_latency_seconds_bucket{le="1.0"} 4.0
+import_to_sabt_request_latency_seconds_bucket{le="+Inf"} 4.0
+import_to_sabt_request_latency_seconds_count 4.0
+import_to_sabt_request_latency_seconds_sum 0.018641374004801037
+# HELP import_to_sabt_request_latency_seconds_created HTTP request latency seconds
+# TYPE import_to_sabt_request_latency_seconds_created gauge
+import_to_sabt_request_latency_seconds_created 1.7605321502116354e+09
+# HELP import_to_sabt_request_total Total processed requests
+# TYPE import_to_sabt_request_total counter
+import_to_sabt_request_total{method="GET",path="/readyz",status="200"} 2.0
+import_to_sabt_request_total{method="GET",path="/metrics",status="200"} 2.0
+# HELP import_to_sabt_request_created Total processed requests
+# TYPE import_to_sabt_request_created gauge
+import_to_sabt_request_created{method="GET",path="/readyz",status="200"} 1.7605321773392258e+09
+import_to_sabt_request_created{method="GET",path="/metrics",status="200"} 1.7605321774931333e+09
+# HELP import_to_sabt_readiness_checks_total Readiness check results
+# TYPE import_to_sabt_readiness_checks_total counter
+# HELP import_to_sabt_ratelimit_tokens Rate limit tokens remaining per route
+# TYPE import_to_sabt_ratelimit_tokens gauge
+import_to_sabt_ratelimit_tokens{route="/readyz"} 30.0
+import_to_sabt_ratelimit_tokens{route="/metrics"} 30.0
+# HELP import_to_sabt_ratelimit_drops_total Rate limit drops grouped by route
+# TYPE import_to_sabt_ratelimit_drops_total counter
+# HELP import_to_sabt_rate_limit_decision_total Rate limit decisions
+# TYPE import_to_sabt_rate_limit_decision_total counter
+import_to_sabt_rate_limit_decision_total{decision="bypass"} 5.0
+# HELP import_to_sabt_rate_limit_decision_created Rate limit decisions
+# TYPE import_to_sabt_rate_limit_decision_created gauge
+import_to_sabt_rate_limit_decision_created{decision="bypass"} 1.760532177334207e+09
+# HELP import_to_sabt_idempotency_hits_total Idempotency hit/miss decisions
+# TYPE import_to_sabt_idempotency_hits_total counter
+import_to_sabt_idempotency_hits_total{outcome="bypass"} 5.0
+# HELP import_to_sabt_idempotency_hits_created Idempotency hit/miss decisions
+# TYPE import_to_sabt_idempotency_hits_created gauge
+import_to_sabt_idempotency_hits_created{outcome="bypass"} 1.760532177334576e+09
+# HELP import_to_sabt_idempotency_replays_total Idempotent replay responses
+# TYPE import_to_sabt_idempotency_replays_total counter
+import_to_sabt_idempotency_replays_total 0.0
+# HELP import_to_sabt_idempotency_replays_created Idempotent replay responses
+# TYPE import_to_sabt_idempotency_replays_created gauge
+import_to_sabt_idempotency_replays_created 1.7605321502117496e+09
+# HELP import_to_sabt_rate_limit_latency_seconds Rate limit middleware latency
+# TYPE import_to_sabt_rate_limit_latency_seconds histogram
+import_to_sabt_rate_limit_latency_seconds_bucket{le="0.001"} 5.0
+import_to_sabt_rate_limit_latency_seconds_bucket{le="0.01"} 5.0
+import_to_sabt_rate_limit_latency_seconds_bucket{le="0.05"} 5.0
+import_to_sabt_rate_limit_latency_seconds_bucket{le="0.1"} 5.0
+import_to_sabt_rate_limit_latency_seconds_bucket{le="+Inf"} 5.0
+import_to_sabt_rate_limit_latency_seconds_count 5.0
+import_to_sabt_rate_limit_latency_seconds_sum 0.00017825000031734817
+# HELP import_to_sabt_rate_limit_latency_seconds_created Rate limit middleware latency
+# TYPE import_to_sabt_rate_limit_latency_seconds_created gauge
+import_to_sabt_rate_limit_latency_seconds_created 1.760532150211761e+09
+# HELP import_to_sabt_idempotency_latency_seconds Idempotency middleware latency
+# TYPE import_to_sabt_idempotency_latency_seconds histogram
+import_to_sabt_idempotency_latency_seconds_bucket{le="0.001"} 5.0
+import_to_sabt_idempotency_latency_seconds_bucket{le="0.01"} 5.0
+import_to_sabt_idempotency_latency_seconds_bucket{le="0.05"} 5.0
+import_to_sabt_idempotency_latency_seconds_bucket{le="0.1"} 5.0
+import_to_sabt_idempotency_latency_seconds_bucket{le="+Inf"} 5.0
+import_to_sabt_idempotency_latency_seconds_count 5.0
+import_to_sabt_idempotency_latency_seconds_sum 2.1200998162385076e-05
+# HELP import_to_sabt_idempotency_latency_seconds_created Idempotency middleware latency
+# TYPE import_to_sabt_idempotency_latency_seconds_created gauge
+import_to_sabt_idempotency_latency_seconds_created 1.7605321502117844e+09
+# HELP import_to_sabt_auth_latency_seconds Auth middleware latency
+# TYPE import_to_sabt_auth_latency_seconds histogram
+import_to_sabt_auth_latency_seconds_bucket{le="0.001"} 2.0
+import_to_sabt_auth_latency_seconds_bucket{le="0.01"} 4.0
+import_to_sabt_auth_latency_seconds_bucket{le="0.05"} 4.0
+import_to_sabt_auth_latency_seconds_bucket{le="0.1"} 4.0
+import_to_sabt_auth_latency_seconds_bucket{le="+Inf"} 4.0
+import_to_sabt_auth_latency_seconds_count 4.0
+import_to_sabt_auth_latency_seconds_sum 0.005471628002851503
+# HELP import_to_sabt_auth_latency_seconds_created Auth middleware latency
+# TYPE import_to_sabt_auth_latency_seconds_created gauge
+import_to_sabt_auth_latency_seconds_created 1.7605321502118008e+09
+# HELP import_to_sabt_exporter_duration_seconds CSV exporter write duration
+# TYPE import_to_sabt_exporter_duration_seconds histogram
+import_to_sabt_exporter_duration_seconds_bucket{le="0.01"} 0.0
+import_to_sabt_exporter_duration_seconds_bucket{le="0.05"} 0.0
+import_to_sabt_exporter_duration_seconds_bucket{le="0.1"} 0.0
+import_to_sabt_exporter_duration_seconds_bucket{le="0.2"} 0.0
+import_to_sabt_exporter_duration_seconds_bucket{le="0.5"} 0.0
+import_to_sabt_exporter_duration_seconds_bucket{le="+Inf"} 0.0
+import_to_sabt_exporter_duration_seconds_count 0.0
+import_to_sabt_exporter_duration_seconds_sum 0.0
+# HELP import_to_sabt_exporter_duration_seconds_created CSV exporter write duration
+# TYPE import_to_sabt_exporter_duration_seconds_created gauge
+import_to_sabt_exporter_duration_seconds_created 1.7605321502118216e+09
+# HELP import_to_sabt_exporter_bytes_total Total bytes written by exporter
+# TYPE import_to_sabt_exporter_bytes_total counter
+import_to_sabt_exporter_bytes_total 0.0
+# HELP import_to_sabt_exporter_bytes_created Total bytes written by exporter
+# TYPE import_to_sabt_exporter_bytes_created gauge
+import_to_sabt_exporter_bytes_created 1.7605321502118382e+09
+# HELP import_to_sabt_auth_ok_total Authentication success count
+# TYPE import_to_sabt_auth_ok_total counter
+import_to_sabt_auth_ok_total{role="METRICS_RO"} 2.0
+# HELP import_to_sabt_auth_ok_created Authentication success count
+# TYPE import_to_sabt_auth_ok_created gauge
+import_to_sabt_auth_ok_created{role="METRICS_RO"} 1.760532177490747e+09
+# HELP import_to_sabt_auth_fail_total Authentication failures
+# TYPE import_to_sabt_auth_fail_total counter
+# HELP import_to_sabt_download_signed_total Download signing events
+# TYPE import_to_sabt_download_signed_total counter
+# HELP import_to_sabt_token_rotation_total Token rotation actions
+# TYPE import_to_sabt_token_rotation_total counter
+# HELP import_to_sabt_retry_attempts_total HTTP client retry attempts
+# TYPE import_to_sabt_retry_attempts_total counter
+# HELP import_to_sabt_retry_exhausted_total HTTP client retry exhaustion count
+# TYPE import_to_sabt_retry_exhausted_total counter
+# HELP import_to_sabt_retry_backoff_seconds Deterministic retry backoff schedule seconds
+# TYPE import_to_sabt_retry_backoff_seconds histogram
+# HELP download_requests_total Total download requests by outcome
+# TYPE download_requests_total counter
+# HELP download_bytes_total Total bytes streamed to clients
+# TYPE download_bytes_total counter
+download_bytes_total 0.0
+# HELP download_bytes_created Total bytes streamed to clients
+# TYPE download_bytes_created gauge
+download_bytes_created 1.7605321502135303e+09
+# HELP download_response_bytes Histogram of bytes sent per response
+# TYPE download_response_bytes histogram
+download_response_bytes_bucket{le="512.0"} 0.0
+download_response_bytes_bucket{le="1024.0"} 0.0
+download_response_bytes_bucket{le="4096.0"} 0.0
+download_response_bytes_bucket{le="16384.0"} 0.0
+download_response_bytes_bucket{le="65536.0"} 0.0
+download_response_bytes_bucket{le="262144.0"} 0.0
+download_response_bytes_bucket{le="1.048576e+06"} 0.0
+download_response_bytes_bucket{le="4.194304e+06"} 0.0
+download_response_bytes_bucket{le="+Inf"} 0.0
+download_response_bytes_count 0.0
+download_response_bytes_sum 0.0
+# HELP download_response_bytes_created Histogram of bytes sent per response
+# TYPE download_response_bytes_created gauge
+download_response_bytes_created 1.7605321502135541e+09
+# HELP download_range_requests_total Download range requests by outcome
+# TYPE download_range_requests_total counter
+# HELP download_invalid_token_total Total invalid or expired download tokens
+# TYPE download_invalid_token_total counter
+download_invalid_token_total 0.0
+# HELP download_invalid_token_created Total invalid or expired download tokens
+# TYPE download_invalid_token_created gauge
+download_invalid_token_created 1.7605321502135987e+09
+# HELP download_not_found_total Total missing download artifacts
+# TYPE download_not_found_total counter
+download_not_found_total 0.0
+# HELP download_not_found_created Total missing download artifacts
+# TYPE download_not_found_created gauge
+download_not_found_created 1.7605321502136078e+09
+# HELP download_retry_total Retry attempts for download streaming
+# TYPE download_retry_total counter
+# HELP download_exhaustion_total Retry exhaustion occurrences for downloads
+# TYPE download_exhaustion_total counter
+download_exhaustion_total 0.0
+# HELP download_exhaustion_created Retry exhaustion occurrences for downloads
+# TYPE download_exhaustion_created gauge
+download_exhaustion_created 1.7605321502136233e+09

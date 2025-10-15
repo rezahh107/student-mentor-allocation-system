@@ -2,6 +2,56 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Dev Server: Uvicorn (.env.dev)",
+      "type": "shell",
+      "command": "${command:python.interpreterPath}",
+      "args": [
+        "-m",
+        "uvicorn",
+        "main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "25119",
+        "--reload",
+        "--env-file",
+        "${workspaceFolder}/.env.dev"
+      ],
+      "options": {
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src"
+        }
+      },
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "✅ Smoke Test",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/scripts/smoke.ps1"
+      ],
+      "group": {
+        "kind": "test",
+        "isDefault": false
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "🚀 Quick Test (Changed Files Only)",
       "type": "shell",
       "command": "${command:python.interpreterPath}",

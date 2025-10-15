@@ -4,8 +4,21 @@ import asyncio
 import logging
 import sys
 
+<<<<<<< HEAD
 from PyQt5.QtWidgets import QApplication
 from qasync import QEventLoop, run
+=======
+try:
+    from PyQt5.QtWidgets import QApplication
+except ModuleNotFoundError:  # pragma: no cover - user environment specific
+    print("PyQt5 نصب نشده است؛ برای اجرای رابط کاربری دستور 'pip install .[ui]' را اجرا کنید.", file=sys.stderr)
+    sys.exit(2)
+except ImportError as exc:  # pragma: no cover - user environment specific
+    print(f"بارگذاری PyQt5 با خطا مواجه شد: {exc}; لطفاً وابستگی اختیاری ui را نصب کنید.", file=sys.stderr)
+    sys.exit(2)
+
+from qasync import run
+>>>>>>> ac0482f (chore: bootstrap local changes)
 
 from src.api.client import APIClient
 from src.ui.presenters.main_presenter import MainPresenter

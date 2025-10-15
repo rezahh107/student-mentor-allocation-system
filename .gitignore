@@ -219,3 +219,8 @@ reports/bandit-report.json
 *.ico
 windows_service/WinSW*.exe
 windows_service/StudentMentorService.exe
+
+# local diag
+/tools/diag.sh
+diag_*.log
+.local-backup/

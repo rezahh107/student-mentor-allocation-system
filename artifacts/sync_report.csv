@@ -1,0 +1,2 @@
+﻿"correlation_id","status","exit_code","path","remote_expected","remote_actual","branch_checked","head_local","head_remote","ahead","behind","dirty","untracked_count","tags_aligned","shallow","detached","timing_ms"
+"17ffd75e-f495-441e-a30a-75b8b89987d4","in_sync","0","/workspaces/SMASM","https://github.com/rezahh107/student-mentor-allocation-system.git","https://github.com/rezahh107/student-mentor-allocation-system.git","main","76dc788b4c155f1b2aa191ad4bfa1a616073a200","76dc788b4c155f1b2aa191ad4bfa1a616073a200","0","0","False","0","True","False","False","3770"

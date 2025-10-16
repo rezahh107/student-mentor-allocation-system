@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Mapping
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
 
@@ -300,103 +300,43 @@ def create_application(
     app.include_router(download_router)
 
     @app.get("/download")
-    @profile_endpoint(threshold_ms=100.0)
-    async def legacy_signed_download(
-        request: Request,
-        signed: str | None = None,
-        kid: str | None = None,
-        exp: str | None = None,
-        sig: str | None = None,
-    ) -> Response:
-        correlation_id = getattr(request.state, "correlation_id", None)
-        client_id = request.client.host if request.client else "anonymous"
-        collector: MetricsCollector | None = getattr(request.app.state, "metrics_collector", None)
-        security: SignatureSecurityManager | None = getattr(request.app.state, "signature_security", None)
-        if not signed or not kid or not exp or not sig:
-            return await _record_legacy_failure(
-                request,
-                reason="missing",
-                message="توکن نامعتبر است.",
-            )
-        try:
-            exp_value = int(exp)
-        except (TypeError, ValueError):
-            return await _record_legacy_failure(
-                request,
-                reason="exp_invalid",
-                message="توکن نامعتبر است.",
-            )
-        try:
-            with trace_span("signature_validation", collector=collector):
-                container.download_signer.verify_components(
-                    signed=signed,
-                    kid=kid,
-                    exp=exp_value,
-                    sig=sig,
-                )
-        except SignatureError as exc:
-            return await _record_legacy_failure(
-                request,
-                reason=exc.reason,
-                message=exc.message_fa,
-            )
-        if collector is not None:
-            collector.record_signature_success()
-        if security is not None:
-            await security.record_success(client_id)
+@app.get("/download")
+async def download_endpoint(
+    signed: str, kid: str, exp: int, sig: str, request: Request
+) -> Response:
+    try:
+        relative_path = container.download_signer.verify_components(
+            signed=signed, kid=kid, exp=exp, sig=sig, now=container.clock.now()
+        )
+    except SignatureError as exc:
+        return JSONResponse(status_code=403, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_FORBIDDEN","message": exc.message_fa}})
 
-        download_metrics.requests_total.labels(status="legacy_not_found").inc()
-        download_metrics.not_found_total.inc()
-        logger.info(
-            "download.legacy_verified",
-            extra={"correlation_id": correlation_id, "kid": kid},
-        )
-        return JSONResponse(
-            status_code=404,
-            content={
-                "fa_error_envelope": {
-                    "code": "DOWNLOAD_NOT_FOUND",
-                    "message": "شیء درخواستی یافت نشد.",
-                }
-            },
-        )
+    base_dir_value = getattr(request.app.state, "storage_root", None)
+    if not base_dir_value:
+        return JSONResponse(status_code=503, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_UNAVAILABLE","message":"سرویس دانلود در دسترس نیست."}})
 
-    @app.get("/download/honeypot")
-    @profile_endpoint(threshold_ms=100.0)
-    async def download_honeypot(request: Request) -> JSONResponse:
-        collector: MetricsCollector | None = getattr(request.app.state, "metrics_collector", None)
-        security: SignatureSecurityManager | None = getattr(request.app.state, "signature_security", None)
-        client_id = request.client.host if request.client else "anonymous"
-        if collector is not None:
-            collector.record_honeypot_hit(source="download")
-            collector.record_signature_failure(reason="honeypot")
-        if security is not None:
-            blocked = await security.record_failure(client_id, reason="honeypot")
-            if blocked:
-                download_metrics.requests_total.labels(status="blocked").inc()
-                return JSONResponse(
-                    status_code=429,
-                    content={
-                        "fa_error_envelope": {
-                            "code": "DOWNLOAD_TEMPORARILY_BLOCKED",
-                            "message": "دسترسی موقتاً مسدود شد.",
-                        }
-                    },
-                )
-        download_metrics.requests_total.labels(status="honeypot").inc()
-        logger.warning(
-            "download.honeypot",
-            extra={"correlation_id": getattr(request.state, "correlation_id", None), "client": client_id},
-        )
-        return JSONResponse(
-            status_code=404,
-            content={
-                "fa_error_envelope": {
-                    "code": "DOWNLOAD_NOT_FOUND",
-                    "message": "شیء درخواستی یافت نشد.",
-                }
-            },
-        )
+    base_dir = Path(base_dir_value).resolve()
+    if not base_dir.exists():
+        return JSONResponse(status_code=503, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_UNAVAILABLE","message":"سرویس دانلود در دسترس نیست."}})
+
+    target = (base_dir / Path(relative_path)).resolve()
+    try:
+        target.relative_to(base_dir)
+    except ValueError:
+        container.metrics.download_signed_total.labels(outcome="path_violation").inc()
+        return JSONResponse(status_code=403, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_FORBIDDEN","message":"توکن نامعتبر است."}})
+
+    if not target.is_file():
+        container.metrics.download_signed_total.labels(outcome="missing").inc()
+        return JSONResponse(status_code=404, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_NOT_FOUND","message":"فایل موردنظر یافت نشد."}})
+
+    container.metrics.download_signed_total.labels(outcome="served").inc()
+    return FileResponse(target, filename=target.name)
     install_error_handlers(app)
     configure_middleware(app, container)
 

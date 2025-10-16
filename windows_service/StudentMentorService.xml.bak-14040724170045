@@ -1,0 +1,21 @@
+<service>
+  <id>StudentMentorService</id>
+  <name>Student Mentor Service</name>
+  <description>StudentMentor FastAPI backend</description>
+
+  <executable>E:\SMASM\.venv\Scripts\python.exe</executable>
+  <arguments>-m windows_service.controller run --port 25119</arguments>
+  <workingdirectory>E:\SMASM</workingdirectory>
+
+  <logpath>E:\SMASM\windows_service</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10485760</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <stoptimeout>20sec</stoptimeout>
+
+  <env name="PYTHONUTF8"   value="1" />
+  <env name="DATABASE_URL" value="postgresql://postgres:postgres@localhost:5432/postgres" />
+  <env name="REDIS_URL"    value="redis://localhost:6379/0" />
+  <env name="METRICS_TOKEN" value="dev-metrics" />
+</service>

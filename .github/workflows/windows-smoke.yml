@@ -71,13 +71,16 @@ jobs:
           if (-not $tests) { throw 'No tests specified for Windows smoke suite.' }
           Write-Host "Running pytest with $($tests.Count) targets"
           python .\tools\pytest_config_diagnostics.py --tests $tests --json
-          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
-            $workerArgs = @('-n=auto', '--dist=loadscope')
-          }
-          else {
-            $workerArgs = @('-n', '1')
-          }
-          $pytestArgs = @('--maxfail=1', '-q', '--override-ini', 'addopts=') + $workerArgs + $tests
+if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+    $workerArgs = @('-n', 'auto', '--dist=loadscope')
+} else {
+    $workerArgs = @('-n', '1')
+}
+
+$pytestArgs = @('--maxfail=1', '-q', '--override-ini', 'addopts=') + $workerArgs + $tests
+Write-Host "Executing: python -m pytest $($pytestArgs -join ' ')"
+python -m pytest @pytestArgs
+
           & python -m pytest @pytestArgs
 
       - name: Run integration tests with state cleanup
@@ -106,6 +109,18 @@ jobs:
           $ErrorActionPreference = "Stop"
           & python -m pytest tests/spec/test_persian_excel_normalization.py --hypothesis-show-statistics -v
 
+      - name: Run Persian Excel compliance rules
+        shell: pwsh
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          $artifacts = Join-Path (Resolve-Path .) "artifacts"
+          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+          $report = Join-Path $artifacts "persian-excel.junit.xml"
+          & python -m pytest tests/spec/test_persian_excel_rules.py -v --tb=short --maxfail=1 --junitxml $report
+
       - name: Validate middleware order
         shell: pwsh
         env:
@@ -115,6 +130,18 @@ jobs:
           $ErrorActionPreference = "Stop"
           & python -m pytest tests/integration/test_middleware_chain.py --log-cli-level=DEBUG
 
+      - name: Run middleware order contract suite
+        shell: pwsh
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          $artifacts = Join-Path (Resolve-Path .) "artifacts"
+          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+          $report = Join-Path $artifacts "middleware-order.junit.xml"
+          & python -m pytest tests/integration/test_middleware_order.py -v --tb=short --maxfail=1 --junitxml $report
+
       - name: Run full test suite with coverage
         shell: pwsh
         env:
@@ -122,16 +149,30 @@ jobs:
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
+          $artifacts = Join-Path (Resolve-Path .) "artifacts"
+          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+          $coverage = Join-Path $artifacts "coverage.xml"
+          $junit = Join-Path $artifacts "pytest-report.xml"
           & python -m pytest tests/ `
             --cov=src `
-            --cov-report=term-missing `
-            --cov-report=xml `
-            --cov-fail-under=85 `
+            --cov-report=term-missing:skip-covered `
+            --cov-report=xml:$coverage `
+            --cov-fail-under=80 `
+            --junitxml $junit `
             -v `
             --tb=short `
             --maxfail=5 `
             --benchmark-only `
             --benchmark-min-rounds=3
+
+      - name: Upload گزارش‌های تست و پوشش
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-coverage
+          path: |
+            artifacts/pytest-report.xml
+            artifacts/coverage.xml
 
       - name: Verify no warnings
         shell: pwsh

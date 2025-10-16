@@ -165,6 +165,7 @@ class ExportWriter:
                 ):
                     sheet_name = self._sheet_template.format(index=index)
                     worksheet = workbook.add_worksheet(sheet_name)
+                    worksheet.right_to_left()  # اطمینان از راست‌به‌چپ بودن شیت برای کاربران فارسی‌زبان
                     worksheet.write_row(0, 0, list(self._columns), header_format)
                     for col_idx, fmt in enumerate(column_formats):
                         if fmt is not None:
@@ -181,6 +182,7 @@ class ExportWriter:
                 if not row_counts:
                     sheet_name = self._sheet_template.format(index=1)
                     worksheet = workbook.add_worksheet(sheet_name)
+                    worksheet.right_to_left()
                     worksheet.write_row(0, 0, list(self._columns), header_format)
                     for col_idx, fmt in enumerate(column_formats):
                         if fmt is not None:
@@ -213,6 +215,7 @@ class ExportWriter:
             "sensitive_text_columns": list(self._sensitive),
             "numeric_columns": list(NUMERIC_COLUMNS),
             "backend": "xlsxwriter",
+            "rtl": True,
         }
         return ExportResult(files=files, total_rows=total_rows, excel_safety=safety)
 

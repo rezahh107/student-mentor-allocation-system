@@ -1,0 +1,38 @@
+{
+  "correlation_id": "60e839f4-371a-5a70-9b6b-0beabf3eb780",
+  "repo_root": "E:\\SMASM",
+  "remote_expected": "https://github.com/rezahh107/student-mentor-allocation-system.git",
+  "remote_actual": "https://github.com/rezahh107/student-mentor-allocation-system.git",
+  "python_required": "3.11",
+  "python_found": "",
+  "venv_path": "E:\\SMASM\\.venv",
+  "env_file": "E:\\SMASM\\.env.dev",
+  "port": 25119,
+  "git": {
+    "present": true,
+    "ahead": 0,
+    "behind": 0,
+    "dirty": true
+  },
+  "powershell": {
+    "version": "",
+    "execution_policy": "Unknown"
+  },
+  "dependencies_ok": false,
+  "smoke": {
+    "readyz": 0,
+    "metrics": 0,
+    "ui_head": 0
+  },
+  "status": "blocked",
+  "score": 10,
+  "exit_code": 5,
+  "timing_ms": 326,
+  "metrics": {
+    "attempts": 1,
+    "retries": 0
+  },
+  "evidence": [
+    "AGENTS.md::Project TL;DR"
+  ]
+}

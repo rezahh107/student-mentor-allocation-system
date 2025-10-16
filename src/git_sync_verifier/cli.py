@@ -95,6 +95,8 @@ def verify(
 
 def main() -> None:
     """CLI wrapper for console_scripts compatibility."""
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "verify":
+        sys.argv = [sys.argv[0], *sys.argv[2:]]
     app()
 
 

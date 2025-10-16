@@ -8,7 +8,6 @@
       "args": [
         "-m",
         "git_sync_verifier.cli",
-        "verify",
         "--path",
         "${workspaceFolder}",
         "--remote",
@@ -20,6 +19,25 @@
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Windows: Verify & Run",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/windows_shared/Invoke-WindowsReadiness.ps1"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
         "clear": true
       },
       "problemMatcher": []

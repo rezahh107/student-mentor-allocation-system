@@ -1,0 +1,3 @@
+﻿"name","status","detail"
+"agents","PASS","AGENTS.md در ریشهٔ مخزن یافت شد."
+"git_dirty","BLOCK","شاخه دارای تغییرات ذخیرهنشده است و حالت --fix فعال است."

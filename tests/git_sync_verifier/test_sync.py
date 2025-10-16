@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -311,6 +314,39 @@ def test_machine_flag_outputs_json(repo_factory, monkeypatch):
     )
     assert result.exit_code == 0
     assert json.loads(result.stdout) == fake_report
+
+
+def test_cli_accepts_verify_alias(repo_factory, tmp_path):
+    repo = repo_factory()
+    out_dir = tmp_path / "out"
+    env = os.environ.copy()
+    env.setdefault("CORRELATION_ID", "test-alias")
+    command = [
+        sys.executable,
+        "-m",
+        "git_sync_verifier.cli",
+        "verify",
+        "--path",
+        str(repo.worktree),
+        "--remote",
+        "https://github.com/rezahh107/student-mentor-allocation-system.git",
+        "--out",
+        str(out_dir),
+        "--machine",
+        "--timeout",
+        "5",
+    ]
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        cwd=repo.worktree,
+        env=env,
+    )
+    assert completed.returncode == 0
+    parsed = json.loads(completed.stdout)
+    assert parsed["status"] == "in_sync"
+    assert (out_dir / "sync_report.json").exists()
 
 
 def test_submodule_drift_exit_7(repo_factory, stub_clock, sync_metrics: SyncMetrics) -> None:

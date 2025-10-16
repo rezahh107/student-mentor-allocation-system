@@ -54,6 +54,8 @@ orjson>=3.11,<4
 
 # Monitoring
 prometheus_client>=0.16,<1.0
+# Logging
+structlog>=24,<25
 
 # Testing utilities
 freezegun>=1.2,<2

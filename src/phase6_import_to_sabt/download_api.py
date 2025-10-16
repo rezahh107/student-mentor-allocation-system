@@ -526,7 +526,14 @@ class DownloadGateway:
                 code="DOWNLOAD_INVALID_RANGE",
             )
         if not start_text:
-            length = int(end_text)
+            try:
+                length = int(end_text)
+            except ValueError as exc:
+                raise DownloadError(
+                    "درخواست محدوده نامعتبر است.",
+                    status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+                    code="DOWNLOAD_INVALID_RANGE",
+                ) from exc
             if length <= 0:
                 raise DownloadError(
                     "درخواست محدوده نامعتبر است.",
@@ -536,7 +543,14 @@ class DownloadGateway:
             start = max(size - length, 0)
             end = size - 1
         else:
-            start = int(start_text)
+            try:
+                start = int(start_text)
+            except ValueError as exc:
+                raise DownloadError(
+                    "درخواست محدوده نامعتبر است.",
+                    status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+                    code="DOWNLOAD_INVALID_RANGE",
+                ) from exc
             if start < 0:
                 raise DownloadError(
                     "درخواست محدوده نامعتبر است.",
@@ -545,7 +559,14 @@ class DownloadGateway:
                 )
             end = size - 1
             if end_text:
-                end = int(end_text)
+                try:
+                    end = int(end_text)
+                except ValueError as exc:
+                    raise DownloadError(
+                        "درخواست محدوده نامعتبر است.",
+                        status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+                        code="DOWNLOAD_INVALID_RANGE",
+                    ) from exc
             if start > end:
                 raise DownloadError(
                     "درخواست محدوده نامعتبر است.",

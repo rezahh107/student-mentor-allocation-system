@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-__all__ = ["controller"]
+__all__ = ["controller", "winsw_xml", "readiness", "readiness_cli", "errors"]

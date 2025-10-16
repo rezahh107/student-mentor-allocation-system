@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import os
@@ -13,18 +14,29 @@ from pathlib import Path
 from typing import Callable, Sequence
 from uuid import uuid4
 
+from prometheus_client import Counter, REGISTRY
+
 from src.core.clock import Clock, tehran_clock
+from src.core.retry import (
+    RetryExhaustedError,
+    RetryPolicy,
+    build_sync_clock_sleeper,
+    execute_with_retry,
+)
 from src.infrastructure.monitoring.logging_adapter import (
     configure_json_logging,
     correlation_id_var,
 )
-from src.phase6_import_to_sabt.sanitization import sanitize_text
+from src.phase6_import_to_sabt.sanitization import secure_digest
+from windows_service.errors import DependencyNotReady, ServiceError
+from windows_service.normalization import sanitize_env_text
+from windows_service.readiness import probe_dependencies
 from windows_shared.config import LauncherConfig, load_launcher_config
 
 REQUIRED_ENVS: dict[str, str] = {
     "DATABASE_URL": "پیکربندی ناقص است؛ متغیر DATABASE_URL خالی است.",
     "REDIS_URL": "پیکربندی ناقص است؛ متغیر REDIS_URL خالی است.",
-    "METRICS_TOKEN": "توکن متریک تنظیم نشده است.",
+    "METRICS_TOKEN": "پیکربندی ناقص است؛ متغیر METRICS_TOKEN خالی است.",
 }
 
 EXIT_SUCCESS = 0
@@ -32,14 +44,19 @@ EXIT_CONFIG_ERROR = 2
 EXIT_RUNTIME_ERROR = 3
 
 
-class ServiceError(RuntimeError):
-    """Raised when controller preconditions fail."""
+def _safe_counter(name: str, documentation: str) -> Counter:
+    with contextlib.suppress(ValueError):
+        return Counter(name, documentation, labelnames=("outcome",))
+    existing = REGISTRY._names_to_collectors.get(name)  # type: ignore[attr-defined]
+    if isinstance(existing, Counter):
+        return existing
+    raise
 
-    def __init__(self, code: str, message: str, *, context: dict[str, str] | None = None) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.context = context or {}
+
+READINESS_BACKOFF_TOTAL = _safe_counter(
+    "winsw_readiness_backoff_total",
+    "Number of readiness backoff operations for WinSW controller.",
+)
 
 
 def _default_winsw_path() -> Path:
@@ -54,8 +71,8 @@ def _default_winsw_xml() -> Path:
 
 
 def _normalise_env(name: str, value: str | None) -> str:
-    text = sanitize_text(value or "")
-    if not text:
+    text = sanitize_env_text(value or "")
+    if not text or text.lower() in {"null", "none", "undefined"}:
         raise ServiceError("CONFIG_MISSING", REQUIRED_ENVS[name], context={"variable": name})
     return text
 
@@ -94,6 +111,11 @@ def _run_uvicorn(port: int) -> None:
 CommandExecutor = Callable[[Sequence[str]], subprocess.CompletedProcess[bytes]]
 
 
+def _default_dependency_probe(env: dict[str, str]) -> None:
+    timeout = float(os.getenv("SMASM_READINESS_TIMEOUT", "1.5"))
+    probe_dependencies(env["DATABASE_URL"], env["REDIS_URL"], timeout)
+
+
 def _subprocess_executor(args: Sequence[str]) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(args, check=True, capture_output=True)
 
@@ -106,6 +128,9 @@ class ServiceController:
     uvicorn_runner: Callable[[int], None] = field(default_factory=lambda: _run_uvicorn)
     clock: Clock = field(default_factory=tehran_clock)
     port_override: int | None = None
+    dependency_probe: Callable[[dict[str, str]], None] = field(
+        default_factory=lambda: _default_dependency_probe
+    )
 
     def handle(self, command: str) -> int:
         if command == "run":
@@ -116,10 +141,11 @@ class ServiceController:
 
     def _run(self) -> int:
         config = self._load_launcher_config()
-        _validate_environment()
+        env_values = _validate_environment()
         port = self.port_override if self.port_override is not None else config.port
         os.environ.setdefault("STUDENT_MENTOR_APP_PORT", str(port))
         logging.getLogger(__name__).info("service_run", extra={"port": port})
+        self._await_dependencies(env_values, port)
         try:
             self.uvicorn_runner(port)
         except Exception as exc:  # pragma: no cover - defensive logging
@@ -140,7 +166,7 @@ class ServiceController:
         if not self.winsw_xml.is_file():
             raise ServiceError(
                 "XML_MISSING",
-                "پروندهٔ پیکربندی StudentMentorService.xml یافت نشد.",
+                "پیکربندی XMLِ سرویس یافت نشد.",
                 context={"path": str(self.winsw_xml)},
             )
         args = [str(self.winsw_executable), command]
@@ -163,6 +189,58 @@ class ServiceController:
 
     def _load_launcher_config(self) -> LauncherConfig:
         return load_launcher_config(clock=self.clock)
+
+    def _await_dependencies(self, env_values: dict[str, str], port: int) -> None:
+        base_delay = float(os.getenv("SMASM_READINESS_BASE_DELAY", "0.25"))
+        factor = float(os.getenv("SMASM_READINESS_FACTOR", "2.0"))
+        max_delay = float(os.getenv("SMASM_READINESS_MAX_DELAY", "2.0"))
+        max_attempts = int(os.getenv("SMASM_READINESS_MAX_ATTEMPTS", "5"))
+        policy = RetryPolicy(
+            base_delay=base_delay,
+            factor=factor,
+            max_delay=max_delay,
+            max_attempts=max_attempts,
+        )
+        sleeper = build_sync_clock_sleeper(self.clock)
+        seed = secure_digest(f"winsw:{port}")
+        corr = correlation_id_var.get() or seed
+        token = None
+        if not correlation_id_var.get():
+            token = correlation_id_var.set(corr)
+
+        def _sleeper(seconds: float) -> None:
+            READINESS_BACKOFF_TOTAL.labels(outcome="retry").inc()
+            sleeper(seconds)
+
+        try:
+            execute_with_retry(
+                lambda: self.dependency_probe(env_values),
+                policy=policy,
+                clock=self.clock,
+                sleeper=_sleeper,
+                retryable=(DependencyNotReady,),
+                correlation_id=corr,
+                op="winsw_readiness_probe",
+            )
+        except RetryExhaustedError as exc:
+            READINESS_BACKOFF_TOTAL.labels(outcome="exhausted").inc()
+            message = "سرویس آماده نشد؛ وابستگی‌ها در دسترس نیستند."
+            context = {
+                "op": "winsw_readiness_probe",
+                "attempts": str(max_attempts),
+                "last_error": type(exc.last_error).__name__ if exc.last_error else "unknown",
+                "port": str(port),
+            }
+            logging.getLogger(__name__).error(
+                "service_dependencies_unavailable",
+                extra={"context": json.dumps(context, ensure_ascii=False)},
+            )
+            raise ServiceError("READINESS_FAILED", message, context=context) from exc
+        else:
+            READINESS_BACKOFF_TOTAL.labels(outcome="success").inc()
+        finally:
+            if token is not None:
+                correlation_id_var.reset(token)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:

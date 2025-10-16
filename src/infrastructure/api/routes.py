@@ -148,7 +148,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         chain = getattr(request.state, "middleware_chain", [])
         request.state.middleware_chain = chain + ["Auth"]
-        if request.url.path in {"/readyz", "/healthz", "/ui"}:
+        bypass = {"/readyz", "/healthz"}
+        method = request.method.upper()
+        is_ui = request.url.path == "/ui" and method in {"GET", "HEAD"}
+        if request.url.path in bypass or is_ui:
             response = await call_next(request)
             chain = getattr(request.state, "middleware_chain", [])
             if chain:

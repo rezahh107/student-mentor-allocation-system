@@ -20,12 +20,19 @@ def test_repo_default_addopts_no_warnings() -> None:
     required_flags = [
         "--strict-markers",
         "--strict-config",
-        "--cov=src",
-        "--cov-report=term-missing:skip-covered",
-        "--html=test-results/report.html",
+        "-ra",
+        "--durations=20",
+        "--tb=short",
+        "--showlocals",
+        "-W",
         "-n=auto",
-        "--dist=loadgroup",
-        "--timeout=300",
+        "--dist=loadscope",
+        "-p",
+        "pytest_asyncio",
+        "-p",
+        "xdist.plugin",
+        "-p",
+        "pytest_timeout",
     ]
     for flag in required_flags:
         assert flag in addopts, f"Expected {flag} in pytest addopts"
@@ -36,8 +43,7 @@ def test_repo_default_addopts_no_warnings() -> None:
 
     filterwarnings = parser.get("pytest", "filterwarnings", fallback="").splitlines()
     normalized = [line.strip() for line in filterwarnings if line.strip()]
-    assert "default" in normalized, "filterwarnings must escalate unexpected warnings"
-    assert not any(line.startswith("error") for line in normalized), "warnings set to error would break deterministic runs"
+    assert "error" in normalized, "filterwarnings must escalate unexpected warnings"
 
     markers = parser.get("pytest", "markers", fallback="").splitlines()
     normalized_markers = [line.strip().split(":")[0] for line in markers if line.strip()]

@@ -14,6 +14,7 @@ from starlette.concurrency import iterate_in_threadpool
 
 from fastapi import APIRouter, FastAPI, File, UploadFile, Response
 from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse
 
 from application.commands.allocation import GetJobStatus, StartBatchAllocation
 from infrastructure.api.error_handlers import install_error_handlers
@@ -147,7 +148,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         chain = getattr(request.state, "middleware_chain", [])
         request.state.middleware_chain = chain + ["Auth"]
-        if request.url.path in {"/readyz", "/healthz"}:
+        if request.url.path in {"/readyz", "/healthz", "/ui"}:
             response = await call_next(request)
             chain = getattr(request.state, "middleware_chain", [])
             if chain:
@@ -259,5 +260,43 @@ def create_app() -> FastAPI:
     @app.head("/ui")
     async def ui_head() -> Response:
         return Response(status_code=200)
+
+    @app.get("/ui", include_in_schema=False, response_class=HTMLResponse)
+    async def ui_root() -> HTMLResponse:
+        # Minimal SSR stub to satisfy Windows launcher WebView startup
+        # while keeping /metrics token-guarded. Real UI can be plugged here.
+        html = (
+            """
+            <!doctype html>
+            <html lang="fa">
+            <head>
+                <meta charset="utf-8" />
+                <title>سامانه تخصیص دانش‌آموز-مربی</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; background:#0f1115; color:#e6e6e6; margin:0; }
+                    header { padding: 16px 20px; background:#141821; border-bottom:1px solid #222838; }
+                    main { padding: 20px; }
+                    .card { background:#141821; border:1px solid #222838; border-radius:8px; padding:16px; max-width:720px }
+                    code { background:#1b2030; padding:2px 6px; border-radius:4px }
+                    a { color:#66ccff; text-decoration:none }
+                </style>
+            </head>
+            <body>
+                <header>سامانه تخصیص دانش‌آموز-مربی</header>
+                <main>
+                  <div class="card">
+                    <p>بک‌اند فعال است. این نمای ابتدایی صرفاً برای راه‌اندازی Windows/WebView2 است.</p>
+                    <ul>
+                      <li>وضعیت: <code><a href="/readyz" target="_blank">/readyz</a></code></li>
+                      <li>متریک‌ها (با توکن): <code>/metrics</code></li>
+                    </ul>
+                  </div>
+                </main>
+            </body>
+            </html>
+            """
+        )
+        return HTMLResponse(content=html)
 
     return app

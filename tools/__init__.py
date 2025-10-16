@@ -3,4 +3,5 @@
 __all__ = [
     "bom_guard",
     "strip_bom",
+    "system_clock",
 ]

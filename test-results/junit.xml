@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="142.742" timestamp="2025-10-15T20:17:36.595768+00:00" hostname="5524e83e7c4a"><testcase classname="tests.test_counter" name="test_counter_format" time="0.096"><failure message="AssertionError: assert '043730042' == '043570042'&#10;  &#10;  - 043570042&#10;  ?    -&#10;  + 043730042&#10;  ?     +">tests/test_counter.py:12: in test_counter_format
+    assert c.value == "043570042"
+E   AssertionError: assert '043730042' == '043570042'
+E     
+E     - 043570042
+E     ?    -
+E     + 043730042
+E     ?     +
+        c          = Counter(value='043730042')</failure></testcase></testsuite></testsuites>

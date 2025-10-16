@@ -1,0 +1,71 @@
+{% macro render_rows(items) -%}
+    {% if items %}
+        {% for item in items %}
+            <tr data-testid="export-row">
+                <td class="export-name">{{ item.name }}</td>
+                <td class="export-size">{{ '%.2f' % (item.size_bytes / 1024) }} KB</td>
+                <td class="export-created">{{ item.display_created_at }}</td>
+                <td class="export-actions">
+                    <button
+                        class="hx-btn"
+                        hx-get="{{ url_for('exports_ui_signed_url', token=item.token) }}"
+                        hx-target="#signed-{{ loop.index0 }}"
+                        hx-swap="innerHTML"
+                    >
+                        دریافت لینک امضا شده
+                    </button>
+                    <div id="signed-{{ loop.index0 }}" class="signed-slot" aria-live="polite"></div>
+                </td>
+            </tr>
+        {% endfor %}
+    {% else %}
+        <tr class="empty">
+            <td colspan="4">هیچ خروجی‌ای ثبت نشده است.</td>
+        </tr>
+    {% endif %}
+{%- endmacro %}
+
+{% if partial %}
+    {{ render_rows(manifests) | safe }}
+{% else %}
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="utf-8" />
+    <title>گزارش‌های خروجی SABT</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-qlQsM7U8J0uIKHOvbeqPf7Z07fdrUYcUtwj0k3olp/OWiRbGujTFB/nzxE5YX7dM" crossorigin="anonymous"></script>
+    <style>
+        body { font-family: sans-serif; background: #f5f7fa; margin: 0; padding: 2rem; }
+        table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 0 8px rgba(0,0,0,0.05); }
+        th, td { border: 1px solid #e0e6ef; padding: 0.75rem; text-align: right; }
+        th { background: #0f4c81; color: #fff; }
+        .hx-btn { background: #0f4c81; color: #fff; border: none; padding: 0.5rem 1rem; cursor: pointer; }
+        .hx-btn:hover { background: #1866ac; }
+        .signed-slot { margin-top: 0.5rem; font-size: 0.85rem; color: #0f4c81; word-break: break-all; }
+        .empty td { text-align: center; color: #5f6c7b; }
+    </style>
+</head>
+<body>
+    <h1>فهرست خروجی‌های اخیر SABT</h1>
+    <table
+        id="exports-table"
+        hx-get="{{ hx_rows_url }}"
+        hx-trigger="load delay:200ms"
+        hx-target="#exports-table-body"
+        hx-swap="innerHTML"
+    >
+        <thead>
+            <tr>
+                <th scope="col">نام فایل</th>
+                <th scope="col">حجم (کیلوبایت)</th>
+                <th scope="col">تاریخ ایجاد</th>
+                <th scope="col">عملیات</th>
+            </tr>
+        </thead>
+        <tbody id="exports-table-body">
+            {{ render_rows(manifests) | safe }}
+        </tbody>
+    </table>
+</body>
+</html>
+{% endif %}

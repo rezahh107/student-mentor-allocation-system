@@ -21,8 +21,6 @@ from phase6_import_to_sabt.download_api import (
     encode_download_token,
 )
 
-pytest_plugins = ("tests.fixtures.state",)
-
 
 @dataclass(slots=True)
 class DownloadTestEnv:

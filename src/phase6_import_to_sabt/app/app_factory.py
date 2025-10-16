@@ -27,9 +27,12 @@ from phase6_import_to_sabt.download_api import (
     DownloadMetrics,
     DownloadRetryPolicy,
     DownloadSettings,
+    SignatureSecurityConfig,
+    SignatureSecurityManager,
     create_download_router,
 )
 from phase6_import_to_sabt.obs.metrics import ServiceMetrics, build_metrics, render_metrics
+from phase6_import_to_sabt.observability import MetricsCollector, profile_endpoint, trace_span
 from phase6_import_to_sabt.security.config import AccessConfigGuard, ConfigGuardError, SigningKeyDefinition, TokenDefinition
 from phase6_import_to_sabt.security.rbac import TokenRegistry
 from phase6_import_to_sabt.security.signer import DualKeySigner, SignatureError, SigningKeySet
@@ -48,8 +51,10 @@ class ApplicationContainer:
     clock: Clock
     timer: Timer
     metrics: ServiceMetrics
+    metrics_collector: MetricsCollector
     download_metrics: DownloadMetrics
     download_settings: DownloadSettings
+    signature_security: SignatureSecurityManager
     templates: Jinja2Templates
     rate_limit_store: KeyValueStore
     idempotency_store: KeyValueStore
@@ -193,14 +198,23 @@ def create_application(
         retry=DownloadRetryPolicy(),
     )
     download_metrics = DownloadMetrics(metrics.registry)
+    metrics_collector = MetricsCollector(metrics.registry)
+    security_config = SignatureSecurityConfig()
+    signature_security = SignatureSecurityManager(
+        clock=clock,
+        config=security_config,
+        observer=metrics_collector,
+    )
 
     container = ApplicationContainer(
         config=config,
         clock=clock,
         timer=timer,
         metrics=metrics,
+        metrics_collector=metrics_collector,
         download_metrics=download_metrics,
         download_settings=download_settings,
+        signature_security=signature_security,
         templates=templates,
         rate_limit_store=rate_limit_store,
         idempotency_store=idempotency_store,
@@ -223,87 +237,106 @@ def create_application(
     }
     app.state.storage_root = storage_root
     app.state.download_metrics = download_metrics
+    app.state.metrics_collector = metrics_collector
+    app.state.signature_security = signature_security
+
+    def _legacy_forbidden(
+        message: str,
+        *,
+        correlation_id: str | None,
+        reason: str,
+    ) -> JSONResponse:
+        download_metrics.requests_total.labels(status="legacy_forbidden").inc()
+        download_metrics.invalid_token_total.inc()
+        logger.warning(
+            "download.legacy_forbidden",
+            extra={"correlation_id": correlation_id, "reason": reason},
+        )
+        return JSONResponse(
+            status_code=403,
+            content={
+                "fa_error_envelope": {
+                    "code": "DOWNLOAD_FORBIDDEN",
+                    "message": message,
+                }
+            },
+        )
+
+    async def _record_legacy_failure(
+        request: Request,
+        *,
+        reason: str,
+        message: str,
+    ) -> JSONResponse:
+        collector: MetricsCollector | None = getattr(request.app.state, "metrics_collector", None)
+        security: SignatureSecurityManager | None = getattr(request.app.state, "signature_security", None)
+        client_id = request.client.host if request.client else "anonymous"
+        correlation_id = getattr(request.state, "correlation_id", None)
+        if collector is not None:
+            collector.record_signature_failure(reason=reason)
+        if security is not None:
+            blocked = await security.record_failure(client_id, reason=reason)
+            if blocked:
+                download_metrics.requests_total.labels(status="blocked").inc()
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "fa_error_envelope": {
+                            "code": "DOWNLOAD_TEMPORARILY_BLOCKED",
+                            "message": "دسترسی موقتاً مسدود شد.",
+                        }
+                    },
+                    headers={"X-Request-ID": correlation_id or "download-blocked"},
+                )
+        return _legacy_forbidden(message, correlation_id=correlation_id, reason=reason)
+
     download_router = create_download_router(
         settings=download_settings,
         clock=clock,
         metrics=download_metrics,
+        observer=metrics_collector,
+        security=signature_security,
     )
     app.include_router(download_router)
 
     @app.get("/download")
-    async def download_endpoint(signed: str, kid: str, exp: int, sig: str) -> Response:
-        try:
-            relative_path = container.download_signer.verify_components(
-                signed=signed,
-                kid=kid,
-                exp=exp,
-                sig=sig,
-                now=container.clock.now(),
-            )
-        except SignatureError as exc:
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "fa_error_envelope": {
-                        "code": "DOWNLOAD_FORBIDDEN",
-                        "message": exc.message_fa,
-                    }
-                },
-            )
+@app.get("/download")
+async def download_endpoint(
+    signed: str, kid: str, exp: int, sig: str, request: Request
+) -> Response:
+    try:
+        relative_path = container.download_signer.verify_components(
+            signed=signed, kid=kid, exp=exp, sig=sig, now=container.clock.now()
+        )
+    except SignatureError as exc:
+        return JSONResponse(status_code=403, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_FORBIDDEN","message": exc.message_fa}})
 
-        base_dir_value = getattr(app.state, "storage_root", None)
-        if base_dir_value is None:
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "fa_error_envelope": {
-                        "code": "DOWNLOAD_UNAVAILABLE",
-                        "message": "سرویس دانلود در دسترس نیست.",
-                    }
-                },
-            )
+    base_dir_value = getattr(request.app.state, "storage_root", None)
+    if not base_dir_value:
+        return JSONResponse(status_code=503, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_UNAVAILABLE","message":"سرویس دانلود در دسترس نیست."}})
 
-        base_dir = Path(base_dir_value).resolve()
-        if not base_dir.exists():
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "fa_error_envelope": {
-                        "code": "DOWNLOAD_UNAVAILABLE",
-                        "message": "سرویس دانلود در دسترس نیست.",
-                    }
-                },
-            )
+    base_dir = Path(base_dir_value).resolve()
+    if not base_dir.exists():
+        return JSONResponse(status_code=503, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_UNAVAILABLE","message":"سرویس دانلود در دسترس نیست."}})
 
-        target = (base_dir / Path(relative_path)).resolve()
-        try:
-            target.relative_to(base_dir)
-        except ValueError:
-            container.metrics.download_signed_total.labels(outcome="path_violation").inc()
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "fa_error_envelope": {
-                        "code": "DOWNLOAD_FORBIDDEN",
-                        "message": "توکن نامعتبر است.",
-                    }
-                },
-            )
+    target = (base_dir / Path(relative_path)).resolve()
+    try:
+        target.relative_to(base_dir)
+    except ValueError:
+        container.metrics.download_signed_total.labels(outcome="path_violation").inc()
+        return JSONResponse(status_code=403, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_FORBIDDEN","message":"توکن نامعتبر است."}})
 
-        if not target.is_file():
-            container.metrics.download_signed_total.labels(outcome="missing").inc()
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "fa_error_envelope": {
-                        "code": "DOWNLOAD_NOT_FOUND",
-                        "message": "فایل موردنظر یافت نشد.",
-                    }
-                },
-            )
+    if not target.is_file():
+        container.metrics.download_signed_total.labels(outcome="missing").inc()
+        return JSONResponse(status_code=404, content={"fa_error_envelope":{
+            "code":"DOWNLOAD_NOT_FOUND","message":"فایل موردنظر یافت نشد."}})
 
-        container.metrics.download_signed_total.labels(outcome="served").inc()
-        return FileResponse(target, filename=target.name)
+    container.metrics.download_signed_total.labels(outcome="served").inc()
+    return FileResponse(target, filename=target.name)
     install_error_handlers(app)
     configure_middleware(app, container)
 

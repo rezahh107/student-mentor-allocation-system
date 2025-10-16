@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import itertools
 import os
 from contextlib import contextmanager
@@ -7,9 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
-from openpyxl import Workbook
-from openpyxl.cell import WriteOnlyCell
-from openpyxl.styles import numbers
+import xlsxwriter
 
 from phase6_import_to_sabt.sanitization import guard_formula, sanitize_phone, sanitize_text
 
@@ -131,6 +130,7 @@ class ExportWriter:
             "normalized": True,
             "digit_folded": True,
             "formula_guard": self._formula_guard,
+            "always_quote": bool(self._sensitive),
             "always_quote_columns": list(self._sensitive),
             "newline": self._newline,
             "bom": self._include_bom,
@@ -144,79 +144,90 @@ class ExportWriter:
         *,
         path_factory: Callable[[int], Path],
     ) -> ExportResult:
-        # openpyxl write-only mode keeps memory usage low without introducing
-        # the heavier xlsxwriter dependency, which aligns with CI constraints.
-        workbook = Workbook(write_only=True)
-        default = workbook.active
-        if default is not None:
-            workbook.remove(default)
+        workbook_options = {
+            "constant_memory": True,
+            "strings_to_numbers": False,
+            "strings_to_formulas": False,
+        }
         row_counts: dict[str, int] = {}
         total_rows = 0
-        for index, chunk in enumerate(_prepared_chunks(rows, self._chunk_size, self._prepare_row), start=1):
-            sheet_name = self._sheet_template.format(index=index)
-            sheet = workbook.create_sheet(title=sheet_name)
-            sheet.append(list(self._columns))
-            count = 0
-            for prepared in chunk:
-                cells: list[WriteOnlyCell] = []
-                for column, value in zip(self._columns, prepared):
-                    cell = WriteOnlyCell(sheet, value=value)
-                    cell.data_type = "s"
-                    if column in self._sensitive:
-                        cell.number_format = numbers.FORMAT_TEXT
-                    cells.append(cell)
-                sheet.append(cells)
-                count += 1
-            row_counts[sheet_name] = count
-            total_rows += count
-        files: list[ExportedFile] = []
         path = path_factory(1)
         temp_path = path.with_suffix(path.suffix + ".part")
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            workbook.save(temp_path)
-            with open(temp_path, "rb") as handle:
-                os.fsync(handle.fileno())
-            os.replace(temp_path, path)
-            byte_size = path.stat().st_size
-            digest = self._sha256(path)
-            sheets = tuple(sorted(row_counts.items()))
-            files.append(
-                ExportedFile(
-                    path=path,
-                    name=path.name,
-                    sha256=digest,
-                    byte_size=byte_size,
-                    row_count=total_rows,
-                    sheets=sheets,
-                )
-            )
+            with xlsxwriter.Workbook(temp_path.as_posix(), workbook_options) as workbook:
+                header_format = workbook.add_format({"bold": True})
+                text_format = workbook.add_format({"num_format": "@"})
+                column_formats = [text_format if column in self._sensitive else None for column in self._columns]
+                for index, chunk in enumerate(
+                    _prepared_chunks(rows, self._chunk_size, self._prepare_row),
+                    start=1,
+                ):
+                    sheet_name = self._sheet_template.format(index=index)
+                    worksheet = workbook.add_worksheet(sheet_name)
+                    worksheet.right_to_left()  # اطمینان از راست‌به‌چپ بودن شیت برای کاربران فارسی‌زبان
+                    worksheet.write_row(0, 0, list(self._columns), header_format)
+                    for col_idx, fmt in enumerate(column_formats):
+                        if fmt is not None:
+                            worksheet.set_column(col_idx, col_idx, None, fmt)
+                    row_index = 1
+                    count = 0
+                    for prepared in chunk:
+                        for col_idx, value in enumerate(prepared):
+                            worksheet.write_string(row_index, col_idx, value)
+                        row_index += 1
+                        count += 1
+                    row_counts[sheet_name] = count
+                    total_rows += count
+                if not row_counts:
+                    sheet_name = self._sheet_template.format(index=1)
+                    worksheet = workbook.add_worksheet(sheet_name)
+                    worksheet.right_to_left()
+                    worksheet.write_row(0, 0, list(self._columns), header_format)
+                    for col_idx, fmt in enumerate(column_formats):
+                        if fmt is not None:
+                            worksheet.set_column(col_idx, col_idx, None, fmt)
+                    row_counts[sheet_name] = 0
         except Exception:
             if temp_path.exists():
-                temp_path.unlink()
+                temp_path.unlink(missing_ok=True)
             raise
-        finally:
-            workbook.close()
+        with open(temp_path, "rb") as handle:
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+        byte_size = path.stat().st_size
+        digest = self._sha256(path)
+        sheets = tuple(sorted(row_counts.items()))
+        files: list[ExportedFile] = [
+            ExportedFile(
+                path=path,
+                name=path.name,
+                sha256=digest,
+                byte_size=byte_size,
+                row_count=total_rows,
+                sheets=sheets,
+            )
+        ]
         safety = {
             "normalized": True,
             "digit_folded": True,
             "formula_guard": self._formula_guard,
             "sensitive_text_columns": list(self._sensitive),
             "numeric_columns": list(NUMERIC_COLUMNS),
+            "backend": "xlsxwriter",
+            "rtl": True,
         }
         return ExportResult(files=files, total_rows=total_rows, excel_safety=safety)
 
-    def _write_csv_chunk(self, path: Path, chunk: list[dict[str, str]]) -> int:
+    def _write_csv_chunk(self, path: Path, chunk: list[list[str]]) -> int:
         encoding = "utf-8"
         with atomic_writer(path, newline="", encoding=encoding) as handle:
             if self._include_bom:
                 handle.write("\ufeff")
-            buffer: list[str] = []
-            buffer.append('"' + '","'.join(self._columns) + '"' + self._newline)
+            writer = csv.writer(handle, lineterminator=self._newline, quoting=csv.QUOTE_ALL)
+            writer.writerow(self._columns)
             for prepared in chunk:
-                serialized = '"' + '","'.join(value.replace('"', '""') for value in prepared) + '"' + self._newline
-                buffer.append(serialized)
-            handle.write("".join(buffer))
+                writer.writerow(prepared)
         return path.stat().st_size
 
     def _prepare_row(self, raw: dict[str, Any]) -> list[str]:

@@ -1,0 +1,8 @@
+HTTP/1.1 200 OK
+date: Wed, 15 Oct 2025 12:48:37 GMT
+server: uvicorn
+content-length: 82
+content-type: application/json
+x-request-id: 2b0bc383-2e53-4d74-b3d0-a9a9013de6eb
+
+{"status":"ready","checked_at":"2025-10-15T16:18:37.768225+03:30","components":[]}

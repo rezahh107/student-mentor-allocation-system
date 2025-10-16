@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import logging
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncIterator, Awaitable, Callable, Iterable
@@ -19,6 +20,7 @@ from mimetypes import guess_type
 from prometheus_client import CollectorRegistry, Counter, Histogram
 
 from phase6_import_to_sabt.clock import Clock, ensure_clock
+from phase6_import_to_sabt.observability import MetricsCollector
 
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,88 @@ class DownloadTokenPayload:
 class DownloadRetryPolicy:
     attempts: int = _DEFAULT_MAX_ATTEMPTS
     base_delay: float = _DEFAULT_BASE_DELAY
+
+
+@dataclass(slots=True)
+class SignatureSecurityConfig:
+    max_failures: int = 5
+    interval_seconds: float = 60.0
+    block_seconds: float = 180.0
+
+
+class SignatureSecurityManager:
+    """Track signature failures and enforce temporary blocks for abusive clients."""
+
+    def __init__(
+        self,
+        clock: Clock,
+        *,
+        config: SignatureSecurityConfig | None = None,
+        observer: MetricsCollector | None = None,
+    ) -> None:
+        self._clock = ensure_clock(clock, timezone="Asia/Tehran")
+        self._config = config or SignatureSecurityConfig()
+        self._observer = observer
+        self._failures: dict[str, dict[str, deque[float]]] = defaultdict(lambda: defaultdict(deque))
+        self._blocked_until: dict[str, float] = {}
+        self._lock = asyncio.Lock()
+
+    async def is_blocked(self, client_id: str) -> bool:
+        async with self._lock:
+            now = self._clock.now().timestamp()
+            self._prune_locked(now)
+            blocked_until = self._blocked_until.get(client_id)
+            if blocked_until is None:
+                return False
+            if blocked_until <= now:
+                self._blocked_until.pop(client_id, None)
+                self._failures.pop(client_id, None)
+                return False
+            return True
+
+    async def record_failure(self, client_id: str, *, reason: str) -> bool:
+        async with self._lock:
+            now = self._clock.now().timestamp()
+            self._prune_locked(now)
+            bucket = self._failures[client_id][reason]
+            bucket.append(now)
+            self._trim_bucket(bucket, now)
+            if len(bucket) >= self._config.max_failures:
+                blocked_until = now + self._config.block_seconds
+                self._blocked_until[client_id] = blocked_until
+                if self._observer is not None:
+                    self._observer.record_signature_block(reason=reason)
+                return True
+            return False
+
+    async def record_success(self, client_id: str) -> None:
+        async with self._lock:
+            if client_id in self._failures:
+                self._failures.pop(client_id, None)
+
+    def _prune_locked(self, now: float) -> None:
+        threshold = now - self._config.interval_seconds
+        expired_clients: list[str] = []
+        for client_id, reason_map in list(self._failures.items()):
+            expired_reasons: list[str] = []
+            for reason, bucket in reason_map.items():
+                self._trim_bucket(bucket, now, threshold=threshold)
+                if not bucket:
+                    expired_reasons.append(reason)
+            for reason in expired_reasons:
+                reason_map.pop(reason, None)
+            if not reason_map:
+                expired_clients.append(client_id)
+        for client_id in expired_clients:
+            self._failures.pop(client_id, None)
+        for client_id, blocked_until in list(self._blocked_until.items()):
+            if blocked_until <= now:
+                self._blocked_until.pop(client_id, None)
+
+    def _trim_bucket(self, bucket: deque[float], now: float, *, threshold: float | None = None) -> None:
+        limit = threshold if threshold is not None else now - self._config.interval_seconds
+        while bucket and bucket[0] < limit:
+            bucket.popleft()
 
 
 class DownloadMetrics:
@@ -255,6 +339,8 @@ class DownloadGateway:
         settings: DownloadSettings,
         clock: Clock,
         metrics: DownloadMetrics,
+        observer: MetricsCollector | None = None,
+        security: SignatureSecurityManager | None = None,
         retryable: tuple[type[Exception], ...] = (OSError,),
         sleeper: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
@@ -266,6 +352,8 @@ class DownloadGateway:
         )
         self._clock = ensure_clock(clock, timezone="Asia/Tehran")
         self._metrics = metrics
+        self._observer = observer
+        self._security = security
         self._retryable = retryable
         self._sleep = sleeper or (lambda duration: asyncio.sleep(duration))
 
@@ -273,15 +361,31 @@ class DownloadGateway:
         correlation_id = request.headers.get("X-Request-ID") or getattr(
             request.state, "correlation_id", str(uuid4())
         )
+        client_id = request.client.host if request.client else "anonymous"
+        if self._security is not None and await self._security.is_blocked(client_id):
+            if self._observer is not None:
+                self._observer.record_signature_failure(reason="blocked")
+                self._observer.record_signature_block(reason="blocked")
+            logger.warning(
+                "download.signature_blocked",
+                extra={"correlation_id": correlation_id, "client": client_id},
+            )
+            return self._blocked_response(correlation_id)
         try:
             payload = decode_download_token(token, secret=self._settings.secret, clock=self._clock)
         except DownloadError as exc:
             self._metrics.requests_total.labels(status="invalid_token").inc()
             self._metrics.invalid_token_total.inc()
+            if self._observer is not None:
+                self._observer.record_signature_failure(reason=exc.code)
             logger.warning(
                 "download.token_invalid",
                 extra={"correlation_id": correlation_id, "reason": exc.code},
             )
+            if self._security is not None:
+                blocked = await self._security.record_failure(client_id, reason=exc.code)
+                if blocked:
+                    return self._blocked_response(correlation_id)
             return self._error_response(exc)
         context = DownloadContext(
             correlation_id=correlation_id,
@@ -292,6 +396,10 @@ class DownloadGateway:
             range_end=None,
             artifact_size=None,
         )
+        if self._observer is not None:
+            self._observer.record_signature_success()
+        if self._security is not None:
+            await self._security.record_success(client_id)
         try:
             return await self._serve(request, payload, context)
         except DownloadError as exc:
@@ -354,9 +462,9 @@ class DownloadGateway:
         expected_size = int(manifest_entry.get("byte_size", payload.size))
         if expected_sha != payload.sha256 or expected_size != payload.size:
             raise DownloadError(
-                "شیء درخواستی یافت نشد.",
-                status_code=status.HTTP_404_NOT_FOUND,
-                code="DOWNLOAD_NOT_FOUND",
+                "توکن دانلود نامعتبر یا منقضی است.",
+                status_code=status.HTTP_403_FORBIDDEN,
+                code="DOWNLOAD_INVALID_TOKEN",
             )
         target = (namespace_dir / filename).resolve()
         if not target.is_file() or not target.is_relative_to(namespace_dir):
@@ -422,6 +530,19 @@ class DownloadGateway:
         self._metrics.observe_bytes(length)
         logger.info("download.served", extra={"event": "DOWNLOAD_OK", **context.as_log(), "bytes": length})
         return response
+
+    def _blocked_response(self, correlation_id: str | None) -> JSONResponse:
+        self._metrics.requests_total.labels(status="blocked").inc()
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "fa_error_envelope": {
+                    "code": "DOWNLOAD_TEMPORARILY_BLOCKED",
+                    "message": "دسترسی موقتاً مسدود شد.",
+                }
+            },
+            headers={"X-Request-ID": correlation_id or "download-blocked"},
+        )
 
     def _sanitize_segment(self, value: str) -> str:
         candidate = value.strip()
@@ -629,10 +750,20 @@ def create_download_router(
     settings: DownloadSettings,
     clock: Clock,
     metrics: DownloadMetrics,
+    observer: MetricsCollector | None = None,
+    security: SignatureSecurityManager | None = None,
     retryable: tuple[type[Exception], ...] = (OSError,),
     sleeper: Callable[[float], Awaitable[None]] | None = None,
 ) -> APIRouter:
-    gateway = DownloadGateway(settings=settings, clock=clock, metrics=metrics, retryable=retryable, sleeper=sleeper)
+    gateway = DownloadGateway(
+        settings=settings,
+        clock=clock,
+        metrics=metrics,
+        observer=observer,
+        security=security,
+        retryable=retryable,
+        sleeper=sleeper,
+    )
     router = APIRouter()
 
     async def _handler(request: Request, token: str, gateway: DownloadGateway = Depends(lambda: gateway)) -> Response:
@@ -647,6 +778,8 @@ __all__ = [
     "DownloadMetrics",
     "DownloadSettings",
     "DownloadTokenPayload",
+    "SignatureSecurityConfig",
+    "SignatureSecurityManager",
     "create_download_router",
     "encode_download_token",
 ]

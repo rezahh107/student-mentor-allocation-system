@@ -15,6 +15,8 @@ import unicodedata
 from typing import Callable, Protocol, TypeVar
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from tools.system_clock import system_now as _system_now
+
 DEFAULT_TIMEZONE = "Asia/Tehran"
 _MAX_TZ_LENGTH = 255
 T = TypeVar("T")
@@ -22,13 +24,6 @@ T = TypeVar("T")
 _PERSIAN_DIGIT_MAP = {ord(ch): str(idx) for idx, ch in enumerate("۰۱۲۳۴۵۶۷۸۹")}
 _ARABIC_DIGIT_MAP = {ord(ch): str(idx) for idx, ch in enumerate("٠١٢٣٤٥٦٧٨٩")}
 _ZERO_WIDTH_CHARS = ("\u200c", "\u200d", "\ufeff")
-
-
-def _system_now() -> datetime:
-    """Return an aware UTC datetime using the system wall clock."""
-
-    return datetime.now(UTC)
-
 
 class SupportsNow(Protocol):
     """Protocol implemented by objects exposing a ``now`` method."""

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<service>
+  <id>StudentMentorService</id>
+  <name>Student Mentor Service</name>
+  <description>FastAPI backend for ImportToSabt (managed by WinSW).</description>
+
+  <!-- Use console python so WinSW reliably captures logs -->
+  <executable>.\.venv\Scripts\python.exe</executable>
+  <arguments>-m uvicorn main:app --host 127.0.0.1 --port 25119 --env-file .env.dev</arguments>
+
+  <workingdirectory>%BASE%</workingdirectory>
+  <stoptimeout>25</stoptimeout>
+  <startmode>Automatic</startmode>
+
+  <!-- WinSW-managed rolling logs -->
+  <logpath>%BASE%\logs</logpath>
+  <log mode="roll">winsw.log</log>
+
+  <!-- Environment for child process -->
+  <env name="PYTHONUTF8" value="1"/>
+  <env name="PYTHONUNBUFFERED" value="1"/>
+  <env name="PYTHONPATH" value="%BASE%\src"/>
+
+  <restart mode="delayed" period="10 sec" reset="1 hour"/>
+</service>

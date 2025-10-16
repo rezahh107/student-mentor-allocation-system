@@ -32,6 +32,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!windows_launcher/specs/*.spec
+!StudentMentorApp.spec
 
 # Installer logs
 pip-log.txt
@@ -209,3 +211,16 @@ __marimo__/
 
 # Bandit artifacts
 reports/bandit-report.json
+# Windows packaging artifacts
+*.exe
+*.dll
+*.msi
+*.pdb
+*.ico
+windows_service/WinSW*.exe
+windows_service/StudentMentorService.exe
+
+# local diag
+/tools/diag.sh
+diag_*.log
+.local-backup/

@@ -1,0 +1,277 @@
+name: Windows Tests Enhanced
+
+on:
+  push:
+    branches: ["main", "master", "develop"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: windows-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+    working-directory: ${{ github.workspace }}
+
+jobs:
+  test:
+    name: Windows CI (Python ${{ matrix.python-version }})
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - '3.10'
+          - '3.11.9'
+          - '3.12'
+
+    env:
+      PYTHONUTF8: "1"
+      FAKE_WEBVIEW: "1"
+      PYTHONWARNINGS: error
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_PROGRESS_BAR: "off"
+      PYTEST_ADDOPTS: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-test.txt
+            pyproject.toml
+
+      - name: Display environment
+        run: |
+          Write-Host "Python version:" (python --version)
+          Write-Host "Working directory:" (Get-Location)
+          Get-ChildItem -Force
+
+      - name: Install dependencies with retries
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-WithRetry {
+            param(
+              [scriptblock]$Script,
+              [int]$MaxAttempts = 4
+            )
+            $attempt = 0
+            while ($attempt -lt $MaxAttempts) {
+              try {
+                $attempt++
+                & $Script
+                return
+              } catch {
+                if ($attempt -ge $MaxAttempts) { throw }
+                $delay = [Math]::Min(8, [Math]::Pow(2, $attempt)) + (Get-Random -Minimum 0 -Maximum 2)
+                Write-Warning "Attempt $attempt failed: $($_.Exception.Message). Retrying in $delay s..."
+                Start-Sleep -Seconds $delay
+              }
+            }
+          }
+
+          Invoke-WithRetry { python -m pip install --upgrade pip wheel setuptools }
+          Invoke-WithRetry { pip install -r requirements-test.txt }
+          Invoke-WithRetry { pip install -e . }
+
+      - name: Run full pytest suite with coverage
+        env:
+          PYTEST_CURRENT_TEST: ci-windows
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path test-results | Out-Null
+          python -m pytest `
+            --rootdir "$PWD" `
+            --ignore-glob="**/System Volume Information" `
+            --ignore-glob="**/WindowsApps" `
+            --ignore-glob="**/Program Files" `
+            --ignore-glob="**/Program Files (x86)" `
+            --cov=src `
+            --cov-report=xml `
+            --cov-report=html:test-results/htmlcov `
+            --cov-report=term `
+            --json-report `
+            --json-report-file=test-results/pytest-report.json `
+            --junitxml=test-results/junit.xml `
+            --html=test-results/report.html `
+            --self-contained-html
+
+      - name: Publish unit test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: test-results/junit.xml
+
+      - name: Upload coverage xml
+        if: always() && matrix.python-version == '3.11.9'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: error
+
+      - name: Upload HTML coverage
+        if: always() && matrix.python-version == '3.11.9'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: test-results/htmlcov
+          if-no-files-found: warn
+
+      - name: Upload pytest reports
+        if: always() && matrix.python-version == '3.11.9'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-reports
+          path: |
+            test-results/pytest-report.json
+            test-results/junit.xml
+            test-results/report.html
+          if-no-files-found: warn
+
+      - name: Upload raw pytest cache on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-cache-${{ matrix.python-version }}
+          path: .pytest_cache
+          if-no-files-found: ignore
+
+  performance:
+    name: Windows Performance Benchmarks (Python 3.11.9)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    needs: test
+    env:
+      PYTHONUTF8: "1"
+      FAKE_WEBVIEW: "1"
+      PYTHONWARNINGS: error
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_PROGRESS_BAR: "off"
+      PYTEST_PERF_METRICS_PATH: artifacts/performance-metrics.json
+      PYTEST_BENCHMARK_DIR: .benchmarks
+      PYTEST_BENCHMARK_ACTIVE: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-test.txt
+            pyproject.toml
+
+      - name: Install dependencies with retries
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Invoke-WithRetry {
+            param(
+              [scriptblock]$Script,
+              [int]$MaxAttempts = 4
+            )
+            $attempt = 0
+            while ($attempt -lt $MaxAttempts) {
+              try {
+                $attempt++
+                & $Script
+                return
+              } catch {
+                if ($attempt -ge $MaxAttempts) { throw }
+                $delay = [Math]::Min(8, [Math]::Pow(2, $attempt)) + (Get-Random -Minimum 0 -Maximum 2)
+                Write-Warning "Attempt $attempt failed: $($_.Exception.Message). Retrying in $delay s..."
+                Start-Sleep -Seconds $delay
+              }
+            }
+          }
+
+          Invoke-WithRetry { python -m pip install --upgrade pip wheel setuptools }
+          Invoke-WithRetry { pip install -r requirements-test.txt }
+          Invoke-WithRetry { pip install -e . }
+
+      - name: Prepare artifacts directory
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Remove-Item -Recurse -Force .benchmarks -ErrorAction SilentlyContinue
+
+      - name: Run performance benchmarks
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pytest tests/performance `
+            --rootdir "$PWD" `
+            --ignore-glob="**/System Volume Information" `
+            --ignore-glob="**/WindowsApps" `
+            --ignore-glob="**/Program Files" `
+            --ignore-glob="**/Program Files (x86)" `
+            -p pytest_benchmark.plugin `
+            -n=0 `
+            --dist=no `
+            --benchmark-only `
+            --benchmark-json=artifacts/pytest-benchmark.json `
+            --benchmark-compare `
+            --benchmark-min-rounds=5 `
+            --maxfail=1
+
+      - name: Download coverage xml
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-xml
+          path: artifacts/coverage
+
+      - name: Download pytest reports
+        uses: actions/download-artifact@v4
+        with:
+          name: pytest-reports
+          path: artifacts/test-results
+
+      - name: Generate consolidated test report
+        run: |
+          python scripts/generate_test_report.py `
+            --coverage artifacts/coverage/coverage.xml `
+            --pytest-json artifacts/test-results/pytest-report.json `
+            --bench-json artifacts/pytest-benchmark.json `
+            --perf-json artifacts/performance-metrics.json `
+            --output reports/test-report.md `
+            --badge reports/coverage_badge.svg
+
+      - name: Upload performance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-artifacts
+          path: |
+            artifacts/pytest-benchmark.json
+            artifacts/performance-metrics.json
+            reports/test-report.md
+            reports/coverage_badge.svg
+          if-no-files-found: warn
+
+      - name: Upload benchmark cache
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-benchmark-cache
+          path: .benchmarks
+          if-no-files-found: warn

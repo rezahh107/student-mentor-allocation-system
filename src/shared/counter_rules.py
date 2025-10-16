@@ -9,11 +9,11 @@ import re
 
 _DIGIT_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
-COUNTER_PREFIX_MAP: Final[Mapping[int, str]] = {0: "357", 1: "373"}
+COUNTER_PREFIX_MAP: Final[Mapping[int, str]] = {0: "373", 1: "357"}
 """Normalized mapping gender→prefix.
 
-The canonical mapping ensures male (0) counters start with ``357`` and female
-ones (1) with ``373``. The values are four characters wide strings as expected
+The canonical mapping ensures female (0) counters start with ``373`` and male
+ones (1) with ``357``. The values are four characters wide strings as expected
 by downstream Excel exports and validation layers.
 """
 
@@ -55,4 +55,3 @@ __all__ = [
     "stable_counter_hash",
     "validate_counter",
 ]
-

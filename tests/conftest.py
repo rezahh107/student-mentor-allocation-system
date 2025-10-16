@@ -21,11 +21,29 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from packaging import version
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.fakeredis import FakeStrictRedis
+
+try:
+    import pytest_freezegun
+except Exception:  # pragma: no cover - optional dependency might be missing
+    pytest_freezegun = None  # type: ignore[assignment]
+else:
+    if not getattr(pytest_freezegun, "_smasm_version_patch", False):
+
+        def _patched_get_closest_marker(node: pytest.Node, name: str):
+            """Shim the upstream helper to avoid deprecated distutils usage."""
+
+            if version.parse(pytest.__version__) < version.Version("3.6.0"):
+                return node.get_marker(name)
+            return node.get_closest_marker(name)
+
+        pytest_freezegun.get_closest_marker = _patched_get_closest_marker  # type: ignore[assignment]
+        pytest_freezegun._smasm_version_patch = True  # type: ignore[attr-defined]
 
 try:  # pragma: no cover - بارگذاری اختیاری ردیس واقعی
     from redis import Redis

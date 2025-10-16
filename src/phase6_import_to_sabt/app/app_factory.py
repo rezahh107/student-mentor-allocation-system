@@ -300,43 +300,85 @@ def create_application(
     app.include_router(download_router)
 
     @app.get("/download")
-@app.get("/download")
-async def download_endpoint(
-    signed: str, kid: str, exp: int, sig: str, request: Request
-) -> Response:
-    try:
-        relative_path = container.download_signer.verify_components(
-            signed=signed, kid=kid, exp=exp, sig=sig, now=container.clock.now()
-        )
-    except SignatureError as exc:
-        return JSONResponse(status_code=403, content={"fa_error_envelope":{
-            "code":"DOWNLOAD_FORBIDDEN","message": exc.message_fa}})
+    async def download_endpoint(
+        signed: str,
+        kid: str,
+        exp: int,
+        sig: str,
+        request: Request,
+    ) -> Response:
+        try:
+            relative_path = container.download_signer.verify_components(
+                signed=signed,
+                kid=kid,
+                exp=exp,
+                sig=sig,
+                now=container.clock.now(),
+            )
+        except SignatureError as exc:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_FORBIDDEN",
+                        "message": exc.message_fa,
+                    }
+                },
+            )
 
-    base_dir_value = getattr(request.app.state, "storage_root", None)
-    if not base_dir_value:
-        return JSONResponse(status_code=503, content={"fa_error_envelope":{
-            "code":"DOWNLOAD_UNAVAILABLE","message":"سرویس دانلود در دسترس نیست."}})
+        base_dir_value = getattr(request.app.state, "storage_root", None)
+        if not base_dir_value:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_UNAVAILABLE",
+                        "message": "سرویس دانلود در دسترس نیست.",
+                    }
+                },
+            )
 
-    base_dir = Path(base_dir_value).resolve()
-    if not base_dir.exists():
-        return JSONResponse(status_code=503, content={"fa_error_envelope":{
-            "code":"DOWNLOAD_UNAVAILABLE","message":"سرویس دانلود در دسترس نیست."}})
+        base_dir = Path(base_dir_value).resolve()
+        if not base_dir.exists():
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_UNAVAILABLE",
+                        "message": "سرویس دانلود در دسترس نیست.",
+                    }
+                },
+            )
 
-    target = (base_dir / Path(relative_path)).resolve()
-    try:
-        target.relative_to(base_dir)
-    except ValueError:
-        container.metrics.download_signed_total.labels(outcome="path_violation").inc()
-        return JSONResponse(status_code=403, content={"fa_error_envelope":{
-            "code":"DOWNLOAD_FORBIDDEN","message":"توکن نامعتبر است."}})
+        target = (base_dir / Path(relative_path)).resolve()
+        try:
+            target.relative_to(base_dir)
+        except ValueError:
+            container.metrics.download_signed_total.labels(outcome="path_violation").inc()
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_FORBIDDEN",
+                        "message": "توکن نامعتبر است.",
+                    }
+                },
+            )
 
-    if not target.is_file():
-        container.metrics.download_signed_total.labels(outcome="missing").inc()
-        return JSONResponse(status_code=404, content={"fa_error_envelope":{
-            "code":"DOWNLOAD_NOT_FOUND","message":"فایل موردنظر یافت نشد."}})
+        if not target.is_file():
+            container.metrics.download_signed_total.labels(outcome="missing").inc()
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_NOT_FOUND",
+                        "message": "فایل موردنظر یافت نشد.",
+                    }
+                },
+            )
 
-    container.metrics.download_signed_total.labels(outcome="served").inc()
-    return FileResponse(target, filename=target.name)
+        container.metrics.download_signed_total.labels(outcome="served").inc()
+        return FileResponse(target, filename=target.name)
     install_error_handlers(app)
     configure_middleware(app, container)
 

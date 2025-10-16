@@ -3,4 +3,5 @@ hypothesis>=6.82.0
 pytest-benchmark>=4.0.0
 locust>=2.16.0
 bandit>=1.7.5
+structlog>=24,<25
 safety>=2.3.5

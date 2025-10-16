@@ -16,6 +16,7 @@ from phase6_import_to_sabt.metrics import ExporterMetrics
 from phase6_import_to_sabt.models import NormalizedStudentRow
 from phase6_import_to_sabt.roster import InMemoryRoster
 from phase7_release.deploy import ReadinessGate
+from src.shared.counter_rules import gender_prefix
 
 
 def make_row(
@@ -35,7 +36,7 @@ def make_row(
     mentor_mobile_seq = idx % 100_000
     return NormalizedStudentRow(
         national_id=f"{idx:010d}",
-        counter=f"{str(year)[-2:]}{('357' if gender == 1 else '373')}{seq:04d}",
+        counter=f"{str(year)[-2:]}{gender_prefix(gender)}{seq:04d}",
         first_name=f"Name{idx}",
         last_name=f"Surname{idx}",
         gender=gender,

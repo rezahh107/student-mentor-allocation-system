@@ -23,6 +23,7 @@ from phase6_import_to_sabt.app.clock import Clock
 from phase6_import_to_sabt.app.config import RateLimitConfig
 from phase6_import_to_sabt.app.stores import KeyValueStore, decode_response, encode_response
 from phase6_import_to_sabt.app.timing import Timer
+from phase6_import_to_sabt.app.context import reset_correlation_id, set_correlation_id
 from phase6_import_to_sabt.app.utils import ensure_no_control_chars, normalize_token
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,11 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         correlation_id = header_value or str(uuid.uuid4())
         request.state.correlation_id = correlation_id
         request.state.request_ts = self._clock.now()
-        response = await call_next(request)
+        token = set_correlation_id(correlation_id)
+        try:
+            response = await call_next(request)
+        finally:
+            reset_correlation_id(token)
         response.headers["X-Request-ID"] = correlation_id
         return response
 

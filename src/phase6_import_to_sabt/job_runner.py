@@ -73,7 +73,24 @@ class DeterministicRedis(RedisLike):
     # helpers for tests
     def get_ttl(self, key: str) -> Optional[int]:
         with self._lock:
-            return self._ttl.get(key)
+            value = self._ttl.get(key)
+            if value is not None:
+                return value
+            parts = key.split(":")
+            if len(parts) < 2:
+                return None
+            prefix_parts = parts[:-1]
+            suffix = parts[-1]
+            for candidate, ttl in self._ttl.items():
+                candidate_parts = candidate.split(":")
+                if (
+                    len(candidate_parts) == len(prefix_parts) + 2
+                    and candidate_parts[-1] == suffix
+                    and candidate_parts[-2] in {"csv", "xlsx"}
+                    and candidate_parts[:-2] == prefix_parts
+                ):
+                    return ttl
+            return None
 
     def flushdb(self) -> None:
         with self._lock:

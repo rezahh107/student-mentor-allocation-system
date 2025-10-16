@@ -153,6 +153,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if chain:
                 response.headers["X-Middleware-Chain"] = ",".join(chain)
             return response
+        if request.method.upper() == "HEAD" and request.url.path == "/ui":
+            response = await call_next(request)
+            chain = getattr(request.state, "middleware_chain", [])
+            if chain:
+                response.headers["X-Middleware-Chain"] = ",".join(chain)
+            return response
         if request.url.path == "/metrics":
             provided = _normalize_token(request.headers.get("X-Metrics-Token"))
             if not provided or provided != self._metrics_token:

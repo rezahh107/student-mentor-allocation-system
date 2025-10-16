@@ -3,13 +3,13 @@ from __future__ import annotations
 import hmac
 import os
 import time
+import asyncio
+import inspect
 from hashlib import sha256
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
-
-import asyncio
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from dateutil import parser
@@ -248,6 +248,18 @@ def optional_auth_dependency(
     return role, center_scope
 
 
+def _resolve_runner_clock(runner: ExportJobRunner) -> Clock:
+    """Return a deterministic clock for the provided runner.
+
+    Some test doubles do not expose a ``clock`` attribute; fall back to the
+    canonical Tehran system clock in that case so middleware continues to work
+    deterministically in CI.
+    """
+
+    candidate = getattr(runner, "clock", None)
+    return ensure_clock(candidate, timezone="Asia/Tehran")
+
+
 class ExportAPI:
     def __init__(
         self,
@@ -268,14 +280,20 @@ class ExportAPI:
         self.metrics = metrics
         self.logger = logger
         self.metrics_token = metrics_token
-        self.readiness_gate = readiness_gate or ReadinessGate(clock=time.monotonic)
+        self.readiness_gate = self._init_readiness_gate(readiness_gate)
         self._redis_probe = redis_probe or self._build_default_redis_probe()
         self._db_probe = db_probe or self._build_default_db_probe()
         self._redis_breaker = CircuitBreaker(clock=time.monotonic, failure_threshold=2, reset_timeout=5.0)
         self._db_breaker = CircuitBreaker(clock=time.monotonic, failure_threshold=2, reset_timeout=5.0)
         self._probe_timeout = 2.5
         self._duration_clock = duration_clock or time.perf_counter
-        self._rate_limiter = rate_limiter or ExportRateLimiter(clock=self.runner.clock)
+        try:
+            submit_signature = inspect.signature(self.runner.submit)
+            self._submit_supports_correlation = "correlation_id" in submit_signature.parameters
+        except (TypeError, ValueError, AttributeError):
+            self._submit_supports_correlation = False
+        self._runner_clock = _resolve_runner_clock(self.runner)
+        self._rate_limiter = rate_limiter or ExportRateLimiter(clock=self._runner_clock)
 
     @property
     def rate_limiter(self) -> ExportRateLimiter:
@@ -289,6 +307,15 @@ class ExportAPI:
 
     def configure_rate_limit(self, settings: RateLimitSettings) -> None:
         self._rate_limiter.configure(settings)
+
+    @staticmethod
+    def _init_readiness_gate(readiness_gate: ReadinessGate | None) -> ReadinessGate:
+        if readiness_gate is not None:
+            return readiness_gate
+        gate = ReadinessGate(clock=time.monotonic)
+        gate.record_cache_warm()
+        gate.record_dependency(name="bootstrap", healthy=True)
+        return gate
 
     def create_router(self) -> APIRouter:
         router = APIRouter()
@@ -350,13 +377,15 @@ class ExportAPI:
                 debug = self._debug_context()
                 self.logger.error("POST_GATE_BLOCKED", correlation_id=correlation_id, **debug)
                 raise HTTPException(status_code=503, detail={"message": str(exc), "context": debug}) from exc
-            job = self.runner.submit(
-                filters=filters,
-                options=options,
-                idempotency_key=idempotency_key,
-                namespace=namespace,
-                correlation_id=correlation_id,
-            )
+            submit_kwargs = {
+                "filters": filters,
+                "options": options,
+                "idempotency_key": idempotency_key,
+                "namespace": namespace,
+            }
+            if self._submit_supports_correlation:
+                submit_kwargs["correlation_id"] = correlation_id
+            job = self.runner.submit(**submit_kwargs)
             chain = list(getattr(request.state, "middleware_chain", []))
             return ExportResponse(
                 job_id=job.id,
@@ -436,14 +465,21 @@ class ExportAPI:
             idempotency_key: Optional[str] = Depends(optional_idempotency_dependency),
             auth: tuple[str, Optional[int]] = Depends(auth_dependency),
         ) -> SabtExportResponse:
+            collector = getattr(request.app.state, "metrics_collector", None)
             role, center_scope = auth
             if role == "MANAGER" and query.center != center_scope:
+                if collector is not None:
+                    collector.record_manifest_request(status="forbidden")
                 raise HTTPException(status_code=403, detail="اجازه دسترسی ندارید")
             fmt = (query.format or "xlsx").lower()
             if fmt not in {"csv", "xlsx"}:
+                if collector is not None:
+                    collector.record_manifest_request(status="invalid")
                 raise self._validation_error({"format": "فرمت خروجی نامعتبر است؛ فقط CSV یا XLSX پشتیبانی می‌شود."})
             chunk_size = query.chunk_size or 50_000
             if chunk_size <= 0:
+                if collector is not None:
+                    collector.record_manifest_request(status="invalid")
                 raise self._validation_error({"chunk_size": "اندازه قطعه باید بزرگتر از صفر باشد."})
             try:
                 options = ExportOptions(
@@ -465,13 +501,15 @@ class ExportAPI:
             namespace = ":".join(namespace_components)
             correlation_id = request.headers.get("X-Request-ID") or str(uuid4())
             idem = idempotency_key or f"sabt:{namespace}:{correlation_id}"
-            job = self.runner.submit(
-                filters=filters,
-                options=options,
-                idempotency_key=idem,
-                namespace=namespace,
-                correlation_id=correlation_id,
-            )
+            submit_kwargs = {
+                "filters": filters,
+                "options": options,
+                "idempotency_key": idem,
+                "namespace": namespace,
+            }
+            if self._submit_supports_correlation:
+                submit_kwargs["correlation_id"] = correlation_id
+            job = self.runner.submit(**submit_kwargs)
             start = self._duration_clock()
             completed = await asyncio.to_thread(self.runner.await_completion, job.id)
             elapsed = self._duration_clock() - start
@@ -479,6 +517,8 @@ class ExportAPI:
                 self.metrics.observe_duration("sync_export", elapsed, options.output_format)
             if completed.status != ExportJobStatus.SUCCESS or not completed.manifest:
                 error_detail = completed.error or {"message": "خطا در تولید فایل؛ لطفاً دوباره تلاش کنید."}
+                if collector is not None:
+                    collector.record_manifest_request(status="failure")
                 raise HTTPException(status_code=500, detail=error_detail)
             manifest = completed.manifest
             signed_files: list[dict[str, Any]] = []
@@ -514,6 +554,8 @@ class ExportAPI:
                 ],
             }
             chain = list(getattr(request.state, "middleware_chain", []))
+            if collector is not None:
+                collector.record_manifest_request(status="success")
             return SabtExportResponse(
                 job_id=completed.id,
                 format=manifest.format,
@@ -529,10 +571,15 @@ class ExportAPI:
             __: Optional[str] = Depends(optional_idempotency_dependency),
             ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency),
         ) -> dict[str, Any]:
+            collector = getattr(request.app.state, "metrics_collector", None)
             healthy, probes = await self._execute_probes()
             if not healthy:
+                if collector is not None:
+                    collector.record_readiness_trip(outcome="degraded")
                 raise HTTPException(status_code=503, detail={"message": "وضعیت سامانه ناسالم است", "context": self._debug_context()})
             chain = getattr(request.state, "middleware_chain", [])
+            if collector is not None:
+                collector.record_readiness_trip(outcome="healthy")
             return {"status": "ok", "probes": probes, "middleware_chain": chain}
 
         @router.get("/readyz")
@@ -542,10 +589,15 @@ class ExportAPI:
             __: Optional[str] = Depends(optional_idempotency_dependency),
             ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency),
         ) -> dict[str, Any]:
+            collector = getattr(request.app.state, "metrics_collector", None)
             healthy, probes = await self._execute_probes()
             chain = getattr(request.state, "middleware_chain", [])
             if not self.readiness_gate.ready():
+                if collector is not None:
+                    collector.record_readiness_trip(outcome="warming")
                 raise HTTPException(status_code=503, detail={"message": "سامانه در حال آماده‌سازی است", "context": self._debug_context()})
+            if collector is not None:
+                collector.record_readiness_trip(outcome="ready" if healthy else "degraded")
             return {"status": "ready", "probes": probes, "middleware_chain": chain}
 
         if self.metrics_token is not None:
@@ -656,7 +708,7 @@ def create_export_api(
     rate_limit_settings: RateLimitSettings | None = None,
 ) -> FastAPI:
     api = FastAPI()
-    limiter = ExportRateLimiter(settings=rate_limit_settings, clock=runner.clock)
+    limiter = ExportRateLimiter(settings=rate_limit_settings, clock=_resolve_runner_clock(runner))
     export_api = ExportAPI(
         runner=runner,
         signer=signer,

@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Verify Git Sync",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "-m",
+        "git_sync_verifier.cli",
+        "verify",
+        "--path",
+        "${workspaceFolder}",
+        "--remote",
+        "https://github.com/rezahh107/student-mentor-allocation-system.git",
+        "--out",
+        "${workspaceFolder}/artifacts",
+        "--open-md"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -82,9 +82,13 @@ def fold_digits(value: str) -> str:
     return "".join(PERSIAN_DIGITS.get(ch, ch) for ch in value)
 
 
-def sanitize_text(value: Optional[str]) -> str:
+def sanitize_text(value: Optional[object]) -> str:
     if value is None:
         return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    elif not isinstance(value, str):
+        value = str(value)
     if value and value.isascii():
         stripped = value.strip()
         if all(" " <= ch <= "~" for ch in stripped):
@@ -93,7 +97,7 @@ def sanitize_text(value: Optional[str]) -> str:
     normalized = normalized.replace("ي", "ی").replace("ك", "ک")
     for zw in ZERO_WIDTH:
         normalized = normalized.replace(zw, "")
-    normalized = normalized.replace("\r", " ").replace("\n", " ")
+    normalized = normalized.replace("\r", " ").replace("\n", " ").replace("\t", " ")
     normalized = CONTROL_RE.sub("", normalized)
     normalized = fold_digits(normalized)
     return normalized.strip()
@@ -101,8 +105,8 @@ def sanitize_text(value: Optional[str]) -> str:
 
 def sanitize_phone(value: Optional[str]) -> str:
     text = sanitize_text(value)
-    text = fold_digits(text)
-    return text
+    digits_only = "".join(ch for ch in fold_digits(text) if ch.isdigit())
+    return digits_only
 
 
 def guard_formula(value: str) -> str:

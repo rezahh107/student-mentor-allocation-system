@@ -23,6 +23,7 @@ XlsxWriter>=3.1.0
 # System
 psutil>=5.9.0
 pywebview>=4.4.0
+platformdirs>=4.3.6
 
 # Network
 websockets>=10.0

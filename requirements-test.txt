@@ -1,0 +1,17 @@
+# ═══════════════════════════════════════════════════════════════
+# Windows CI Test Dependencies
+# Aggregates the application stack plus pytest add-ons required by CI.
+# ═══════════════════════════════════════════════════════════════
+
+-r requirements.txt
+
+# Deterministic test execution & retries
+pytest-rerunfailures>=13.0.0
+pytest-randomly>=3.12.0
+
+# Coverage tooling (ensure reports available on Windows)
+coverage[toml]>=7.4.0
+
+# Benchmarking & reporting
+pytest-benchmark[histogram]>=4.0.0
+

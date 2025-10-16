@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Mapping
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
 
@@ -32,7 +32,7 @@ from phase6_import_to_sabt.download_api import (
 from phase6_import_to_sabt.obs.metrics import ServiceMetrics, build_metrics, render_metrics
 from phase6_import_to_sabt.security.config import AccessConfigGuard, ConfigGuardError, SigningKeyDefinition, TokenDefinition
 from phase6_import_to_sabt.security.rbac import TokenRegistry
-from phase6_import_to_sabt.security.signer import DualKeySigner, SigningKeySet
+from phase6_import_to_sabt.security.signer import DualKeySigner, SignatureError, SigningKeySet
 from phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 from phase6_import_to_sabt.app.probes import AsyncProbe, ProbeResult
 from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore, KeyValueStore
@@ -229,6 +229,81 @@ def create_application(
         metrics=download_metrics,
     )
     app.include_router(download_router)
+
+    @app.get("/download")
+    async def download_endpoint(signed: str, kid: str, exp: int, sig: str) -> Response:
+        try:
+            relative_path = container.download_signer.verify_components(
+                signed=signed,
+                kid=kid,
+                exp=exp,
+                sig=sig,
+                now=container.clock.now(),
+            )
+        except SignatureError as exc:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_FORBIDDEN",
+                        "message": exc.message_fa,
+                    }
+                },
+            )
+
+        base_dir_value = getattr(app.state, "storage_root", None)
+        if base_dir_value is None:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_UNAVAILABLE",
+                        "message": "سرویس دانلود در دسترس نیست.",
+                    }
+                },
+            )
+
+        base_dir = Path(base_dir_value).resolve()
+        if not base_dir.exists():
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_UNAVAILABLE",
+                        "message": "سرویس دانلود در دسترس نیست.",
+                    }
+                },
+            )
+
+        target = (base_dir / Path(relative_path)).resolve()
+        try:
+            target.relative_to(base_dir)
+        except ValueError:
+            container.metrics.download_signed_total.labels(outcome="path_violation").inc()
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_FORBIDDEN",
+                        "message": "توکن نامعتبر است.",
+                    }
+                },
+            )
+
+        if not target.is_file():
+            container.metrics.download_signed_total.labels(outcome="missing").inc()
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "fa_error_envelope": {
+                        "code": "DOWNLOAD_NOT_FOUND",
+                        "message": "فایل موردنظر یافت نشد.",
+                    }
+                },
+            )
+
+        container.metrics.download_signed_total.labels(outcome="served").inc()
+        return FileResponse(target, filename=target.name)
     install_error_handlers(app)
     configure_middleware(app, container)
 

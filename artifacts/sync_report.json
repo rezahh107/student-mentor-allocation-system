@@ -1,0 +1,41 @@
+{
+  "correlation_id": "d9436c7c-421e-4475-a610-85dcbdf93dcd",
+  "path": "/workspaces/SMASM",
+  "remote_expected": "https://github.com/rezahh107/student-mentor-allocation-system.git",
+  "remote_actual": "https://github.com/rezahh107/student-mentor-allocation-system.git",
+  "default_branch": "main",
+  "branch_checked": "main",
+  "head_local": "676f554d95c9a2ff48c31ffb461a281fbf186f4f",
+  "head_remote": "76dc788b4c155f1b2aa191ad4bfa1a616073a200",
+  "ahead": 2,
+  "behind": 2,
+  "dirty": false,
+  "untracked_count": 0,
+  "submodules": [],
+  "lfs": {
+    "present": false,
+    "pointer_mismatches": 0
+  },
+  "tags_aligned": true,
+  "shallow": false,
+  "detached": false,
+  "repo_root": "/workspaces/SMASM",
+  "timing_ms": 4110,
+  "metrics": {
+    "fetch_attempts": 1,
+    "retries": 0
+  },
+  "status": "diverged",
+  "exit_code": 4,
+  "evidence": [
+    "git.remote.show:origin",
+    "git.rev-parse:HEAD",
+    "git.status:porcelain",
+    "AGENTS.md::Project TL;DR"
+  ],
+  "middleware_trace": [
+    "RateLimit",
+    "Idempotency",
+    "Auth"
+  ]
+}

@@ -93,17 +93,6 @@ def verify(
     raise typer.Exit(outcome.exit_code)
 
 
-def main() -> None:
-    """CLI wrapper for console_scripts compatibility."""
-    if len(sys.argv) > 1 and sys.argv[1].lower() == "verify":
-        sys.argv = [sys.argv[0], *sys.argv[2:]]
-    app()
-
-
-if __name__ == "__main__":
-    main()
-
-
 def _open_markdown(outcome, options: SyncOptions) -> None:
     md_path = (options.out_dir or Path(outcome.report["repo_root"])) / "sync_report.md"
     if not md_path.exists():
@@ -125,3 +114,14 @@ def _open_markdown(outcome, options: SyncOptions) -> None:
     except Exception:
         # Silent failure; task still succeeds.
         pass
+
+
+def main() -> None:
+    """CLI wrapper for console_scripts compatibility."""
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "verify":
+        sys.argv = [sys.argv[0], *sys.argv[2:]]
+    app()
+
+
+if __name__ == "__main__":
+    main()

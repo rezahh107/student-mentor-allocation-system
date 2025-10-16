@@ -44,6 +44,7 @@ dependencies = [
     "platformdirs>=3.11",
     "tzdata>=2024.1",
     "jsonschema>=4.23",
+    "orjson>=3.11,<4",
     "pywebview>=4.4",
 ]
 

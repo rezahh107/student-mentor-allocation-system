@@ -8,6 +8,6 @@
     "CI_INSTALL_CMD": "python -m pip --version",
     "CI_TEST_CMD": "python -m pytest --version"
   },
-  "postCreateCommand": "bash -lc \"python -m ci_orchestrator.main install || true; python -m tools.strict_score_guard --phase synthesize --if-missing --json reports/strict_score.json\"",
+  "postCreateCommand": "bash -lc \"python -m pip install -e . && (python -m ci_orchestrator.main install || true); python -m tools.strict_score_guard --phase synthesize --if-missing --json reports/strict_score.json\"",
   "postStartCommand": "bash -lc \"python -m ci_orchestrator.main test || true; python -m tools.strict_score_guard --phase synthesize --if-missing --json reports/strict_score.json\""
 }

@@ -130,6 +130,7 @@ class ExportWriter:
             "normalized": True,
             "digit_folded": True,
             "formula_guard": self._formula_guard,
+            "always_quote": bool(self._sensitive),
             "always_quote_columns": list(self._sensitive),
             "newline": self._newline,
             "bom": self._include_bom,

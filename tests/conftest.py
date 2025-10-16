@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-pytest_plugins = ("tests.fixtures.state",)
+pytest_plugins = ("tests.fixtures.state", "tests.fixtures.retry")
 
 LEGACY_MARKERS: tuple[str, ...] = (
     "slow",

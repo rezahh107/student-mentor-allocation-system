@@ -1,0 +1,18 @@
+<service>
+  <id>StudentMentorService</id>
+  <name>Student Mentor Service</name>
+  <description>StudentMentor FastAPI backend</description>
+
+  <executable>E:\SMASM\.venv\Scripts\python.exe</executable>
+  <arguments>-m windows_service.controller run --port 25119</arguments>
+  <workingdirectory>E:\SMASM</workingdirectory>
+
+  <logpath>E:\SMASM\windows_service</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10MB</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <stoptimeout>20sec</stoptimeout>
+
+  <env name="PYTHONUTF8" value="1" />
+</service>

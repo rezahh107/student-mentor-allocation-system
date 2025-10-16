@@ -71,8 +71,16 @@ jobs:
           if (-not $tests) { throw 'No tests specified for Windows smoke suite.' }
           Write-Host "Running pytest with $($tests.Count) targets"
           python .\tools\pytest_config_diagnostics.py --tests $tests --json
-          $pytestArgs = @('--maxfail=1', '-n', '1', '-q', '--override-ini=addopts=') + $tests
-          Write-Host "Executing: python -m pytest $($pytestArgs -join ' ')"
+if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+    $workerArgs = @('-n', 'auto', '--dist=loadscope')
+} else {
+    $workerArgs = @('-n', '1')
+}
+
+$pytestArgs = @('--maxfail=1', '-q', '--override-ini', 'addopts=') + $workerArgs + $tests
+Write-Host "Executing: python -m pytest $($pytestArgs -join ' ')"
+python -m pytest @pytestArgs
+
           & python -m pytest @pytestArgs
 
       - name: Run integration tests with state cleanup

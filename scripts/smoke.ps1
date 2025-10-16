@@ -21,9 +21,11 @@ function Get-SimpleEnvValues {
     $result = @{}
     if (-not (Test-Path -Path $Path)) { return $result }
     foreach ($line in Get-Content -Path $Path -Encoding UTF8) {
-        $t = $line.Trim(); if([string]::IsNullOrWhiteSpace($t)) {continue}
-        if($t.StartsWith('#')) {continue}
-        $i = $t.IndexOf('='); if($i -lt 1){continue}
+        $t = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($t)) { continue }
+        if ($t.StartsWith('#')) { continue }
+        $i = $t.IndexOf('=')
+        if ($i -lt 1) { continue }
         $key = $t.Substring(0,$i).Trim().ToLowerInvariant()
         $val = $t.Substring($i+1).Trim()
         if ($val.StartsWith('"') -and $val.EndsWith('"') -and $val.Length -ge 2) {
@@ -35,11 +37,25 @@ function Get-SimpleEnvValues {
 }
 
 function Test-TcpPortOpen {
-    param([Parameter(Mandatory=$true)][string]$TargetHost,[Parameter(Mandatory=$true)][int]$Port,[int]$TimeoutMs=500)
-    $c=$null
-    try{ $c=New-Object System.Net.Sockets.TcpClient; $a=$c.BeginConnect($TargetHost,$Port,$null,$null)
-        if(-not $a.AsyncWaitHandle.WaitOne($TimeoutMs)){return $false}
-        $c.EndConnect($a) | Out-Null; return $true } catch { return $false } finally { if($c){$c.Dispose()} }
+    param(
+        [Parameter(Mandatory=$true)][string]$TargetHost,
+        [Parameter(Mandatory=$true)][int]$Port,
+        [int]$TimeoutMs=500
+    )
+    $c = $null
+    try {
+        $c = New-Object System.Net.Sockets.TcpClient
+        $a = $c.BeginConnect($TargetHost, $Port, $null, $null)
+        if (-not $a.AsyncWaitHandle.WaitOne($TimeoutMs)) {
+            return $false
+        }
+        $c.EndConnect($a) | Out-Null
+        return $true
+    } catch {
+        return $false
+    } finally {
+        if ($c) { $c.Dispose() }
+    }
 }
 
 function Invoke-HttpHeadOrGet {
@@ -190,7 +206,7 @@ function Invoke-HttpHeadOrGet {
     }
 
     if ($creationError) { throw $creationError }
-    throw "درخواست به $Uri پاسخی دریافت نکرد."
+    throw "No response received from $Uri"
 }
 
 function Write-ResponseSnippet {
@@ -198,7 +214,7 @@ function Write-ResponseSnippet {
     if ([string]::IsNullOrWhiteSpace($Content)) { return }
     $length = [Math]::Min(200, $Content.Length)
     $snippet = $Content.Substring(0, $length).Replace("`r", ' ').Replace("`n", ' ').Trim()
-    Write-Host "… پاسخ: $snippet" -ForegroundColor DarkGray
+    Write-Host "... Response: $snippet" -ForegroundColor DarkGray
 }
 
 function Get-PowerShellExecutable {
@@ -206,7 +222,7 @@ function Get-PowerShellExecutable {
     if ($pwsh) { return $pwsh.Source }
     $winps = Get-Command -Name 'powershell.exe' -ErrorAction SilentlyContinue
     if ($winps) { return $winps.Source }
-    throw 'هیچ‌یک از pwsh یا powershell.exe در PATH موجود نیستند.'
+    throw 'Neither pwsh nor powershell.exe found in PATH'
 }
 
 Push-Location -Path $repoRoot
@@ -214,14 +230,18 @@ try {
     $envFilePath = Join-Path $repoRoot '.env.dev'
     $envValues   = Get-SimpleEnvValues -Path $envFilePath
 
-    # ✅ Prefer JSON object if present: IMPORT_TO_SABT_AUTH={"service_token": "...", "metrics_token": "..."}
+    # Prefer JSON object if present: IMPORT_TO_SABT_AUTH={"service_token": "...", "metrics_token": "..."}
     if (-not $ServiceToken -and $envValues.ContainsKey('import_to_sabt_auth')) {
-        try { $authObj = $envValues['import_to_sabt_auth'] | ConvertFrom-Json
-              if ($authObj.service_token) { $ServiceToken = "$($authObj.service_token)" } } catch {}
+        try {
+            $authObj = $envValues['import_to_sabt_auth'] | ConvertFrom-Json
+            if ($authObj.service_token) { $ServiceToken = "$($authObj.service_token)" }
+        } catch {}
     }
     if (-not $MetricsToken -and $envValues.ContainsKey('import_to_sabt_auth')) {
-        try { $authObj = $envValues['import_to_sabt_auth'] | ConvertFrom-Json
-              if ($authObj.metrics_token) { $MetricsToken = "$($authObj.metrics_token)" } } catch {}
+        try {
+            $authObj = $envValues['import_to_sabt_auth'] | ConvertFrom-Json
+            if ($authObj.metrics_token) { $MetricsToken = "$($authObj.metrics_token)" }
+        } catch {}
     }
 
     # Fallbacks (dev defaults)
@@ -231,63 +251,77 @@ try {
     $baseUri = $Base.TrimEnd('/')
     $hostUri = [System.Uri]::new($baseUri)
     $port    = $hostUri.Port
-    $targetHost    = if ($hostUri.Host) { $hostUri.Host } else { '127.0.0.1' }
+    $targetHost = if ($hostUri.Host) { $hostUri.Host } else { '127.0.0.1' }
 
     if (-not (Test-TcpPortOpen -TargetHost $targetHost -Port $port)) {
-        Write-Host "🔄 سرویس در دسترس نیست؛ تلاش برای اجرای Start-App.ps1" -ForegroundColor Yellow
+        Write-Host "[INFO] Service not available; attempting to run Start-App.ps1" -ForegroundColor Yellow
         $startApp = Join-Path $repoRoot 'Start-App.ps1'
-        if (-not (Test-Path -Path $startApp)) { throw "Start-App.ps1 در مسیر $startApp پیدا نشد." }
+        if (-not (Test-Path -Path $startApp)) {
+            throw "Start-App.ps1 not found at $startApp"
+        }
 
         $psExe = Get-PowerShellExecutable
-        $args  = ($psExe -like '*pwsh*')
-            ? @('-NoLogo','-NoProfile','-File',$startApp)
-            : @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$startApp)
+        $args  = if ($psExe -like '*pwsh*') {
+            @('-NoLogo','-NoProfile','-File',$startApp)
+        } else {
+            @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$startApp)
+        }
 
         $p = Start-Process -FilePath $psExe -ArgumentList $args -Wait -PassThru
-        if ($p.ExitCode -ne 0) { throw "Start-App.ps1 با کد خروج $($p.ExitCode) خاتمه یافت." }
+        if ($p.ExitCode -ne 0) {
+            throw "Start-App.ps1 exited with code $($p.ExitCode)"
+        }
         Start-Sleep -Seconds 2
         if (-not (Test-TcpPortOpen -TargetHost $targetHost -Port $port -TimeoutMs 1000)) {
-            throw "پورت $port روی $targetHost پس از اجرای Start-App.ps1 نیز باز نشد."
+            throw "Port $port on $targetHost still not open after Start-App.ps1"
         }
     }
 
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSec)
     $readyUri = "$baseUri/readyz"
     $ready = $false
-    Write-Host "→ checking /readyz ..." -ForegroundColor DarkGray
+    Write-Host "-> Checking /readyz ..." -ForegroundColor DarkGray
     while ([DateTime]::UtcNow -lt $deadline) {
         try {
             $r = Invoke-HttpHeadOrGet -Uri $readyUri -TimeoutMs 2000 -Method 'HEAD'
-            if ($r.StatusCode -eq 200) { $ready = $true; break }
+            if ($r.StatusCode -eq 200) {
+                $ready = $true
+                break
+            }
+        } catch {
+            Start-Sleep -Milliseconds 500
         }
-        catch { Start-Sleep -Milliseconds 500 }
         Start-Sleep -Milliseconds 500
     }
-    if (-not $ready) { throw "مهلت $TimeoutSec ثانیه‌ای برای دریافت پاسخ 200 از /readyz به پایان رسید." }
+    if (-not $ready) {
+        throw "Timeout ($TimeoutSec seconds) waiting for 200 from /readyz"
+    }
 
     $healthUri    = "$baseUri/ui/health"
     $healthHeader = @{ Authorization = "Bearer $ServiceToken" }
-    Write-Host "→ checking /ui/health ..." -ForegroundColor DarkGray
+    Write-Host "-> Checking /ui/health ..." -ForegroundColor DarkGray
     $h = Invoke-HttpHeadOrGet -Uri $healthUri -Headers $healthHeader -TimeoutMs 3000
     if ($h.StatusCode -ne 200) {
         Write-ResponseSnippet -Content $h.Content
-        throw "/ui/health پاسخ غیر 200 برگرداند (StatusCode=$($h.StatusCode))."
+        throw "/ui/health returned non-200 status (StatusCode=$($h.StatusCode))"
     }
 
     $metricsUri    = "$baseUri/metrics"
     $metricsHeader = @{ 'X-Metrics-Token' = $MetricsToken }
-    Write-Host "→ checking /metrics ..." -ForegroundColor DarkGray
+    Write-Host "-> Checking /metrics ..." -ForegroundColor DarkGray
     $m = Invoke-HttpHeadOrGet -Uri $metricsUri -Headers $metricsHeader -TimeoutMs 3000
     if ($m.StatusCode -ne 200) {
         Write-ResponseSnippet -Content $m.Content
-        throw "/metrics پاسخ غیر 200 برگرداند (StatusCode=$($m.StatusCode))."
+        throw "/metrics returned non-200 status (StatusCode=$($m.StatusCode))"
     }
 
-    Write-Host "✅ Smoke OK" -ForegroundColor Green
+    Write-Host "[PASS] Smoke test completed successfully" -ForegroundColor Green
 }
 catch {
     $exitCode = 1
-    Write-Error "❌ تست دود شکست خورد: $($_.Exception.Message)"
+    Write-Error "[FAIL] Smoke test failed: $($_.Exception.Message)"
 }
-finally { Pop-Location }
+finally {
+    Pop-Location
+}
 exit $exitCode

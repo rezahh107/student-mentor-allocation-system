@@ -1,51 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="3" failures="0" skipped="0" tests="3" time="117.959" timestamp="2025-10-15T11:45:02.731643+00:00" hostname="19bee1a8a7a9"><testcase classname="" name="tests.api.test_counter_errors_fa" time="0.000"><error message="collection failure">ImportError while importing test module '/workspaces/SMASM/tests/api/test_counter_errors_fa.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/api/test_counter_errors_fa.py:8: in &lt;module&gt;
-    from src.hardened_api.observability import metrics_registry_guard
-src/hardened_api/__init__.py:3: in &lt;module&gt;
-    from .api import create_app
-src/hardened_api/api.py:21: in &lt;module&gt;
-    from src.phase3_allocation.allocation_tx import AtomicAllocator, AllocationRequest
-src/phase3_allocation/__init__.py:3: in &lt;module&gt;
-    from .allocation_tx import (
-src/phase3_allocation/allocation_tx.py:15: in &lt;module&gt;
-    from src.infrastructure.persistence.models import AllocationRecord, MentorModel, StudentModel
-src/infrastructure/persistence/models.py:27: in &lt;module&gt;
-    from src.audit.models import AuditEvent as _AuditEventTable
-src/audit/__init__.py:6: in &lt;module&gt;
-    from .api import create_audit_api
-src/audit/api.py:20: in &lt;module&gt;
-    from .exporter import AuditExporter
-src/audit/exporter.py:12: in &lt;module&gt;
-    from src.phase7_release.hashing import sha256_file
-src/phase7_release/__init__.py:5: in &lt;module&gt;
-    from .release_builder import ReleaseBuilder, ReleaseArtifacts, ReleaseBundle
-src/phase7_release/release_builder.py:21: in &lt;module&gt;
-    from .perf_harness import PerfBaseline, PerfHarness
-src/phase7_release/perf_harness.py:13: in &lt;module&gt;
-    import psutil
-E   ModuleNotFoundError: No module named 'psutil'</error></testcase><testcase classname="" name="tests.api.test_exports_api" time="0.000"><error message="collection failure">ImportError while importing test module '/workspaces/SMASM/tests/api/test_exports_api.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/api/test_exports_api.py:5: in &lt;module&gt;
-    from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
-src/phase6_import_to_sabt/api.py:15: in &lt;module&gt;
-    from dateutil import parser
-E   ModuleNotFoundError: No module named 'dateutil'</error></testcase><testcase classname="" name="tests.api.test_idempotency_policy" time="0.000"><error message="collection failure">ImportError while importing test module '/workspaces/SMASM/tests/api/test_idempotency_policy.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/api/test_idempotency_policy.py:5: in &lt;module&gt;
-    from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
-src/phase6_import_to_sabt/api.py:15: in &lt;module&gt;
-    from dateutil import parser
-E   ModuleNotFoundError: No module named 'dateutil'</error></testcase></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="142.742" timestamp="2025-10-15T20:17:36.595768+00:00" hostname="5524e83e7c4a"><testcase classname="tests.test_counter" name="test_counter_format" time="0.096"><failure message="AssertionError: assert '043730042' == '043570042'&#10;  &#10;  - 043570042&#10;  ?    -&#10;  + 043730042&#10;  ?     +">tests/test_counter.py:12: in test_counter_format
+    assert c.value == "043570042"
+E   AssertionError: assert '043730042' == '043570042'
+E     
+E     - 043570042
+E     ?    -
+E     + 043730042
+E     ?     +
+        c          = Counter(value='043730042')</failure></testcase></testsuite></testsuites>

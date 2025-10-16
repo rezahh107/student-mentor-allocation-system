@@ -1,0 +1,104 @@
+{
+  "correlation_id": "458b21ff6e4b47bfa323605172a77d4b",
+  "summary": {
+    "passed": 0,
+    "failed": 0,
+    "xfailed": 0,
+    "skipped": 0,
+    "warnings": 0
+  },
+  "spec_compliance": [
+    {
+      "name": "Middleware order RateLimit → Idempotency → Auth",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "Tehran timezone clock injection",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "Prometheus registry reset per test",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "Retry backoff namespaced keys",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "JSON log masking",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "Retry exhaustion counters",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "Excel formula guard",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "Atomic artifact writes",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "Orchestrator overhead budget",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "Persian warning envelopes",
+      "status": false,
+      "evidence": null
+    },
+    {
+      "name": "Warnings policy enforcement",
+      "status": false,
+      "evidence": null
+    }
+  ],
+  "integration_quality": {
+    "state_cleanup": false,
+    "retry": false,
+    "debug": false,
+    "middleware": false,
+    "concurrent": false
+  },
+  "runtime": {
+    "dirty_state": false,
+    "rate_limit": false,
+    "timing": false,
+    "ci_ready": false
+  },
+  "axes": {
+    "Perf": {
+      "raw": 49.0,
+      "deductions": 32.0,
+      "max": 49.0
+    },
+    "Excel": {
+      "raw": 46.0,
+      "deductions": 0.0,
+      "max": 46.0
+    },
+    "GUI": {
+      "raw": 0.0,
+      "deductions": 0.0,
+      "max": 0.0
+    },
+    "Sec": {
+      "raw": 5.0,
+      "deductions": 2.0,
+      "max": 5.0
+    }
+  },
+  "caps": [],
+  "next_actions": []
+}

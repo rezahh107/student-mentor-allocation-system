@@ -30,11 +30,12 @@ from src.fakeredis import FakeStrictRedis
 try:  # pragma: no cover - بارگذاری اختیاری ردیس واقعی
     from redis import Redis
     from redis.exceptions import RedisError
-except Exception:  # pragma: no cover - محیط بدون کتابخانه redis
+except Exception:  # pragma: no cover - محیط بدون کلاینت redis
     Redis = None  # type: ignore[assignment]
     RedisError = Exception  # type: ignore[assignment]
 
-pytest_plugins = ("tests.fixtures.state",)
+pytest_plugins = ("tests.fixtures.state", "tests.fixtures.retry")
+
 
 LEGACY_MARKERS: tuple[str, ...] = (
     "slow",

@@ -5,6 +5,38 @@
 - Use `activate.bat` (Windows) or `source ./activate.sh` (macOS/Linux) before working in a new shell.
 - Launch diagnostics with `python scripts/environment_doctor.py` to validate the environment and apply optional fixes.
 
+<!--dev-quick-start:start-->
+
+## Quick Start (Dev)
+
+### پیش‌نیازها
+- Python 3.11
+- (اختیاری) Docker Compose برای Redis/Postgres
+
+### نصب
+```bash
+pip install -r requirements.txt
+cp -n .env.example .env.dev
+export SIGNING_KEY_HEX=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+### دیتابیس‌ها (اختیاری)
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### اجرا
+```bash
+uvicorn main:app --host 127.0.0.1 --port 25119 --env-file .env.dev
+```
+
+### اسموک‌تست
+```bash
+METRICS_TOKEN=dev-metrics scripts/smoke.sh
+```
+
+<!--dev-quick-start:end-->
+
 ## FastAPI Hardened Service Configuration
 - `REDIS_NAMESPACE` و `REDIS_URL` برای تفکیک فضای کلید و اتصال به Redis استفاده می‌شوند؛ در CI مقدار `REDIS_URL` از سرویس `redis:7` تزریق می‌گردد.
 - سیاست Retry Redis از طریق متغیرهای `REDIS_MAX_RETRIES` (پیش‌فرض ۳)، `REDIS_BASE_DELAY_MS`، `REDIS_MAX_DELAY_MS` و `REDIS_JITTER_MS` قابل تنظیم است.

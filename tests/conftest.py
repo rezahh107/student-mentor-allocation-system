@@ -3,14 +3,36 @@
 from __future__ import annotations
 
 import ast
+import asyncio
+import contextlib
+import functools
+import hashlib
+import inspect
+import logging
 import os
+import time
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Iterator, NamedTuple
+from typing import Any, Callable, Iterator, NamedTuple, TypeVar, cast
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
+
+from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
+
+from src.fakeredis import FakeStrictRedis
+
+try:  # pragma: no cover - بارگذاری اختیاری ردیس واقعی
+    from redis import Redis
+    from redis.exceptions import RedisError
+except Exception:  # pragma: no cover - محیط بدون کتابخانه redis
+    Redis = None  # type: ignore[assignment]
+    RedisError = Exception  # type: ignore[assignment]
 
 pytest_plugins = ("tests.fixtures.state",)
 
@@ -62,11 +84,13 @@ _ALLOWED_RELATIVE_TESTS: tuple[str, ...] = (
     "tests/windows/test_webview_hint.py",
     "tests/windows/test_wait_for_backend_clock.py",
     "tests/windows/test_spawn_e2e.py",
+    "tests/integration/test_middleware_order.py",
     "tests/spec/test_normalization_edgecases.py",
     "tests/spec/test_business_rules.py",
     "tests/spec/test_excel_exporter_safety.py",
     "tests/spec/test_security_smoke.py",
     "tests/spec/test_excel_perf_smoke.py",
+    "tests/spec/test_persian_excel_rules.py",
 )
 
 _ALLOWED_DIRECTORIES = {
@@ -84,6 +108,96 @@ _ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _ROOT / "src"
 _CLOCK_ALLOWLIST = {(_SRC_ROOT / "core" / "clock.py").resolve()}
 _SCAN_DIRECTORIES = [(_SRC_ROOT / "phase6_import_to_sabt").resolve()]
+
+
+logger = logging.getLogger("tests.quality")
+_T = TypeVar("_T")
+
+
+@dataclass(slots=True)
+class RedisSandbox:
+    """جعبه‌شن تعیین‌کننده فضای نام ایزوله برای آزمون‌های وابسته به ردیس."""
+
+    client: Any
+    namespace: str
+    provider: str
+
+    def key(self, suffix: str) -> str:
+        """کلید نام‌گذاری‌شده با فضای نام یکتا تولید می‌کند."""
+
+        scoped = f"{self.namespace}:{suffix}"
+        return scoped
+
+    def namespace_keys(self) -> list[str]:
+        """فهرست کلیدهای باقی‌مانده در فضای نام فعلی را برمی‌گرداند."""
+
+        pattern = f"{self.namespace}:*"
+        try:
+            if hasattr(self.client, "scan_iter"):
+                items = [self._ensure_text(item) for item in self.client.scan_iter(pattern)]
+            else:
+                items = [self._ensure_text(item) for item in self.client.keys(pattern)]
+        except Exception as exc:  # pragma: no cover - فقط برای لاگ‌گیری
+            logger.warning(
+                "بازیابی کلیدهای ردیس با شکست مواجه شد",
+                extra={"namespace": self.namespace, "provider": self.provider, "خطا": str(exc)},
+            )
+            return []
+        return sorted(items)
+
+    def flush(self) -> None:
+        """پایگاه ردیس را به‌صورت ایمن تخلیه می‌کند."""
+
+        try:
+            self.client.flushdb()
+        except Exception as exc:  # pragma: no cover - فقط برای گزارش خطا
+            logger.error(
+                "تخلیه ردیس ناموفق بود",
+                extra={"namespace": self.namespace, "provider": self.provider, "خطا": str(exc)},
+            )
+            raise
+
+    def close(self) -> None:
+        """اتصال ردیس را بدون ایجاد خطا می‌بندد."""
+
+        closer = getattr(self.client, "close", None)
+        if callable(closer):
+            with contextlib.suppress(Exception):
+                closer()
+
+    @staticmethod
+    def _ensure_text(value: Any) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="ignore")
+        return str(value)
+
+
+def _redis_dsn() -> str:
+    """آدرس اتصال ردیس را با اولویت متغیرهای محیطی برمی‌گرداند."""
+
+    return os.getenv("TEST_REDIS_URL") or os.getenv("REDIS_URL") or "redis://127.0.0.1:6379/15"
+
+
+def _initialise_redis(namespace: str) -> RedisSandbox:
+    """نمونه ردیس را با مدیریت خطا و گزارش فارسی فراهم می‌کند."""
+
+    dsn = _redis_dsn()
+    if Redis is not None:
+        try:
+            client = Redis.from_url(dsn, decode_responses=True)
+            client.ping()
+            sandbox = RedisSandbox(client=client, namespace=namespace, provider=f"redis:{dsn}")
+            sandbox.flush()
+            return sandbox
+        except Exception as exc:  # pragma: no cover - وابسته به محیط CI
+            logger.warning(
+                "ردیس واقعی در دسترس نیست؛ به نسخه حافظه‌ای سقوط می‌کنیم",
+                extra={"dsn": dsn, "خطا": str(exc)},
+            )
+    fake = FakeStrictRedis()
+    sandbox = RedisSandbox(client=fake, namespace=namespace, provider="fakeredis")
+    sandbox.flush()
+    return sandbox
 
 
 def pytest_addoption(parser):  # type: ignore[no-untyped-def]
@@ -130,6 +244,169 @@ def clock() -> Iterator[DeterministicClock]:
     instance = DeterministicClock()
     yield instance
     instance.reset()
+
+
+@pytest.fixture()
+def clean_redis_state() -> Iterator[RedisSandbox]:
+    """پیش و پس از هر آزمون پایگاه ردیس را تخلیه و ردیابی می‌کند."""
+
+    namespace = f"tests:{uuid4().hex}"
+    sandbox = _initialise_redis(namespace)
+    logger.debug(
+        "آغاز آزمون با فضای نام ردیس",
+        extra={"namespace": namespace, "provider": sandbox.provider},
+    )
+    try:
+        yield sandbox
+    finally:
+        leaked = sandbox.namespace_keys()
+        try:
+            sandbox.flush()
+        except Exception as exc:
+            logger.error(
+                "پاکسازی ردیس در پایان آزمون شکست خورد",
+                extra={"namespace": namespace, "provider": sandbox.provider, "خطا": str(exc)},
+            )
+            pytest.fail(
+                f"پاکسازی ردیس برای فضای نام {namespace} با شکست مواجه شد: {exc}",
+            )
+        finally:
+            sandbox.close()
+        if leaked:
+            logger.error(
+                "کلیدهای باقی‌مانده پس از آزمون", extra={"namespace": namespace, "keys": leaked}
+            )
+            pytest.fail(
+                "کلیدهای ردیس پس از آزمون پاک نشدند: "
+                + ", ".join(leaked)
+            )
+
+
+@pytest.fixture()
+def db_session() -> Iterator[Session]:
+    """جلسهٔ پایگاه‌داده درون‌حافظه‌ای با تراکنش قابل بازگشت ایجاد می‌کند."""
+
+    try:
+        engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    except SQLAlchemyError as exc:  # pragma: no cover - خطای ایجاد اتصال
+        pytest.fail(f"ایجاد موتور پایگاه‌داده برای آزمون ممکن نشد: {exc}")
+    connection = engine.connect()
+    transaction = connection.begin()
+    factory = sessionmaker(bind=connection, expire_on_commit=False, future=True)
+    session = factory()
+    logger.debug("آغاز تراکنش آزمایشی پایگاه‌داده", extra={"transaction": id(transaction)})
+    try:
+        yield session
+        session.flush()
+    except Exception:
+        with contextlib.suppress(Exception):
+            session.rollback()
+        raise
+    finally:
+        with contextlib.suppress(Exception):
+            session.rollback()
+        session.close()
+        with contextlib.suppress(Exception):
+            transaction.rollback()
+        connection.close()
+        engine.dispose()
+        logger.debug("پایان تراکنش آزمایشی پایگاه‌داده", extra={"transaction": id(transaction)})
+
+
+try:  # pragma: no cover - وابسته به نسخه pytest
+    _SKIP_EXCEPTIONS: tuple[type[BaseException], ...] = (pytest.skip.Exception,)
+except AttributeError:  # pragma: no cover - نسخه‌های قدیمی pytest
+    _SKIP_EXCEPTIONS = ()
+
+
+def _backoff_delay(base_delay: float, attempt: int, seed: str) -> float:
+    """محاسبه تاخیر نمایی با نویز دترمینیستی برای تکرار آزمون."""
+
+    digest = hashlib.blake2s(f"{seed}:{attempt}".encode("utf-8"), digest_size=4).digest()
+    jitter = int.from_bytes(digest, "big") / float(2**32)
+    return max(0.0, base_delay * (2 ** (attempt - 1)) * (1 + 0.25 * jitter))
+
+
+def retry(*, times: int = 3, delay: float = 1.0) -> Callable[[Callable[..., _T]], Callable[..., _T]]:
+    """دکوراتور بازاجرا با تاخیر نمایی برای آزمون‌های ناپایدار."""
+
+    if times < 1:
+        raise ValueError("تعداد تلاش باید حداقل یک بار باشد.")
+
+    def decorator(func: Callable[..., _T]) -> Callable[..., _T]:
+        name = f"{func.__module__}.{getattr(func, '__qualname__', func.__name__)}"
+
+        if inspect.iscoroutinefunction(func):
+
+            @functools.wraps(func)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> _T:
+                last_error: BaseException | None = None
+                for attempt in range(1, times + 1):
+                    try:
+                        return cast(_T, await func(*args, **kwargs))
+                    except _SKIP_EXCEPTIONS:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - لازم برای گزارش کامل خطا
+                        last_error = exc
+                        if attempt == times:
+                            break
+                        wait = _backoff_delay(delay, attempt, name)
+                        logger.warning(
+                            "اجرای مجدد آزمون غیرهمزمان",
+                            extra={
+                                "مرحله": attempt,
+                                "حداکثر": times,
+                                "تاخیر": wait,
+                                "آزمون": name,
+                                "خطا": str(exc),
+                            },
+                        )
+                        await asyncio.sleep(wait)
+                assert last_error is not None
+                raise last_error
+
+            return cast(Callable[..., _T], async_wrapper)
+
+        @functools.wraps(func)
+        def sync_wrapper(*args: Any, **kwargs: Any) -> _T:
+            last_error: BaseException | None = None
+            for attempt in range(1, times + 1):
+                try:
+                    return cast(_T, func(*args, **kwargs))
+                except _SKIP_EXCEPTIONS:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
+                    if attempt == times:
+                        break
+                    wait = _backoff_delay(delay, attempt, name)
+                    logger.warning(
+                        "اجرای مجدد آزمون همگام",
+                        extra={
+                            "مرحله": attempt,
+                            "حداکثر": times,
+                            "تاخیر": wait,
+                            "آزمون": name,
+                            "خطا": str(exc),
+                        },
+                    )
+                    time.sleep(wait)
+            assert last_error is not None
+            raise last_error
+
+        return sync_wrapper
+
+    return decorator
+
+
+@pytest.fixture(autouse=True)
+def timing_control(request: pytest.FixtureRequest) -> Iterator[None]:
+    """اجرای آزمون‌ها را به‌صورت پیش‌فرض به ۶۰ ثانیه محدود می‌کند."""
+
+    marker = request.node.get_closest_marker("timeout")
+    if marker is None:
+        request.node.add_marker(pytest.mark.timeout(60))
+    yield
 
 
 def _register_markers(config) -> None:  # type: ignore[no-untyped-def]

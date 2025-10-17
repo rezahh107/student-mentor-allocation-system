@@ -15,14 +15,25 @@ on:
       - 'tools/generate_winsw.py'
       - 'tools/fetch_winsw.ps1'
 
+env:
+  PYTHONUTF8: "1"
+  PYTHONWARNINGS: "error"
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+  FAKE_WEBVIEW: "1"
+  PYTHONHASHSEED: "0"
+  TZ: "Asia/Tehran"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_PYTHON_VERSION_WARNING: "1"
+
+defaults:
+  run:
+    shell: pwsh
+
 jobs:
   build:
     runs-on: windows-2022
-    env:
-      PYTHONUTF8: "1"
-      PYTHONWARNINGS: "error"
-      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-      FAKE_WEBVIEW: "1"
+    timeout-minutes: 30
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,31 +42,48 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install dependencies (constraints-aware)
         run: |
-          python -m pip install --upgrade pip
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --upgrade pip wheel setuptools
+          if (Test-Path "constraints-dev.txt" -and Test-Path "requirements-dev.in") {
+            pip install -c constraints-dev.txt -r requirements-dev.in
+          } elseif (Test-Path "requirements-dev.txt") {
+            pip install -r requirements-dev.txt
+          }
           pip install -e .
-          pip install -r requirements-dev.txt
-          pip install pyinstaller
+          pip install pyinstaller==6.11.0
 
-      - name: Run Windows-focused tests
+      - name: Run Windows-focused tests (deterministic)
         run: |
-          pytest -q \
-            tests/windows \
-            tests/meta/test_agents_guard.py \
-            tests/mw/test_order_from_launcher.py \
-            tests/exports/test_excel_safety_from_launcher.py \
-            tests/exports/test_atomic_finalize_from_launcher.py \
-            tests/exports/test_large_stream_from_launcher.py \
-            tests/obs/test_metrics_guard_from_launcher.py
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $targets = @(
+            'tests/windows',
+            'tests/meta/test_agents_guard.py',
+            'tests/mw/test_order_from_launcher.py',
+            'tests/exports/test_excel_safety_from_launcher.py',
+            'tests/exports/test_atomic_finalize_from_launcher.py',
+            'tests/exports/test_large_stream_from_launcher.py',
+            'tests/obs/test_metrics_guard_from_launcher.py'
+          )
+          python -m pytest -q --tb=short --strict-config --strict-markers `
+            --ignore-glob="**/System Volume Information" `
+            --ignore-glob="**/WindowsApps" `
+            --ignore-glob="**/Program Files" `
+            --ignore-glob="**/Program Files (x86)" `
+            @targets
 
       - name: Build launcher artifact
         run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
           pyinstaller windows_launcher/specs/pyinstaller.spec --clean --distpath dist --workpath build/launcher
 
       - name: Fetch WinSW executable
-        shell: pwsh
         run: ./tools/fetch_winsw.ps1 -Destination windows_service/StudentMentorService.exe
 
       - name: Generate WinSW XML manifest
@@ -64,7 +92,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-launcher-artifacts
+          name: windows-launcher-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           path: |
             dist/StudentMentorApp

@@ -10,13 +10,13 @@ permissions:
   contents: read
   actions: read
   checks: write
-  id-token: write
 
 env:
   PYTHONUTF8: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
   PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+  PYTHONHASHSEED: "0"
   TZ: Asia/Tehran
 
 defaults:
@@ -32,17 +32,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+        with: { fetch-depth: 1 }
 
-      - name: Restore pip download cache
-        uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\pip\Cache
-          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt', 'requirements-test.txt', 'pyproject.toml') }}
-          restore-keys: |
-            pip-${{ runner.os }}-
-
+      # Use setup-python's pip cache only (remove redundant manual pip cache step)
       - name: Setup Python
         id: setup-python
         uses: actions/setup-python@v5
@@ -65,18 +57,13 @@ jobs:
           python -m pip list
           python -m pip check
           python - <<'PY'
-import json
-import sys
-import sysconfig
+import json, sys, sysconfig
 from pathlib import Path
-
-artifacts = Path("artifacts")
-artifacts.mkdir(exist_ok=True)
-constraints = {
-    "python_version": sys.version,
-    "site_packages": sysconfig.get_paths().get("purelib"),
-}
-(artifacts / "environment.json").write_text(json.dumps(constraints, indent=2), encoding="utf-8")
+artifacts = Path("artifacts"); artifacts.mkdir(exist_ok=True)
+(artifacts / "environment.json").write_text(json.dumps({
+  "python_version": sys.version,
+  "site_packages": sysconfig.get_paths().get("purelib"),
+}, indent=2), encoding="utf-8")
 PY
 
       - name: Pre-flight cleanup

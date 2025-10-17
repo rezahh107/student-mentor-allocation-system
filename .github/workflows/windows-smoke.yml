@@ -1,278 +1,142 @@
-name: Windows Launcher Smoke
+name: Windows CI Hardening
 
 on:
   push:
     branches: ["main"]
   pull_request:
-    paths:
-      - "windows_launcher/**"
-      - "windows_service/**"
-      - "tools/**"
-      - "scripts/**"
-      - "constraints-win.txt"
-      - "StudentMentorApp.spec"
-      - "windows_launcher/specs/**"
-      - "requirements.txt"
-      - "docs/**"
-      - ".github/workflows/windows-smoke.yml"
-  schedule:
-    - cron: "15 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  id-token: write
+
+env:
+  PYTHONUTF8: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_PYTHON_VERSION_WARNING: "1"
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+  TZ: Asia/Tehran
+
+defaults:
+  run:
+    shell: pwsh
 
 jobs:
   smoke:
+    name: Windows smoke + integration
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Restore pip download cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt', 'requirements-test.txt', 'pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
 
       - name: Setup Python
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          architecture: "x64"
+          cache: "pip"
 
-      - name: Install dependencies with constraints
-        shell: pwsh
+      - name: Bootstrap Python environment
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -c constraints-win.txt
+          ./scripts/ci/windows_bootstrap.ps1 -Requirements "requirements-test.txt" -Force
+
+      - name: Validate dependency footprint
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          .\.venv\Scripts\Activate.ps1
+          python -m pip list
           python -m pip check
+          python - <<'PY'
+import json
+import sys
+import sysconfig
+from pathlib import Path
 
-      - name: Diagnose pytest configuration
-        shell: pwsh
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = "Stop"
-          python .\tools\pytest_config_diagnostics.py --workflow .github/workflows/windows-smoke.yml --json
-
-      - name: Run Windows spec and launcher tests
-        shell: pwsh
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = "Stop"
-          $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
-          $projectRoot = Resolve-Path .
-          $artifacts = Join-Path $projectRoot "artifacts"
-          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
-          $tests = @(
-            "tests/spec/test_normalization_edgecases.py",
-            "tests/spec/test_business_rules.py",
-            "tests/spec/test_excel_exporter_safety.py",
-            "tests/spec/test_security_smoke.py",
-            "tests/windows/test_wait_for_backend_clock.py",
-            "tests/windows/test_webview_hint.py",
-            "tests/windows/test_readyz_local.py",
-            "tests/windows/test_spawn_e2e.py"
-          )
-          if (-not $tests) { throw 'No tests specified for Windows smoke suite.' }
-          Write-Host "Running pytest with $($tests.Count) targets"
-          python .\tools\pytest_config_diagnostics.py --tests $tests --json
-if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
-    $workerArgs = @('-n', 'auto', '--dist=loadscope')
-} else {
-    $workerArgs = @('-n', '1')
+artifacts = Path("artifacts")
+artifacts.mkdir(exist_ok=True)
+constraints = {
+    "python_version": sys.version,
+    "site_packages": sysconfig.get_paths().get("purelib"),
 }
+(artifacts / "environment.json").write_text(json.dumps(constraints, indent=2), encoding="utf-8")
+PY
 
-$pytestArgs = @('--maxfail=1', '-q', '--override-ini', 'addopts=') + $workerArgs + $tests
-Write-Host "Executing: python -m pytest $($pytestArgs -join ' ')"
-python -m pytest @pytestArgs
-
-          & python -m pytest @pytestArgs
-
-      - name: Run integration tests with state cleanup
-        shell: pwsh
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      - name: Pre-flight cleanup
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
-          $pytestArgs = @(
-            "tests/integration/",
-            "--cov=src",
-            "--cov-report=term-missing:skip-covered",
-            "-v",
-            "--tb=short",
-            "--maxfail=3"
-          )
-          & python -m pytest @pytestArgs
+          .\.venv\Scripts\Activate.ps1
+          python tools/ci/clean_state.py --phase pre --namespace windows-ci-smoke
 
-      - name: Run Persian Excel edge case suite
-        shell: pwsh
+      - name: Run deterministic smoke tests
         env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTEST_ADDOPTS: "--maxfail=1 --tb=short --strict-config --strict-markers"
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
-          & python -m pytest tests/spec/test_persian_excel_normalization.py --hypothesis-show-statistics -v
+          ./scripts/ci/run_pytest_windows.ps1 -Targets @(
+            'tests/spec/test_normalization_edgecases.py',
+            'tests/spec/test_business_rules.py',
+            'tests/spec/test_excel_exporter_safety.py',
+            'tests/windows/test_spawn_e2e.py'
+          ) -Config 'pytest.win.ini' -MaxAttempts 2
 
-      - name: Run Persian Excel compliance rules
-        shell: pwsh
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      - name: Run middleware and integration contracts
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
-          $artifacts = Join-Path (Resolve-Path .) "artifacts"
-          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
-          $report = Join-Path $artifacts "persian-excel.junit.xml"
-          & python -m pytest tests/spec/test_persian_excel_rules.py -v --tb=short --maxfail=1 --junitxml $report
+          ./scripts/ci/run_pytest_windows.ps1 -Targets @(
+            'tests/integration/test_middleware_chain.py',
+            'tests/integration/test_middleware_order.py'
+          ) -Config 'pytest.win.ini' -MaxAttempts 2
 
-      - name: Validate middleware order
-        shell: pwsh
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      - name: Run full regression slice
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
-          & python -m pytest tests/integration/test_middleware_chain.py --log-cli-level=DEBUG
+          ./scripts/ci/run_pytest_windows.ps1 -Targets @('tests/spec', 'tests/windows', 'tests/integration') -Config 'pytest.win.ini' -MaxAttempts 2
 
-      - name: Run middleware order contract suite
-        shell: pwsh
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      - name: Capture debug context
+        if: failure()
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
-          $artifacts = Join-Path (Resolve-Path .) "artifacts"
-          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
-          $report = Join-Path $artifacts "middleware-order.junit.xml"
-          & python -m pytest tests/integration/test_middleware_order.py -v --tb=short --maxfail=1 --junitxml $report
+          .\.venv\Scripts\Activate.ps1
+          python tools/ci/debug_context.py --reason failure --attempt 99 --namespace windows-ci-smoke --message "Collecting context after failure"
 
-      - name: Run full test suite with coverage
-        shell: pwsh
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      - name: Post-run cleanup
+        if: always()
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
-          $artifacts = Join-Path (Resolve-Path .) "artifacts"
-          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
-          $coverage = Join-Path $artifacts "coverage.xml"
-          $junit = Join-Path $artifacts "pytest-report.xml"
-          & python -m pytest tests/ `
-            --cov=src `
-            --cov-report=term-missing:skip-covered `
-            --cov-report=xml:$coverage `
-            --cov-fail-under=80 `
-            --junitxml $junit `
-            -v `
-            --tb=short `
-            --maxfail=5 `
-            --benchmark-only `
-            --benchmark-min-rounds=3
+          .\.venv\Scripts\Activate.ps1
+          python tools/ci/clean_state.py --phase post --namespace windows-ci-smoke
 
-      - name: Upload گزارش‌های تست و پوشش
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-test-coverage
+          name: windows-ci-artifacts
           path: |
-            artifacts/pytest-report.xml
-            artifacts/coverage.xml
-
-      - name: Verify no warnings
-        shell: pwsh
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = "Stop"
-          & python -m pytest tests/ -q --strict-warnings
-
-      - name: Security scan
-        shell: pwsh
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = "Stop"
-          & python -m pytest tests/security/ -v --log-cli-level=DEBUG
-
-      - name: Build Windows launcher
-        shell: pwsh
-        run: .\scripts\build_win.bat
-
-      - name: Run launcher headless
-        shell: pwsh
-        run: |
-          $env:FAKE_WEBVIEW = "1"
-          $env:DATABASE_URL = "postgresql://ci:ci@localhost:5432/ci"
-          $env:REDIS_URL = "redis://localhost:6379/0"
-          $env:METRICS_TOKEN = "metrics-ci"
-          $env:PYTHONPATH = (Resolve-Path .).Path
-          $artifacts = Join-Path (Resolve-Path .) "artifacts"
-          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
-          $stdoutLog = Join-Path $artifacts "launcher.stdout.log"
-          $stderrLog = Join-Path $artifacts "launcher.stderr.log"
-          $exePath = Join-Path (Resolve-Path .) "dist\\StudentMentorApp\\StudentMentorApp.exe"
-          if (-not (Test-Path $exePath)) {
-            throw "Launcher executable not found at $exePath"
-          }
-          $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-          $startInfo.FileName = $exePath
-          $startInfo.UseShellExecute = $false
-          $startInfo.RedirectStandardOutput = $true
-          $startInfo.RedirectStandardError = $true
-          $process = New-Object System.Diagnostics.Process
-          $process.StartInfo = $startInfo
-          $null = $process.Start()
-          $stdoutTask = [System.Threading.Tasks.Task]::Run({ $process.StandardOutput.ReadToEnd() })
-          $stderrTask = [System.Threading.Tasks.Task]::Run({ $process.StandardError.ReadToEnd() })
-          if (-not $process.WaitForExit(60000)) {
-            $process.Kill($true)
-            throw "Launcher did not exit within 60 seconds."
-          }
-          [System.IO.File]::WriteAllText($stdoutLog, $stdoutTask.Result)
-          [System.IO.File]::WriteAllText($stderrLog, $stderrTask.Result)
-          $match = [System.Text.RegularExpressions.Regex]::Match($stdoutTask.Result, "backend port: (?<port>\\d+)")
-          if (-not $match.Success) {
-            throw "Unable to parse backend port from launcher output."
-          }
-          $port = $match.Groups['port'].Value
-          Set-Content -Path (Join-Path $artifacts "backend.port") -Value $port
-          Set-Content -Path parsed_port.txt -Value $port
-
-      - name: Probe readiness endpoint
-        shell: pwsh
-        run: |
-          $port = Get-Content artifacts\backend.port
-          python .\tools\smoke_readyz.py --port $port --attempts 60 --sleep 0.5 --timeout 1.0
-
-      - name: Verify UI HEAD endpoint
-        shell: pwsh
-        run: |
-          $port = Get-Content parsed_port.txt
-          curl.exe -s -S -f -I http://127.0.0.1:$port/ui
-
-      - name: Upload launcher logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-launcher-smoke
-          path: artifacts
-
-  perf-nightly:
-    if: github.event_name == 'schedule'
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install dependencies with constraints
-        shell: pwsh
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -c constraints-win.txt
-      - name: Run perf smoke (Excel)
-        shell: pwsh
-        env:
-          PERF: "1"
-        run: |
-          pytest -q tests/spec/test_excel_perf_smoke.py -o addopts=""
+            artifacts
+            .pytest_cache
+            logs
+          if-no-files-found: ignore

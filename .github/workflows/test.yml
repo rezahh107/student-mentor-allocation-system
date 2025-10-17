@@ -43,7 +43,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -63,9 +64,10 @@ jobs:
           Write-Host "Location:" (Get-Location)
           Get-ChildItem -Force
 
-      - name: Install dependencies (constraints-aware, retry)
+      - name: Install dependencies (constraints-aware, retry, PS-safe)
         run: |
           $ErrorActionPreference = 'Stop'
+
           function Invoke-WithRetry {
             param([scriptblock]$Script,[int]$MaxAttempts=4)
             for ($i=1; $i -le $MaxAttempts; $i++) {
@@ -77,13 +79,33 @@ jobs:
               }
             }
           }
+
           Invoke-WithRetry { python -m pip install --upgrade pip wheel setuptools }
-          if (Test-Path "constraints-dev.txt" -and Test-Path "requirements-dev.in") {
-            Invoke-WithRetry { pip install -c constraints-dev.txt -r requirements-dev.in }
-          } else {
-            Invoke-WithRetry { pip install -r requirements-test.txt }
+
+          # PS-safe boolean with parentheses to avoid "-and" being parsed as a parameter
+          $useConstraints = (Test-Path -LiteralPath 'constraints-dev.txt') -and (Test-Path -LiteralPath 'requirements-dev.in')
+
+          if ($useConstraints) {
+            Write-Host 'Using constraints-dev.txt + requirements-dev.in'
+            Invoke-WithRetry { python -m pip install -c constraints-dev.txt -r requirements-dev.in }
           }
-          Invoke-WithRetry { pip install -e . }
+          elseif (Test-Path -LiteralPath 'requirements-test.txt') {
+            Write-Host 'Using requirements-test.txt'
+            Invoke-WithRetry { python -m pip install -r requirements-test.txt }
+          }
+          elseif (Test-Path -LiteralPath 'requirements-dev.txt') {
+            Write-Host 'Using requirements-dev.txt'
+            Invoke-WithRetry { python -m pip install -r requirements-dev.txt }
+          }
+          elseif (Test-Path -LiteralPath 'requirements.txt') {
+            Write-Host 'Using requirements.txt'
+            Invoke-WithRetry { python -m pip install -r requirements.txt }
+          }
+          else {
+            Write-Host 'No requirements file found; proceeding with project install only.'
+          }
+
+          Invoke-WithRetry { python -m pip install -e . }
 
       - name: Run full pytest suite with coverage (deterministic)
         env:
@@ -158,7 +180,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -172,16 +195,34 @@ jobs:
             requirements-test.txt
             pyproject.toml
 
-      - name: Install dependencies (constraints-aware)
+      - name: Install dependencies (constraints-aware, PS-safe)
         run: |
           $ErrorActionPreference = 'Stop'
           python -m pip install --upgrade pip
-          if (Test-Path "constraints-dev.txt" -and Test-Path "requirements-dev.in") {
-            pip install -c constraints-dev.txt -r requirements-dev.in
-          } else {
-            pip install -r requirements-test.txt
+
+          $useConstraints = (Test-Path -LiteralPath 'constraints-dev.txt') -and (Test-Path -LiteralPath 'requirements-dev.in')
+
+          if ($useConstraints) {
+            Write-Host 'Using constraints-dev.txt + requirements-dev.in'
+            python -m pip install -c constraints-dev.txt -r requirements-dev.in
           }
-          pip install -e .
+          elseif (Test-Path -LiteralPath 'requirements-test.txt') {
+            Write-Host 'Using requirements-test.txt'
+            python -m pip install -r requirements-test.txt
+          }
+          elseif (Test-Path -LiteralPath 'requirements-dev.txt') {
+            Write-Host 'Using requirements-dev.txt'
+            python -m pip install -r requirements-dev.txt
+          }
+          elseif (Test-Path -LiteralPath 'requirements.txt') {
+            Write-Host 'Using requirements.txt'
+            python -m pip install -r requirements.txt
+          }
+          else {
+            Write-Host 'No requirements file found; proceeding with project install only.'
+          }
+
+          python -m pip install -e .
 
       - name: Prepare artifacts directory
         run: |
@@ -218,15 +259,18 @@ jobs:
           name: pytest-reports
           path: artifacts/test-results
 
-      - name: Generate consolidated test report
+      - name: Generate consolidated test report (if script exists)
         run: |
-          python scripts/generate_test_report.py `
-            --coverage artifacts/coverage/coverage.xml `
-            --pytest-json artifacts/test-results/pytest-report.json `
-            --bench-json artifacts/pytest-benchmark.json `
-            --perf-json artifacts/performance-metrics.json `
-            --output reports/test-report.md `
-            --badge reports/coverage_badge.svg
+          if (Test-Path -LiteralPath 'scripts/generate_test_report.py') {
+            python scripts/generate_test_report.py `
+              --coverage artifacts/coverage/coverage.xml `
+              --pytest-json artifacts/test-results/pytest-report.json `
+              --bench-json artifacts/pytest-benchmark.json `
+              --output reports/test-report.md `
+              --badge reports/coverage_badge.svg
+          } else {
+            Write-Host 'scripts/generate_test_report.py not found; skipping consolidated report.'
+          }
 
       - name: Upload performance artifacts
         if: always()

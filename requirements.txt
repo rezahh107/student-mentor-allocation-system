@@ -1,108 +1,73 @@
 # ═══════════════════════════════════════════════════════════════
-# Core Application Stack
+# Consolidated Production Dependencies (pinned)
 # ═══════════════════════════════════════════════════════════════
 
-# Data validation
-pydantic>=2.6,<3
-pydantic-settings>=2.11,<3
+# Core web stack
+fastapi==0.110.3
+starlette==0.37.2
+uvicorn[standard]==0.27.1
 
-# Date/Time
-python-dateutil>=2.8.0
-jdatetime>=4.1,<5
+# Validation & configuration
+pydantic==2.7.4
+pydantic-settings==2.3.0
+python-dateutil==2.9.0.post0
 
-# Async I/O
-aiohttp>=3.8.0
-aiofiles>=0.8.0
-qasync>=0.23.0
+# Database / cache
+SQLAlchemy==2.0.30
+psycopg[binary]==3.2.1
+redis==5.0.4
+alembic==1.13.1
 
-# Excel/Data
-openpyxl>=3.1.0
-pandas>=2.0.0
-XlsxWriter>=3.1.0
+# Observability & retry
+prometheus-client==0.20.0
+tenacity==8.2.3
 
-# System
-psutil>=5.9.0
-pywebview>=4.4.0
-platformdirs>=4.3.6
+# Excel / export
+openpyxl==3.1.5
+XlsxWriter==3.1.9
 
-# Network
-websockets>=10.0,<14
+# Locale & time
+jdatetime==4.1.1
+tzdata==2024.1
 
-# Persian text
-arabic-reshaper>=3.0.0
-python-bidi>=0.4.2
+# Serialization / utilities
+orjson==3.10.3
+jsonschema==4.23.0
+PyYAML==6.0.2
+packaging==24.1
+platformdirs==4.3.6
+click==8.1.7
+typer==0.12.3
+python-multipart==0.0.9
+httpx==0.27.0
 
-# ═══════════════════════════════════════════════════════════════
-# ImportToSabt Service Stack
-# ═══════════════════════════════════════════════════════════════
+# Optional services
+aiohttp==3.9.5
+websockets==12.0
+pywebview==4.4.1
+psutil==5.9.8
 
-# Web framework
-fastapi>=0.110,<0.111
-starlette>=0.36,<0.38
-uvicorn>=0.37,<0.38
+# Testing / tooling
+pytest==7.4.4
+pytest-asyncio==0.23.6
+pytest-cov==4.1.0
+coverage==7.4.4
+pytest-json-report==1.5.0
+pytest-xdist==3.5.0
+pytest-timeout==2.2.0
+pytest-html==3.2.0
+pytest-mock==3.12.0
+pytest-freezegun==0.4.2
+freezegun==1.4.0
+fakeredis==2.20.2
+faker==25.0.0
+factory_boy==3.3.0
+GitPython==3.1.43
+ruff==0.5.5
+mypy==1.10.0
+pydocstyle==6.3.0
+pre-commit==3.7.1
+pip-audit==2.7.3
+cyclonedx-bom==3.2.0
 
-# Database
-SQLAlchemy>=2.0,<3  # ✅ تغییر از 1.4 به 2.0!
-psycopg[binary]>=3.2,<3.3
-
-# Cache
-redis>=5,<6
-
-# HTTP client
-httpx>=0.27,<0.28
-
-# Serialization
-orjson>=3.11,<4
-
-# Monitoring
-prometheus_client>=0.16,<1.0
-
-# Testing utilities
-freezegun>=1.2,<2
-
-# File upload
-python-multipart>=0.0.6,<0.1
-
-# CLI
-typer>=0.9,<0.10
-
-# ═══════════════════════════════════════════════════════════════
-# Developer Experience
-# ═══════════════════════════════════════════════════════════════
-
-GitPython>=3.1.30
-factory_boy>=3.3.0
-faker>=19.0.0
-
-# ═══════════════════════════════════════════════════════════════
-# Core Testing (Required)
-# ═══════════════════════════════════════════════════════════════
-
-pytest>=7.0.0
-pytest-asyncio>=0.23.0
-pytest-cov>=4.0.0
-coverage>=7.0.0
-pytest-qt>=4.2.0
-pytest-json-report>=1.5.0
-pytest-xdist>=3.3.1
-pytest-timeout>=2.1.0
-pytest-html>=3.2.0
-pytest-mock>=3.11.0
-pytest-freezegun>=0.4.2
-
-# ═══════════════════════════════════════════════════════════════
-# Additional Tools
-# ═══════════════════════════════════════════════════════════════
-
-tenacity>=8,<9
-tzdata>=2024.1
-PyYAML>=6,<7
-Jinja2>=3.1,<4.0
-
-# ═══════════════════════════════════════════════════════════════
-# CI/CD & Build
-# ═══════════════════════════════════════════════════════════════
-
-setuptools>=68.0.0
-wheel>=0.41.0
-pip>=23.0.0
+# Keep sorted & pinned for deterministic builds.

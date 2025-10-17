@@ -53,7 +53,11 @@ class SigningKeySet:
         return self._definitions.get(kid)
 
     def allowed_for_verification(self) -> set[str]:
-        return {kid for kid, definition in self._definitions.items() if definition.state in {"active", "next"}}
+        return {
+            kid
+            for kid, definition in self._definitions.items()
+            if definition.state in {"active", "next", "retired"}
+        }
 
 
 class DualKeySigner(SignedURLProvider):

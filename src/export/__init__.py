@@ -1,6 +1,6 @@
-"""Compatibility shim importing the shared Excel writer implementation."""
+"""Export utilities package."""
 
-from export.excel_writer import (  # noqa: F401
+from .excel_writer import (  # noqa: F401
     EXPORT_COLUMNS,
     ExportResult,
     ExportWriter,
@@ -12,10 +12,10 @@ from export.excel_writer import (  # noqa: F401
 )
 
 __all__ = [
+    "EXPORT_COLUMNS",
     "ExportResult",
     "ExportWriter",
     "ExportedFile",
-    "EXPORT_COLUMNS",
     "NUMERIC_COLUMNS",
     "PHONE_COLUMNS",
     "TEXT_COLUMNS",

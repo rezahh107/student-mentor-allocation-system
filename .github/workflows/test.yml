@@ -2,16 +2,16 @@ name: Windows Test Suite
 
 on:
   push:
-    branches: ["main", "master", "develop"]
+    branches: ["main","master","develop"]
   pull_request:
   workflow_dispatch:
     inputs:
       debug_enabled:
-        description: 'Enable debug mode'
+        description: Enable debug mode
         required: false
         default: 'false'
       test_filter:
-        description: 'Test filter pattern'
+        description: Pytest -k filter
         required: false
         default: ''
 
@@ -26,24 +26,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Python Configuration
   PYTHONUTF8: "1"
   PYTHONWARNINGS: "error"
   PYTHONHASHSEED: "0"
   PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-  
-  # Application Configuration
-  FAKE_WEBVIEW: "1"
   TZ: "Asia/Tehran"
-  
-  # Performance Configuration
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
-  PIP_PROGRESS_BAR: "off"
-  
-  # CI Configuration
-  CI_WORKSPACE: ${{ github.workspace }}
-  CI_DEBUG: ${{ github.event.inputs.debug_enabled || 'false' }}
 
 defaults:
   run:
@@ -52,933 +41,97 @@ defaults:
 
 jobs:
   test-matrix:
-    name: Test Python ${{ matrix.python-version }}
     runs-on: windows-latest
     timeout-minutes: 45
-    
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.10','3.11','3.12']
         include:
           - python-version: '3.11'
             coverage: true
-            primary: true
 
     steps:
-      - name: Initialize CI Environment
-        id: init
+      - name: Init workspace
         run: |
-          $PSDefaultParameterValues = @{
-            '*:ErrorAction' = 'Stop'
-            '*:WarningAction' = 'Continue'
-            '*:InformationAction' = 'Continue'
-          }
-          
-          # Create required directories
-          @('artifacts', 'logs', 'test-results', '.cache', 'coverage') | ForEach-Object {
-            New-Item -ItemType Directory -Force -Path $_ | Out-Null
-          }
-          
-          # System diagnostics
-          Write-Host "::group::System Information"
-          Write-Host "OS Version: $([System.Environment]::OSVersion.Version)"
-          Write-Host "PowerShell: $($PSVersionTable.PSVersion)"
-          Write-Host "Python Target: ${{ matrix.python-version }}"
-          Write-Host "Coverage Enabled: ${{ matrix.coverage }}"
-          Write-Host "::endgroup::"
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          @('artifacts','logs','test-results','.cache','coverage') | % { New-Item -ItemType Directory -Force -Path $_ | Out-Null }
 
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          clean: true
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, clean: true }
 
-      - name: Setup Python Environment
-        id: setup-python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          architecture: 'x64'
-          cache: 'pip'
+          architecture: x64
+          cache: pip
           cache-dependency-path: |
-            **/requirements*.txt
-            **/requirements*.in
             **/constraints*.txt
+            **/requirements*.in
+            **/requirements*.txt
             **/pyproject.toml
 
-      - name: Install Dependencies with Retry
-        id: install-deps
+      - name: Install deps (constraints-aware, retry)
         run: |
-          $PSDefaultParameterValues = @{'*:ErrorAction' = 'Stop'}
-          
-          function Invoke-RetryCommand {
-            param(
-              [scriptblock]$Command,
-              [int]$MaxAttempts = 3,
-              [string]$OperationName = "Operation"
-            )
-            
-            for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-              try {
-                Write-Host "[$OperationName] Attempt $attempt/$MaxAttempts"
-                & $Command
-                Write-Host "[$OperationName] Success ✓"
-                return
-              }
-              catch {
-                if ($attempt -eq $MaxAttempts) {
-                  Write-Error "[$OperationName] Failed: $_"
-                  throw
-                }
-                $delay = [Math]::Min(30, [Math]::Pow(2, $attempt))
-                Write-Warning "[$OperationName] Retrying in $delay seconds..."
-                Start-Sleep -Seconds $delay
-              }
-            }
-          }
-          
-          Write-Host "::group::Installing Dependencies"
-          
-          # Upgrade core packages
-          Invoke-RetryCommand -OperationName "pip-upgrade" -Command {
-            python -m pip install --upgrade pip setuptools wheel
-          }
-          
-          # Install test requirements
-          $installed = $false
-          
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          function Invoke-Retry([scriptblock]$Cmd,[int]$Max=3){ for($i=1;$i -le $Max;$i++){ try{ & $Cmd; return } catch{ if($i -eq $Max){ throw } Start-Sleep -Seconds ([int][Math]::Pow(2,$i)) } } }
+          Invoke-Retry { python -m pip install -U pip setuptools wheel }
           if ((Test-Path "constraints-dev.txt") -and (Test-Path "requirements-dev.in")) {
-            Invoke-RetryCommand -OperationName "constraints-install" -Command {
-              python -m pip install -c constraints-dev.txt -r requirements-dev.in
-            }
-            $installed = $true
+            Invoke-Retry { python -m pip install -c constraints-dev.txt -r requirements-dev.in }
+          } elseif (Test-Path "requirements-dev.txt") {
+            Invoke-Retry { python -m pip install -r requirements-dev.txt }
+          } elseif (Test-Path "requirements.txt") {
+            Invoke-Retry { python -m pip install -r requirements.txt }
           }
-          elseif (Test-Path "requirements-test.txt") {
-            Invoke-RetryCommand -OperationName "test-requirements" -Command {
-              python -m pip install -r requirements-test.txt
-            }
-            $installed = $true
-          }
-          elseif (Test-Path "requirements-dev.txt") {
-            Invoke-RetryCommand -OperationName "dev-requirements" -Command {
-              python -m pip install -r requirements-dev.txt
-            }
-            $installed = $true
-          }
-          elseif (Test-Path "requirements.txt") {
-            Invoke-RetryCommand -OperationName "base-requirements" -Command {
-              python -m pip install -r requirements.txt
-            }
-            $installed = $true
-          }
-          
-          # Install project
-          Invoke-RetryCommand -OperationName "project-install" -Command {
-            python -m pip install -e .
-          }
-          
-          # Install test dependencies
-          Invoke-RetryCommand -OperationName "test-deps" -Command {
-            python -m pip install pytest pytest-cov pytest-timeout pytest-json-report pytest-html
-          }
-          
-          Write-Host "::endgroup::"
-          
-          # Verify installation
-          Write-Host "::group::Dependency Verification"
+          Invoke-Retry { python -m pip install -e . }
           python -m pip check
           python -m pip list --format=json > artifacts/pip-list-${{ matrix.python-version }}.json
-          Write-Host "::endgroup::"
 
-      - name: Pre-Test Environment Validation
+      - name: Pre-flight info
         run: |
-          $PSDefaultParameterValues = @{'*:ErrorAction' = 'Stop'}
-          
-          Write-Host "::group::Environment Validation"
-          
-          # Python validation
-          python -c "
-import sys
-import platform
-import json
-from pathlib import Path
+          python - <<'PY'
+import json, platform, sys, pathlib
+pathlib.Path('artifacts').mkdir(exist_ok=True)
+json.dump({
+  "python": sys.version,
+  "platform": platform.platform(),
+  "executable": sys.executable,
+}, open(f"artifacts/python-info-${{ env.MatrixPython || '${{ matrix.python-version }}' }}.json","w"), indent=2)
+PY
 
-info = {
-    'python_version': sys.version,
-    'platform': platform.platform(),
-    'executable': sys.executable,
-    'path': sys.path,
-    'encoding': sys.getdefaultencoding(),
-    'matrix_version': '${{ matrix.python-version }}'
-}
-
-Path('artifacts').mkdir(exist_ok=True)
-with open('artifacts/python-info-${{ matrix.python-version }}.json', 'w') as f:
-    json.dump(info, f, indent=2)
-
-print(f'Python {sys.version}')
-print(f'Platform: {platform.platform()}')
-"
-          
-          # Test import validation
-          python -c "
-import pytest
-print(f'pytest version: {pytest.__version__}')
-"
-          
-          Write-Host "::endgroup::"
-
-      - name: Run Test Suite with Coverage
-        id: test
+      - name: Run tests (scoped, deterministic)
         env:
           PYTEST_CURRENT_TEST: "ci-windows-${{ matrix.python-version }}"
         run: |
-          $PSDefaultParameterValues = @{'*:ErrorAction' = 'Stop'}
-          
-          Write-Host "::group::Running Test Suite"
-          
-          # Build pytest arguments
-          $pytestArgs = @(
-            '--tb=short',
-            '--strict-config',
-            '--strict-markers',
-            '--maxfail=5',
-            '--timeout=120',
-            '--timeout-method=thread',
-            "-v",
-            "--rootdir=${{ github.workspace }}",
-            '--json-report',
-            "--json-report-file=test-results/pytest-report-${{ matrix.python-version }}.json",
+          $args = @(
+            '--rootdir', $PWD,
+            '--tb=short','--strict-config','--strict-markers',
+            '--ignore-glob=**/System Volume Information',
+            '--ignore-glob=**/WindowsApps',
+            '--ignore-glob=**/Program Files*',
+            '--json-report','--json-report-file=test-results/pytest-${{ matrix.python-version }}.json',
             '--junitxml=test-results/junit-${{ matrix.python-version }}.xml',
             '--html=test-results/report-${{ matrix.python-version }}.html',
             '--self-contained-html'
           )
-          
-          # Add coverage if enabled
           if ("${{ matrix.coverage }}" -eq "true") {
-            $pytestArgs += @(
-              '--cov=src',
-              '--cov-report=xml:coverage/coverage-${{ matrix.python-version }}.xml',
-              '--cov-report=html:coverage/htmlcov-${{ matrix.python-version }}',
-              '--cov-report=term-missing:skip-covered',
-              '--cov-branch',
-              '--cov-context=test'
-            )
+            $args += @('--cov=src','--cov-branch',
+                       '--cov-report=xml:coverage/coverage-${{ matrix.python-version }}.xml',
+                       '--cov-report=html:coverage/htmlcov-${{ matrix.python-version }}')
           }
-          
-          # Add test filter if specified
-          $testFilter = "${{ github.event.inputs.test_filter }}"
-          if ($testFilter) {
-            $pytestArgs += @('-k', $testFilter)
-          }
-          
-          # Add ignore patterns for system directories
-          $ignorePatterns = @(
-            '"**/System Volume Information"',
-            '"**/WindowsApps"',
-            '"**/Program Files"',
-            '"**/Program Files (x86)"',
-            '"**/$RECYCLE.BIN"',
-            '"**/Windows"',
-            '"**/PerfLogs"'
-          )
-          
-          foreach ($pattern in $ignorePatterns) {
-            $pytestArgs += @('--ignore-glob', $pattern)
-          }
-          
-          # Run tests
-          $testExitCode = 0
-          try {
-            python -m pytest @pytestArgs
-            $testExitCode = $LASTEXITCODE
-          }
-          catch {
-            Write-Warning "Test execution error: $_"
-            $testExitCode = 1
-          }
-          
-          # Set outputsسلام رضا! من Claude 4.1 Opus هستم، دستیار هوشمند شما که تا مارس 2025 آموزش دیده‌ام. بر اساس تجربه شما در DevOps و مشکلات مداوم GitHub Actions، یک تحلیل جامع و راه‌حل‌های production-ready ارائه می‌دهم.
+          if ("${{ github.event.inputs.test_filter }}") { $args += @('-k',"${{ github.event.inputs.test_filter }}") }
+          python -m pytest tests $args
 
-# 🔍 EXECUTIVE ASSESSMENT
-
-## Critical Issues Identified
-
-### 🔴 P0 - Critical (Immediate Action Required)
-1. **PowerShell Parameter Parsing Conflicts** - `-and` operators causing command failures
-2. **Missing Error Boundaries** - No fallback mechanisms for transient failures
-3. **Inconsistent Dependency Resolution** - Mixed constraint/requirements patterns
-
-### 🟡 P1 - High Priority
-1. **Inadequate Retry Logic** - Simple retries without exponential backoff
-2. **Path Resolution Issues** - Hardcoded paths without validation
-3. **Cache Invalidation Problems** - Stale cache causing dependency conflicts
-
-### 🟢 P2 - Medium Priority
-1. **Missing Telemetry** - No structured logging for debugging
-2. **Artifact Management** - Inconsistent naming and retention policies
-
-## 📊 Impact Analysis
-- **Current Failure Rate**: ~35% (estimated from patterns)
-- **MTTR**: 2-3 hours per incident
-- **Developer Productivity Loss**: 15-20 hours/week
-
----
-
-# 🛠️ REMEDIATED WORKFLOW FILES
-
-## 1. windows-launcher.yml (Complete & Fixed)
-
-```yaml
-name: windows-launcher
-
-on:
-  push:
-    paths:
-      - 'windows_launcher/**'
-      - 'windows_service/**'
-      - 'tools/generate_winsw.py'
-      - 'tools/fetch_winsw.ps1'
-      - '.github/workflows/windows-launcher.yml'
-  pull_request:
-    paths:
-      - 'windows_launcher/**'
-      - 'windows_service/**'
-      - 'tools/generate_winsw.py'
-      - 'tools/fetch_winsw.ps1'
-  workflow_dispatch:
-    inputs:
-      debug_enabled:
-        type: boolean
-        description: 'Enable debug logging'
-        required: false
-        default: false
-
-env:
-  PYTHONUTF8: "1"
-  PYTHONWARNINGS: "error"
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-  FAKE_WEBVIEW: "1"
-  PYTHONHASHSEED: "0"
-  TZ: "Asia/Tehran"
-  PIP_DISABLE_PIP_VERSION_CHECK: "1"
-  PIP_NO_PYTHON_VERSION_WARNING: "1"
-  PIP_NO_CACHE_DIR: "0"
-  PIP_RETRIES: "5"
-  PIP_TIMEOUT: "60"
-  # Telemetry
-  CI_DEBUG: ${{ inputs.debug_enabled || 'false' }}
-  RUNNER_DEBUG: ${{ inputs.debug_enabled && '1' || '0' }}
-
-defaults:
-  run:
-    shell: pwsh
-    working-directory: ${{ github.workspace }}
-
-jobs:
-  build:
-    runs-on: windows-2022
-    timeout-minutes: 30
-    
-    permissions:
-      contents: read
-      actions: write
-      checks: write
-      
-    outputs:
-      artifact-name: ${{ steps.artifact.outputs.name }}
-      build-version: ${{ steps.version.outputs.version }}
-
-    steps:
-      - name: Initialize CI Environment
-        id: init
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $ProgressPreference = 'SilentlyContinue'
-          
-          # Create required directories
-          @('artifacts', 'logs', 'temp', '.cache') | ForEach-Object {
-            New-Item -ItemType Directory -Force -Path $_ | Out-Null
-          }
-          
-          # Set environment variables
-          $buildId = "${{ github.run_id }}-${{ github.run_attempt }}"
-          "BUILD_ID=$buildId" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          
-          # Initialize telemetry
-          $telemetry = @{
-            workflow = 'windows-launcher'
-            run_id = '${{ github.run_id }}'
-            attempt = '${{ github.run_attempt }}'
-            timestamp = (Get-Date -Format 'o')
-            runner = '${{ runner.os }}-${{ runner.arch }}'
-          }
-          $telemetry | ConvertTo-Json | Out-File -FilePath "logs/telemetry.json" -Encoding utf8
-          
-          Write-Host "✅ CI Environment initialized successfully"
-
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          clean: true
-          lfs: true
-
-      - name: Setup Python with Enhanced Caching
-        id: setup-python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          architecture: 'x64'
-          cache: 'pip'
-          cache-dependency-path: |
-            **/requirements*.txt
-            **/requirements*.in
-            **/constraints*.txt
-            **/pyproject.toml
-            **/setup.py
-            **/setup.cfg
-
-      - name: Validate Python Environment
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          
-          # Validate Python installation
-          $pythonVersion = python --version 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            throw "Python validation failed: $pythonVersion"
-          }
-          
-          Write-Host "Python Version: $pythonVersion"
-          Write-Host "Python Path: $(Get-Command python).Path"
-          Write-Host "Pip Version: $(python -m pip --version)"
-          
-          # Validate virtual environment capability
-          python -m venv --help | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            throw "Virtual environment module not available"
-          }
-          
-          # Export environment info
-          @{
-            python_version = $pythonVersion
-            python_path = (Get-Command python).Path
-            pip_version = (python -m pip --version)
-            site_packages = (python -c "import site; print(site.getsitepackages()[0])")
-          } | ConvertTo-Json | Out-File -FilePath "artifacts/python_env.json" -Encoding utf8
-
-      - name: Install Dependencies with Intelligent Resolution
-        id: deps
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $ProgressPreference = 'SilentlyContinue'
-          
-          # Enhanced retry function with exponential backoff
-          function Invoke-SmartRetry {
-              param(
-                  [scriptblock]$Command,
-                  [int]$MaxAttempts = 5,
-                  [string]$OperationName = "Operation"
-              )
-              
-              $attempt = 0
-              $backoffBase = 2
-              
-              while ($attempt -lt $MaxAttempts) {
-                  $attempt++
-                  try {
-                      Write-Host "[$OperationName] Attempt $attempt/$MaxAttempts..."
-                      $result = & $Command
-                      Write-Host "✅ [$OperationName] Succeeded on attempt $attempt"
-                      return $result
-                  }
-                  catch {
-                      $errorMsg = $_.Exception.Message
-                      
-                      if ($attempt -eq $MaxAttempts) {
-                          Write-Error "❌ [$OperationName] Failed after $MaxAttempts attempts: $errorMsg"
-                          throw
-                      }
-                      
-                      $delay = [Math]::Min(60, [Math]::Pow($backoffBase, $attempt) + (Get-Random -Min 0 -Max 3))
-                      Write-Warning "⚠️ [$OperationName] Attempt $attempt failed: $errorMsg"
-                      Write-Host "⏳ Retrying in $delay seconds..."
-                      Start-Sleep -Seconds $delay
-                  }
-              }
-          }
-          
-          # Upgrade pip/setuptools/wheel with retry
-          Invoke-SmartRetry -OperationName "Pip Upgrade" -Command {
-              python -m pip install --upgrade --no-warn-script-location pip setuptools wheel
-              if ($LASTEXITCODE -ne 0) { throw "Pip upgrade failed" }
-          }
-          
-          # Dependency resolution strategy
-          $dependencyStrategy = "none"
-          $installedPackages = @()
-          
-          # Check for constraints-based installation
-          $hasConstraints = (Test-Path "constraints-dev.txt") -and (Test-Path "requirements-dev.in")
-          $hasRequirementsDev = Test-Path "requirements-dev.txt"
-          $hasRequirements = Test-Path "requirements.txt"
-          
-          if ($hasConstraints) {
-              Write-Host "📦 Using constraints-based dependency resolution"
-              $dependencyStrategy = "constraints"
-              
-              Invoke-SmartRetry -OperationName "Constraints Install" -Command {
-                  python -m pip install --no-warn-script-location -c constraints-dev.txt -r requirements-dev.in
-                  if ($LASTEXITCODE -ne 0) { throw "Constraints installation failed" }
-              }
-          }
-          elseif ($hasRequirementsDev) {
-              Write-Host "📦 Using requirements-dev.txt"
-              $dependencyStrategy = "requirements-dev"
-              
-              Invoke-SmartRetry -OperationName "Requirements-Dev Install" -Command {
-                  python -m pip install --no-warn-script-location -r requirements-dev.txt
-                  if ($LASTEXITCODE -ne 0) { throw "Requirements-dev installation failed" }
-              }
-          }
-          elseif ($hasRequirements) {
-              Write-Host "📦 Using requirements.txt"
-              $dependencyStrategy = "requirements"
-              
-              Invoke-SmartRetry -OperationName "Requirements Install" -Command {
-                  python -m pip install --no-warn-script-location -r requirements.txt
-                  if ($LASTEXITCODE -ne 0) { throw "Requirements installation failed" }
-              }
-          }
-          else {
-              Write-Host "⚠️ No requirements file found, installing project only"
-              $dependencyStrategy = "project-only"
-          }
-          
-          # Install project in editable mode
-          Write-Host "📦 Installing project in editable mode"
-          Invoke-SmartRetry -OperationName "Project Install" -Command {
-              python -m pip install --no-warn-script-location -e .
-              if ($LASTEXITCODE -ne 0) { throw "Project installation failed" }
-          }
-          
-          # Install PyInstaller with specific version
-          Write-Host "📦 Installing PyInstaller"
-          Invoke-SmartRetry -OperationName "PyInstaller Install" -Command {
-              python -m pip install --no-warn-script-location "pyinstaller==6.11.0"
-              if ($LASTEXITCODE -ne 0) { throw "PyInstaller installation failed" }
-          }
-          
-          # Verify installation integrity
-          Write-Host "🔍 Verifying installation integrity"
-          python -m pip check
-          if ($LASTEXITCODE -ne 0) {
-              Write-Warning "⚠️ Dependency conflicts detected, attempting resolution..."
-              python -m pip install --upgrade --force-reinstall --no-deps .
-          }
-          
-          # Export dependency info
-          $installedPackages = python -m pip list --format=json | ConvertFrom-Json
-          @{
-              strategy = $dependencyStrategy
-              package_count = $installedPackages.Count
-              packages = $installedPackages
-              timestamp = (Get-Date -Format 'o')
-          } | ConvertTo-Json -Depth 3 | Out-File -FilePath "artifacts/dependencies.json" -Encoding utf8
-          
-          Write-Host "✅ Dependencies installed successfully using strategy: $dependencyStrategy"
-          Write-Host "📊 Total packages installed: $($installedPackages.Count)"
-
-      - name: Run Windows Test Suite with Enhanced Error Handling
-        id: test
-        continue-on-error: true
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $ProgressPreference = 'SilentlyContinue'
-          
-          # Test configuration
-          $testTargets = @(
-              'tests/windows',
-              'tests/meta/test_agents_guard.py',
-              'tests/mw/test_order_from_launcher.py',
-              'tests/exports/test_excel_safety_from_launcher.py',
-              'tests/exports/test_atomic_finalize_from_launcher.py',
-              'tests/exports/test_large_stream_from_launcher.py',
-              'tests/obs/test_metrics_guard_from_launcher.py'
-          )
-          
-          # Filter existing test paths
-          $validTargets = @()
-          foreach ($target in $testTargets) {
-              if (Test-Path $target) {
-                  $validTargets += $target
-                  Write-Host "✅ Found test target: $target"
-              } else {
-                  Write-Warning "⚠️ Test target not found: $target"
-              }
-          }
-          
-          if ($validTargets.Count -eq 0) {
-              Write-Warning "⚠️ No valid test targets found, skipping tests"
-              "test_status=skipped" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-              exit 0
-          }
-          
-          # Prepare test environment
-          $env:PYTEST_CURRENT_TEST = "ci-windows-launcher"
-          $env:CI = "true"
-          
-          # Run tests with enhanced reporting
-          Write-Host "🧪 Running $($validTargets.Count) test targets..."
-          
-          $testArgs = @(
-              '-m', 'pytest',
-              '-v',
-              '--tb=short',
-              '--strict-config',
-              '--strict-markers',
-              '--maxfail=3',
-              '--timeout=300',
-              '--timeout-method=thread',
-              '--color=yes',
-              '--code-highlight=yes',
-              '--capture=no',
-              '--junitxml=artifacts/junit.xml',
-              '--html=artifacts/test-report.html',
-              '--self-contained-html'
-          )
-          
-          # Add ignore patterns for system directories
-          $ignorePatterns = @(
-              '**/System Volume Information',
-              '**/WindowsApps',
-              '**/Program Files',
-              '**/Program Files (x86)',
-              '**/$RECYCLE.BIN',
-              '**/ProgramData/Microsoft',
-              '**/Windows'
-          )
-          
-          foreach ($pattern in $ignorePatterns) {
-              $testArgs += @('--ignore-glob', $pattern)
-          }
-          
-          # Add test targets
-          $testArgs += $validTargets
-          
-          # Execute tests
-          $testResult = $null
-          try {
-              & python $testArgs
-              $testResult = $LASTEXITCODE
-          }
-          catch {
-              Write-Error "Test execution failed: $_"
-              $testResult = 1
-          }
-          
-          # Process results
-          if ($testResult -eq 0) {
-              Write-Host "✅ All tests passed successfully"
-              "test_status=passed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          }
-          elseif ($testResult -eq 5) {
-              Write-Host "⚠️ No tests were collected"
-              "test_status=no-tests" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          }
-          else {
-              Write-Error "❌ Tests failed with exit code: $testResult"
-              "test_status=failed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-              exit 1
-          }
-
-      - name: Build Launcher Executable
-        id: build
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $ProgressPreference = 'SilentlyContinue'
-          
-          Write-Host "🔨 Building launcher executable..."
-          
-          # Validate spec file exists
-          $specFile = "windows_launcher/specs/pyinstaller.spec"
-          if (-not (Test-Path $specFile)) {
-              Write-Error "❌ PyInstaller spec file not found: $specFile"
-              exit 1
-          }
-          
-          # Clean previous builds
-          @('dist', 'build') | ForEach-Object {
-              if (Test-Path $_) {
-                  Write-Host "🧹 Cleaning $_..."
-                  Remove-Item -Recurse -Force $_
-              }
-          }
-          
-          # Configure PyInstaller environment
-          $env:PYTHONOPTIMIZE = "1"
-          $env:PYTHONHASHSEED = "0"
-          
-          # Build with PyInstaller
-          $buildArgs = @(
-              $specFile,
-              '--clean',
-              '--noconfirm',
-              '--distpath', 'dist',
-              '--workpath', 'build/launcher',
-              '--log-level', 'INFO'
-          )
-          
-          if ($env:CI_DEBUG -eq 'true') {
-              $buildArgs += '--debug', 'all'
-          }
-          
-          Write-Host "Executing: pyinstaller $($buildArgs -join ' ')"
-          & pyinstaller $buildArgs
-          
-          if ($LASTEXITCODE -ne 0) {
-              Write-Error "❌ PyInstaller build failed with exit code: $LASTEXITCODE"
-              
-              # Collect debug information
-              if (Test-Path "build/launcher/warn-*.txt") {
-                  Write-Host "⚠️ PyInstaller warnings:"
-                  Get-Content "build/launcher/warn-*.txt" | ForEach-Object { Write-Warning $_ }
-              }
-              
-              exit 1
-          }
-          
-          # Verify build output
-          $expectedOutput = "dist/StudentMentorApp"
-          if (-not (Test-Path $expectedOutput)) {
-              Write-Error "❌ Expected build output not found: $expectedOutput"
-              exit 1
-          }
-          
-          # Calculate build metrics
-          $buildSize = (Get-ChildItem -Recurse $expectedOutput | Measure-Object -Property Length -Sum).Sum
-          $buildSizeMB = [Math]::Round($buildSize / 1MB, 2)
-          
-          Write-Host "✅ Build completed successfully"
-          Write-Host "📦 Output: $expectedOutput"
-          Write-Host "📊 Size: $buildSizeMB MB"
-          
-          # Export build info
-          @{
-              output_path = $expectedOutput
-              size_bytes = $buildSize
-              size_mb = $buildSizeMB
-              timestamp = (Get-Date -Format 'o')
-          } | ConvertTo-Json | Out-File -FilePath "artifacts/build_info.json" -Encoding utf8
-
-      - name: Prepare Windows Service Components
-        id: service
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $ProgressPreference = 'SilentlyContinue'
-          
-          Write-Host "🔧 Preparing Windows Service components..."
-          
-          # Fetch WinSW executable
-          $winswScript = "./tools/fetch_winsw.ps1"
-          $winswDest = "windows_service/StudentMentorService.exe"
-          
-          if (Test-Path $winswScript) {
-              Write-Host "📥 Fetching WinSW executable..."
-              
-              # Create destination directory
-              $destDir = Split-Path -Parent $winswDest
-              if (-not (Test-Path $destDir)) {
-                  New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-              }
-              
-              # Execute fetch script with retry
-              $maxAttempts = 3
-              $attempt = 0
-              $success = $false
-              
-              while (($attempt -lt $maxAttempts) -and (-not $success)) {
-                  $attempt++
-                  try {
-                      & $winswScript -Destination $winswDest
-                      if (Test-Path $winswDest) {
-                          $success = $true
-                          Write-Host "✅ WinSW fetched successfully"
-                      }
-                  }
-                  catch {
-                      Write-Warning "Attempt $attempt failed: $_"
-                      if ($attempt -lt $maxAttempts) {
-                          Start-Sleep -Seconds 5
-                      }
-                  }
-              }
-              
-              if (-not $success) {
-                  Write-Error "❌ Failed to fetch WinSW after $maxAttempts attempts"
-                  exit 1
-              }
-          }
-          else {
-              Write-Warning "⚠️ WinSW fetch script not found: $winswScript"
-          }
-          
-          # Generate WinSW XML configuration
-          $configScript = "tools/generate_winsw.py"
-          $configDest = "windows_service/StudentMentorService.xml"
-          
-          if (Test-Path $configScript) {
-              Write-Host "📝 Generating WinSW configuration..."
-              python $configScript --output $configDest
-              
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Error "❌ Failed to generate WinSW configuration"
-                  exit 1
-              }
-              
-              if (Test-Path $configDest) {
-                  Write-Host "✅ WinSW configuration generated"
-              }
-          }
-          else {
-              Write-Warning "⚠️ WinSW config generator not found: $configScript"
-          }
-          
-          Write-Host "✅ Windows Service components prepared"
-
-      - name: Extract Version Information
-        id: version
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          
-          # Try to extract version from multiple sources
-          $version = "unknown"
-          
-          # Try from __version__.py
-          if (Test-Path "src/__version__.py") {
-              $versionContent = Get-Content "src/__version__.py" -Raw
-              if ($versionContent -match '__version__\s*=\s*["\']([^"\']+)["\']') {
-                  $version = $matches[1]
-              }
-          }
-          
-          # Try from pyproject.toml
-          if (($version -eq "unknown") -and (Test-Path "pyproject.toml")) {
-              $tomlContent = Get-Content "pyproject.toml" -Raw
-              if ($tomlContent -match 'version\s*=\s*["\']([^"\']+)["\']') {
-                  $version = $matches[1]
-              }
-          }
-          
-          # Try from setup.py
-          if (($version -eq "unknown") -and (Test-Path "setup.py")) {
-              $setupContent = Get-Content "setup.py" -Raw
-              if ($setupContent -match 'version\s*=\s*["\']([^"\']+)["\']') {
-                  $version = $matches[1]
-              }
-          }
-          
-          # Fallback to git describe
-          if ($version -eq "unknown") {
-              try {
-                  $version = git describe --tags --always --dirty
-              }
-              catch {
-                  $version = "0.0.0-dev"
-              }
-          }
-          
-          Write-Host "📌 Version: $version"
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      - name: Package Artifacts
-        id: artifact
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          
-          $artifactName = "windows-launcher-${{ steps.version.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}"
-          
-          Write-Host "📦 Packaging artifacts as: $artifactName"
-          "name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          
-          # Create manifest
-          @{
-              name = $artifactName
-              version = '${{ steps.version.outputs.version }}'
-              build_id = '${{ github.run_id }}-${{ github.run_attempt }}'
-              commit = '${{ github.sha }}'
-              ref = '${{ github.ref }}'
-              timestamp = (Get-Date -Format 'o')
-              test_status = '${{ steps.test.outputs.test_status }}'
-          } | ConvertTo-Json | Out-File -FilePath "artifacts/manifest.json" -Encoding utf8
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.artifact.outputs.name }}
-          retention-days: 30
-          compression-level: 9
-          if-no-files-found: error
-          path: |
-            dist/StudentMentorApp
-            windows_service/StudentMentorService.xml
-            windows_service/StudentMentorService.exe
-            artifacts/
-
-      - name: Upload Test Results
-        if: always() && steps.test.outputs.test_status != 'skipped'
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-${{ github.run_id }}-${{ github.run_attempt }}
-          retention-days: 7
-          if-no-files-found: warn
-          path: |
-            artifacts/junit.xml
-            artifacts/test-report.html
-
-      - name: Publish Test Results
-        if: always() && steps.test.outputs.test_status != 'skipped'
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: artifacts/junit.xml
-          check_name: 'Windows Launcher Test Results'
-          comment_mode: always
-
-      - name: Generate Summary
+      - name: Upload artifacts
         if: always()
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          
-          $summary = @"
-          # Windows Launcher Build Summary
-          
-          ## Build Information
-          - **Version**: ${{ steps.version.outputs.version }}
-          - **Build ID**: ${{ github.run_id }}-${{ github.run_attempt }}
-          - **Commit**: ${{ github.sha }}
-          - **Test Status**: ${{ steps.test.outputs.test_status || 'unknown' }}
-          
-          ## Artifacts
-          - **Name**: ${{ steps.artifact.outputs.name }}
-          - **Components**:
-            - ✅ Launcher executable
-            - ✅ Windows Service configuration
-            - ✅ WinSW executable
-          
-          ## Next Steps
-          1. Download artifacts from the Actions tab
-          2. Deploy to target environment
-          3. Verify service installation
-          "@
-          
-          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-tests-${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/**
+            coverage/**
+            artifacts/**
+            logs/**
+          retention-days: 7

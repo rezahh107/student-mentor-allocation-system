@@ -15,3 +15,8 @@ coverage[toml]>=7.4.0
 # Benchmarking & reporting
 pytest-benchmark[histogram]>=4.0.0
 
+fastapi
+fakeredis
+prometheus-client
+pytest-json-report
+pytest-randomly

@@ -43,6 +43,22 @@ else:
             default=False,
             help="pytest-timeout stub: flag accepted but ignored.",
         )
+        parser.addini(
+            "timeout",
+            "pytest-timeout stub: ini option accepted but ignored.",
+            default=None,
+        )
+        parser.addini(
+            "timeout_method",
+            "pytest-timeout stub: ini option accepted but ignored.",
+            default="thread",
+        )
+        parser.addini(
+            "timeout_func_only",
+            "pytest-timeout stub: ini flag accepted but ignored.",
+            default=False,
+            type="bool",
+        )
 
     def pytest_configure(config):  # pragma: no cover - no-op hook
         del config

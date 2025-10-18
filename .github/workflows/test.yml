@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: windows-tests-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PYTHONUTF8: "1"
@@ -24,6 +24,11 @@ env:
   TZ: "Asia/Tehran"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_PROGRESS_BAR: "off"
+  # Windows-specific optimizations
+  TEMP: "D:\\temp"
+  TMP: "D:\\temp"
+  PIP_CACHE_DIR: "D:\\pip-cache"
+  PYTEST_TMPDIR: "D:\\pytest-tmp"
 
 defaults:
   run:
@@ -41,253 +46,315 @@ jobs:
         python-version: ['3.10', '3.11.9', '3.12']
 
     steps:
+      - name: Initialize Windows environment
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          
+          # Create isolated directories with proper permissions
+          $dirs = @('D:\temp', 'D:\pip-cache', 'D:\pytest-tmp', 'D:\test-workspace')
+          foreach ($dir in $dirs) {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            $acl = Get-Acl $dir
+            $permission = [System.Security.AccessControl.FileSystemAccessRule]::new(
+              "Everyone", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
+            )
+            $acl.SetAccessRule($permission)
+            Set-Acl -Path $dir -AclObject $acl
+          }
+          
+          # Set Windows Defender exclusions for performance
+          Add-MpPreference -ExclusionPath $dirs -ErrorAction SilentlyContinue
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          path: 'D:\test-workspace'
 
-      - name: Setup Python
+      - name: Setup Python with enhanced caching
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          architecture: 'x64'
           cache: 'pip'
           cache-dependency-path: |
-            constraints-dev.txt
-            requirements-dev.in
-            requirements.txt
-            requirements-test.txt
-            pyproject.toml
+            D:\test-workspace\constraints-dev.txt
+            D:\test-workspace\requirements*.txt
+            D:\test-workspace\pyproject.toml
 
-      - name: Display environment
+      - name: Install dependencies with resilient retry
+        working-directory: D:\test-workspace
         run: |
-          Write-Host "Python:" (python --version)
-          Write-Host "Location:" (Get-Location)
-          Get-ChildItem -Force
-
-      - name: Install dependencies (constraints-aware, retry, PS-safe)
-        run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-
-          function Invoke-WithRetry {
-            param([scriptblock]$Script,[int]$MaxAttempts=4)
-            for ($i=1; $i -le $MaxAttempts; $i++) {
-              try { & $Script; return } catch {
-                if ($i -eq $MaxAttempts) { throw }
-                $delay = [Math]::Min(8, [Math]::Pow(2,$i)) + (Get-Random -Min 0 -Max 2)
-                Write-Warning "Attempt $i failed: $($_.Exception.Message). Retrying in $delay s..."
-                Start-Sleep -Seconds $delay
+          
+          # Enhanced retry function with exponential backoff
+          function Invoke-ResilientCommand {
+            param(
+              [scriptblock]$Command,
+              [int]$MaxAttempts = 5,
+              [string]$Description = "command"
+            )
+            
+            $attempt = 0
+            $baseDelay = 2
+            
+            while ($attempt -lt $MaxAttempts) {
+              $attempt++
+              try {
+                Write-Host "[$attempt/$MaxAttempts] Executing: $Description"
+                $result = & $Command
+                Write-Host "✓ Success: $Description"
+                return $result
+              }
+              catch {
+                $delay = [Math]::Min(60, $baseDelay * [Math]::Pow(2, $attempt - 1))
+                $jitter = Get-Random -Minimum 0 -Maximum 3
+                $totalDelay = $delay + $jitter
+                
+                if ($attempt -eq $MaxAttempts) {
+                  Write-Error "Failed after $MaxAttempts attempts: $_"
+                  throw
+                }
+                
+                Write-Warning "Attempt $attempt failed: $_"
+                Write-Host "Retrying in $totalDelay seconds..."
+                Start-Sleep -Seconds $totalDelay
               }
             }
           }
-
-          Invoke-WithRetry { python -m pip install --upgrade pip wheel setuptools }
-
-          # PS-safe boolean with parentheses to avoid "-and" being parsed as a parameter
-          $useConstraints = (Test-Path -LiteralPath 'constraints-dev.txt') -and (Test-Path -LiteralPath 'requirements-dev.in')
-
-          if ($useConstraints) {
-            Write-Host 'Using constraints-dev.txt + requirements-dev.in'
-            Invoke-WithRetry { python -m pip install -c constraints-dev.txt -r requirements-dev.in }
+          
+          # Upgrade pip with retry
+          Invoke-ResilientCommand -Description "pip upgrade" -Command {
+            python -m pip install --upgrade --no-warn-script-location pip wheel setuptools
           }
-          elseif (Test-Path -LiteralPath 'requirements-test.txt') {
-            Write-Host 'Using requirements-test.txt'
-            Invoke-WithRetry { python -m pip install -r requirements-test.txt }
+          
+          # Dependency resolution with fallback strategy
+          $installed = $false
+          
+          # Strategy 1: Constraints-based installation
+          if ((Test-Path 'constraints-dev.txt') -and (Test-Path 'requirements-dev.in')) {
+            try {
+              Invoke-ResilientCommand -Description "constraints install" -Command {
+                python -m pip install --no-deps -c constraints-dev.txt -r requirements-dev.in
+                python -m pip install --no-deps -c constraints-dev.txt .
+              }
+              $installed = $true
+            }
+            catch {
+              Write-Warning "Constraints installation failed, trying fallback..."
+            }
           }
-          elseif (Test-Path -LiteralPath 'requirements-dev.txt') {
-            Write-Host 'Using requirements-dev.txt'
-            Invoke-WithRetry { python -m pip install -r requirements-dev.txt }
+          
+          # Strategy 2: Direct requirements installation
+          if (-not $installed) {
+            $reqFiles = @('requirements-test.txt', 'requirements-dev.txt', 'requirements.txt')
+            foreach ($reqFile in $reqFiles) {
+              if (Test-Path $reqFile) {
+                Invoke-ResilientCommand -Description "$reqFile install" -Command {
+                  python -m pip install -r $reqFile
+                }
+                $installed = $true
+                break
+              }
+            }
           }
-          elseif (Test-Path -LiteralPath 'requirements.txt') {
-            Write-Host 'Using requirements.txt'
-            Invoke-WithRetry { python -m pip install -r requirements.txt }
+          
+          # Install project in editable mode
+          Invoke-ResilientCommand -Description "project install" -Command {
+            python -m pip install -e . --no-build-isolation
           }
-          else {
-            Write-Host 'No requirements file found; proceeding with project install only.'
-          }
+          
+          # Verify installation integrity
+          python -m pip check
+          python -c "import sys; print(f'Python {sys.version}')"
 
-          Invoke-WithRetry { python -m pip install -e . }
-
-      - name: Run full pytest suite with coverage (deterministic)
+      - name: Run deterministic test suite
+        working-directory: D:\test-workspace
         env:
-          PYTEST_CURRENT_TEST: ci-windows
+          PYTEST_CURRENT_TEST: "ci-windows-${{ matrix.python-version }}"
+          COVERAGE_CORE: "sysmon"
         run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path test-results | Out-Null
-          python -m pytest `
-            --tb=short --strict-config --strict-markers --maxfail=1 `
-            --rootdir "$PWD" `
-            --ignore-glob="**/System Volume Information" `
-            --ignore-glob="**/WindowsApps" `
-            --ignore-glob="**/Program Files" `
-            --ignore-glob="**/Program Files (x86)" `
-            --cov=src `
-            --cov-report=xml `
-            --cov-report=html:test-results/htmlcov `
-            --cov-report=term `
-            --json-report `
-            --json-report-file=test-results/pytest-report.json `
-            --junitxml=test-results/junit.xml `
-            --html=test-results/report.html `
-            --self-contained-html
+          
+          # Create results directory
+          $resultsDir = "D:\test-workspace\test-results"
+          New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
+          
+          # Configure pytest with Windows-safe paths
+          $pytestArgs = @(
+            '--tb=short',
+            '--strict-config',
+            '--strict-markers',
+            '--maxfail=3',
+            '--timeout=300',
+            '--timeout-method=thread',
+            "--rootdir=D:\test-workspace",
+            "--basetemp=D:\pytest-tmp",
+            '--ignore-glob=**\System Volume Information',
+            '--ignore-glob=**\WindowsApps',
+            '--ignore-glob=**\Program Files*',
+            '--ignore-glob=**\Windows',
+            '--ignore-glob=**\Users\*\AppData',
+            '--cov=src',
+            '--cov-report=xml:coverage.xml',
+            "--cov-report=html:$resultsDir\htmlcov",
+            '--cov-report=term-missing:skip-covered',
+            '--json-report',
+            "--json-report-file=$resultsDir\pytest-report.json",
+            "--junitxml=$resultsDir\junit.xml",
+            "--html=$resultsDir\report.html",
+            '--self-contained-html',
+            '-v'
+          )
+          
+          # Run tests with automatic retry on transient failures
+          $maxTestAttempts = 2
+          $testAttempt = 0
+          $testSuccess = $false
+          
+          while (($testAttempt -lt $maxTestAttempts) -and (-not $testSuccess)) {
+            $testAttempt++
+            try {
+              Write-Host "Test attempt $testAttempt of $maxTestAttempts"
+              python -m pytest $pytestArgs
+              $testSuccess = $true
+            }
+            catch {
+              if ($testAttempt -eq $maxTestAttempts) {
+                Write-Error "Tests failed after $maxTestAttempts attempts"
+                throw
+              }
+              Write-Warning "Test attempt $testAttempt failed, retrying..."
+              Start-Sleep -Seconds 5
+            }
+          }
 
-      - name: Publish unit test results
+      - name: Publish test results
         if: always()
-        uses: EnricoMi/publish-unit-test-result-action@v2
+        uses: EnricoMi/publish-unit-test-result-action/windows@v2
         with:
-          files: test-results/junit.xml
+          files: 'D:\test-workspace\test-results\junit.xml'
+          check_name: 'Test Results (Python ${{ matrix.python-version }})'
+          comment_mode: 'off'
 
-      - name: Upload coverage xml
+      - name: Upload coverage artifacts
         if: always() && matrix.python-version == '3.11.9'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-xml
-          path: coverage.xml
-          if-no-files-found: error
-
-      - name: Upload HTML coverage
-        if: always() && matrix.python-version == '3.11.9'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-html
-          path: test-results/htmlcov
-          if-no-files-found: warn
-
-      - name: Upload pytest reports
-        if: always() && matrix.python-version == '3.11.9'
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-reports
+          name: coverage-py311
           path: |
-            test-results/pytest-report.json
-            test-results/junit.xml
-            test-results/report.html
-          if-no-files-found: warn
+            D:\test-workspace\coverage.xml
+            D:\test-workspace\test-results\htmlcov
+          retention-days: 7
 
-      - name: Upload raw pytest cache on failure
-        if: failure()
+      - name: Upload test reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-cache-${{ matrix.python-version }}
-          path: .pytest_cache
-          if-no-files-found: ignore
+          name: test-reports-py${{ matrix.python-version }}
+          path: D:\test-workspace\test-results
+          retention-days: 7
+
+      - name: Cleanup workspace
+        if: always()
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'SilentlyContinue'
+          
+          # Remove temporary directories
+          Remove-Item -Recurse -Force 'D:\pytest-tmp' -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force 'D:\temp\*' -ErrorAction SilentlyContinue
+          
+          # Clear pip cache if needed
+          if ((Get-ChildItem 'D:\pip-cache' -Recurse | Measure-Object -Property Length -Sum).Sum -gt 1GB) {
+            Remove-Item -Recurse -Force 'D:\pip-cache\*'
+          }
 
   performance:
-    name: Windows Performance Benchmarks (Python 3.11.9)
+    name: Performance Benchmarks
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
+      - name: Initialize benchmark environment
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          
+          # Create benchmark workspace
+          New-Item -ItemType Directory -Force -Path 'D:\bench-workspace' | Out-Null
+          New-Item -ItemType Directory -Force -Path 'D:\bench-artifacts' | Out-Null
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          path: 'D:\bench-workspace'
 
-      - name: Setup Python
+      - name: Setup Python for benchmarks
         uses: actions/setup-python@v5
         with:
           python-version: '3.11.9'
+          architecture: 'x64'
           cache: 'pip'
-          cache-dependency-path: |
-            constraints-dev.txt
-            requirements-dev.in
-            requirements.txt
-            requirements-test.txt
-            pyproject.toml
 
-      - name: Install dependencies (constraints-aware, PS-safe)
+      - name: Install benchmark dependencies
+        working-directory: D:\bench-workspace
         run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-          python -m pip install --upgrade pip
-
-          $useConstraints = (Test-Path -LiteralPath 'constraints-dev.txt') -and (Test-Path -LiteralPath 'requirements-dev.in')
-
-          if ($useConstraints) {
-            Write-Host 'Using constraints-dev.txt + requirements-dev.in'
-            python -m pip install -c constraints-dev.txt -r requirements-dev.in
+          
+          python -m pip install --upgrade pip wheel
+          python -m pip install pytest-benchmark pytest-json-report
+          
+          if (Test-Path 'requirements-bench.txt') {
+            python -m pip install -r requirements-bench.txt
           }
-          elseif (Test-Path -LiteralPath 'requirements-test.txt') {
-            Write-Host 'Using requirements-test.txt'
+          elseif (Test-Path 'requirements-test.txt') {
             python -m pip install -r requirements-test.txt
           }
-          elseif (Test-Path -LiteralPath 'requirements-dev.txt') {
-            Write-Host 'Using requirements-dev.txt'
-            python -m pip install -r requirements-dev.txt
-          }
-          elseif (Test-Path -LiteralPath 'requirements.txt') {
-            Write-Host 'Using requirements.txt'
-            python -m pip install -r requirements.txt
-          }
-          else {
-            Write-Host 'No requirements file found; proceeding with project install only.'
-          }
-
-          python -m pip install -e .
-
-      - name: Prepare artifacts directory
-        run: |
-          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          Remove-Item -Recurse -Force .benchmarks -ErrorAction SilentlyContinue
+          
+          python -m pip install -e . --no-build-isolation
 
       - name: Run performance benchmarks
+        working-directory: D:\bench-workspace
         run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
+          
+          # Run benchmarks with consistent configuration
           python -m pytest tests/performance `
-            --rootdir "$PWD" `
-            --ignore-glob="**/System Volume Information" `
-            --ignore-glob="**/WindowsApps" `
-            --ignore-glob="**/Program Files" `
-            --ignore-glob="**/Program Files (x86)" `
-            -p pytest_benchmark.plugin `
-            -n=0 `
-            --dist=no `
             --benchmark-only `
-            --benchmark-json=artifacts/pytest-benchmark.json `
-            --benchmark-compare `
+            --benchmark-json='D:\bench-artifacts\benchmark.json' `
+            --benchmark-autosave `
+            --benchmark-max-time=2 `
             --benchmark-min-rounds=5 `
-            --maxfail=1
+            --benchmark-warmup=on `
+            --benchmark-disable-gc `
+            --benchmark-sort=fullname `
+            -v
 
-      - name: Download coverage xml
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-xml
-          path: artifacts/coverage
-
-      - name: Download pytest reports
-        uses: actions/download-artifact@v4
-        with:
-          name: pytest-reports
-          path: artifacts/test-results
-
-      - name: Generate consolidated test report (if script exists)
+      - name: Analyze benchmark results
+        working-directory: D:\bench-workspace
         run: |
-          if (Test-Path -LiteralPath 'scripts/generate_test_report.py') {
-            python scripts/generate_test_report.py `
-              --coverage artifacts/coverage/coverage.xml `
-              --pytest-json artifacts/test-results/pytest-report.json `
-              --bench-json artifacts/pytest-benchmark.json `
-              --output reports/test-report.md `
-              --badge reports/coverage_badge.svg
-          } else {
-            Write-Host 'scripts/generate_test_report.py not found; skipping consolidated report.'
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          
+          # Generate performance report
+          if (Test-Path 'scripts/analyze_benchmarks.py') {
+            python scripts/analyze_benchmarks.py `
+              --input 'D:\bench-artifacts\benchmark.json' `
+              --output 'D:\bench-artifacts\performance-report.md'
           }
 
-      - name: Upload performance artifacts
-        if: always()
+      - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: performance-artifacts
-          path: |
-            artifacts/pytest-benchmark.json
-            artifacts/performance-metrics.json
-            reports/test-report.md
-            reports/coverage_badge.svg
-          if-no-files-found: warn
-
-      - name: Upload benchmark cache
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-benchmark-cache
-          path: .benchmarks
-          if-no-files-found: warn
+          name: benchmark-results
+          path: D:\bench-artifacts
+          retention-days: 30

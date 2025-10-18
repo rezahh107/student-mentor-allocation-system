@@ -1,0 +1,33 @@
+name: live-redis-nightly
+
+on:
+  schedule:
+    - cron: '15 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  live-redis:
+    if: ${{ github.repository_owner == 'phase6' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      LIVE_REDIS_URL: ${{ secrets.LIVE_REDIS_URL }}
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      PYTHONWARNINGS: error
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Flush Redis namespace
+        run: python tools/ci_pytest_runner.py --mode live-redis --flush-redis yes --log-context full
+      - name: Run live Redis retry suite
+        run: >-
+          pytest -q -c pytest.min.ini
+          tests_live/test_redis_retry_integration.py
+      - name: Publish strict score report
+        if: always()
+        run: python -m tools.strict_score_guard --phase synthesize --if-missing --json reports/strict_score.live_redis.json

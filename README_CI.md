@@ -65,3 +65,9 @@ jobs:
 - برای بررسی دقیق‌تر لاگ‌ها، گزینهٔ `--redact-urls no` مقادیر را بدون افشای گذرواژه (اما با ماسک کاراکترهای حساس) چاپ می‌کند.
 - در صورت تنظیم `CI_TLS_HARNESS=1`، هارنس TLS در مسیر `tests/ci/certs/` فعال می‌شود و سناریوهای rediss:// بدون وابستگی خارجی آزمایش می‌گردند.
 - همواره مرحلهٔ «Synthesize» را با اجرای `python -m tools.strict_score_guard --phase synthesize --if-missing --json reports/strict_score.json` پس از pytest اضافه کنید (با `if: always()`). این مرحله در صورت نبود خروجی واقعی، نسخهٔ جایگزین با پیام فارسی تولید و شمارنده‌های پرومتئوس `ci_strict_report_created_total` و `ci_strict_report_write_errors_total` را به‌روز می‌کند. برای مشاهدهٔ نمونهٔ کامل به `ci/snippets/strict_score_guard.yml` مراجعه کنید و آرتیفکت را با `if-no-files-found: ignore` آپلود نمایید.
+
+### اجرای زمان‌بندی‌شدهٔ Redis واقعی
+
+- برای اطمینان از صحت منطق backoff روی سرویس واقعی، یک workflow زمان‌بندی‌شده تعریف کنید که تنها در صورت تنظیم `LIVE_REDIS_URL` اجرا شود و تست‌های `tests_live/test_redis_retry_integration.py` را هدف بگیرد.
+- نمونهٔ کامل در `ci/snippets/live_redis_schedule.yml` موجود است و به صورت پیش‌فرض از کران `15 2 * * *` استفاده می‌کند تا در ساعات کم‌ترافیک اجرا شود.
+- این job از workflow اصلی جداست و بنابراین در اجرای پیش‌فرض CI هیچ تستی skip نمی‌شود؛ فقط در زمان‌بندی یا اجرای دستی با `workflow_dispatch` فعال می‌گردد.

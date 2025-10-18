@@ -134,6 +134,7 @@ class RedisExportJobStore:
     attempts: int = 5
     base_delay: float = 0.01
     sleeper: Callable[[float], None] | None = None
+    timer: Callable[[], float] | None = None
 
     def _key(self, job_id: str) -> str:
         return f"{self.namespace}:export:{job_id}"
@@ -202,6 +203,7 @@ class RedisExportJobStore:
             metrics=self.metrics,
             format_label="n/a",
             sleeper=self.sleeper,
+            timer=self.timer,
         )
         payload_raw = raw.get("payload") if raw else None
         if not payload_raw:
@@ -224,6 +226,7 @@ class RedisExportJobStore:
             metrics=self.metrics,
             format_label="n/a",
             sleeper=self.sleeper,
+            timer=self.timer,
         )
 
 

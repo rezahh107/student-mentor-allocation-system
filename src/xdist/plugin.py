@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from typing import Final
 
@@ -23,12 +24,33 @@ else:
     def pytest_addoption(parser):  # pragma: no cover - option wiring only
         group = parser.getgroup("xdist-stub")
         group.addoption(
-            "-n",
+            "--numprocesses",
             dest="numprocesses",
             action="store",
             default="0",
             help="xdist stub: parallelism disabled; value ignored.",
         )
+        # pytest 8+ reserves lowercase short options for core use when options
+        # are registered via OptionGroup.addoption (shortupper=False).  The
+        # real pytest-xdist plugin still exposes ``-n`` so we provide it via the
+        # helper that skips the restriction.  Falling back to parser-level
+        # registration keeps behaviour consistent even if internals change.
+        try:
+            group._addoption(  # type: ignore[attr-defined]
+                "-n",
+                dest="numprocesses",
+                action="store",
+                default="0",
+                help=argparse.SUPPRESS,
+            )
+        except ValueError:
+            parser.addoption(
+                "-n",
+                dest="numprocesses",
+                action="store",
+                default="0",
+                help=argparse.SUPPRESS,
+            )
         group.addoption(
             "--dist",
             dest="dist",

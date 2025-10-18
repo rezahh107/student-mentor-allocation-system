@@ -3,8 +3,10 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from _pytest.config.argparsing import Parser
 
 
 def test_real_plugins_precede_stubs_when_available(
@@ -106,3 +108,42 @@ def test_real_plugins_precede_stubs_when_available_asyncio(
 
     assert getattr(module, "FLAG", "") == "real-asyncio", debug_context
     assert not getattr(module, "STUB_ACTIVE", False), debug_context
+
+
+def test_xdist_stub_accepts_short_option() -> None:
+    removed = {name: sys.modules.pop(name, None) for name in ("xdist", "xdist.plugin")}
+    try:
+        plugin_module = importlib.import_module("xdist.plugin")
+        debug_context = {
+            "stub_flag": getattr(plugin_module, "STUB_ACTIVE", None),
+            "available_options": sorted(getattr(plugin_module, "__dict__", {}).keys()),
+        }
+        assert getattr(plugin_module, "STUB_ACTIVE", False), debug_context
+
+        with pytest.deprecated_call():
+            parser = Parser()
+        plugin_module.pytest_addoption(parser)
+
+        namespace, unknown = parser.parse_known_and_unknown_args(["-n", "2", "--dist", "loadscope"])
+        debug_payload = {
+            "namespace": vars(namespace),
+            "unknown": unknown,
+        }
+        assert namespace.numprocesses == "2", debug_payload
+        assert namespace.dist == "loadscope", debug_payload
+        assert not unknown, debug_payload
+
+        config = SimpleNamespace(option=namespace)
+        plugin_module.pytest_configure(config)
+        configured_context = {
+            "numprocesses": config.option.numprocesses,
+            "dist": config.option.dist,
+        }
+        assert config.option.numprocesses == "0", configured_context
+        assert config.option.dist == "no", configured_context
+    finally:
+        for name, module in removed.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module

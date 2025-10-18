@@ -1,40 +1,33 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul
-title راه‌انداز سریع - Quick Start
-color 0E
-cd /d "%~dp0"
-
-echo ╔════════════════════════════════════════════════╗
-echo ║          راه‌انداز سریع پروژه                  ║
-echo ╚════════════════════════════════════════════════╝
-echo.
-echo این اسکریپت به‌صورت خودکار:
-echo   1. وضعیت سیستم را بررسی می‌کند
-echo   2. در صورت نیاز، کتابخانه‌ها را نصب می‌کند
-echo   3. برنامه را اجرا می‌کند
-echo.
-pause
-
-echo.
-echo [1/3] بررسی وضعیت...
-python check_progress.py
+set "SCRIPT_DIR=%~dp0"
+pushd "%SCRIPT_DIR%" >nul
+goto :CHECK_PROGRESS
+:CHECK_PROGRESS
+python check_progress.py --json >nul 2>&1
+if errorlevel 1 goto :NEED_INSTALL
+goto :RUN_APP
+:NEED_INSTALL
+echo ⚠️ برخی پیش‌نیازها کامل نیست؛ نصب آغاز می‌شود.
+call install_requirements.bat
 if errorlevel 1 (
-    echo.
-    echo ⚠️ برخی پیش‌نیازها ناقص هستند
-    choice /C YN /M "آیا می‌خواهید نصب خودکار انجام شود؟ (Y/N)"
-    if errorlevel 2 exit /b 1
-
-    echo.
-    echo [2/3] نصب کتابخانه‌ها...
-    call install_requirements.bat
-    if errorlevel 1 (
-        echo ❌ نصب با خطا مواجه شد
-        pause
-        exit /b 1
-    )
+    echo ❌ نصب وابستگی‌ها ناموفق بود.
+    popd >nul
+    exit /b 1
 )
-
-echo.
-echo [3/3] اجرای برنامه...
-timeout /t 2 >nul
+python check_progress.py --json >nul 2>&1
+if errorlevel 1 (
+    echo ❌ پس از نصب نیز برخی خطاها باقی است؛ جزئیات را در check_progress.py ببینید.
+    popd >nul
+    exit /b 1
+)
+:RUN_APP
 call run_application.bat
+if errorlevel 1 (
+    echo ❌ اجرای برنامه ناموفق بود.
+    popd >nul
+    exit /b 1
+)
+popd >nul
+exit /b 0

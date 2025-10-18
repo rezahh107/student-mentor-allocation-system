@@ -19,12 +19,19 @@ def retry_with_backoff(
     format_label: str,
     sleeper: Callable[[float], None] | None = None,
     on_retry: Callable[[int], None] | None = None,
+    timer: Callable[[], float] | None = None,
 ) -> T:
     sleeper = sleeper or time.sleep
+    timer = timer or time.perf_counter
     last_exc: Exception | None = None
     for attempt in range(1, attempts + 1):
+        start = timer()
         try:
-            return operation(attempt)
+            result = operation(attempt)
+            duration = max(timer() - start, 0.0)
+            if metrics is not None:
+                metrics.retry_duration_seconds.labels(operation=seed, format=format_label).observe(duration)
+            return result
         except Exception as exc:  # noqa: PERF203 - deliberate catch for retry control flow
             last_exc = exc
             if metrics is not None:
@@ -32,10 +39,18 @@ def retry_with_backoff(
             if attempt == attempts:
                 if metrics is not None:
                     metrics.retry_exhausted_total.labels(operation=seed, format=format_label).inc()
+                    metrics.retry_duration_seconds.labels(operation=seed, format=format_label).observe(
+                        max(timer() - start, 0.0)
+                    )
                 raise
             if on_retry is not None:
                 on_retry(attempt)
             delay = deterministic_jitter(base_delay, attempt, seed)
+            if metrics is not None:
+                metrics.retry_duration_seconds.labels(operation=seed, format=format_label).observe(
+                    max(timer() - start, 0.0)
+                )
+                metrics.retry_backoff_seconds.labels(operation=seed, format=format_label).observe(delay)
             sleeper(delay)
     assert last_exc is not None  # pragma: no cover - defensive
     raise last_exc

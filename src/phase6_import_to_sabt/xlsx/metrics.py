@@ -16,6 +16,8 @@ class ImportExportMetrics:
     upload_rows_total: Counter
     retry_total: Counter
     retry_exhausted_total: Counter
+    retry_backoff_seconds: Histogram
+    retry_duration_seconds: Histogram
     download_signed_total: Counter
 
     def reset(self) -> None:
@@ -76,6 +78,20 @@ def build_import_export_metrics(registry: CollectorRegistry | None = None) -> Im
         labelnames=("operation", "format"),
         registry=reg,
     )
+    retry_backoff_seconds = Histogram(
+        "io_retry_backoff_seconds",
+        "Observed retry backoff seconds by operation and format",
+        labelnames=("operation", "format"),
+        registry=reg,
+        buckets=(0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5),
+    )
+    retry_duration_seconds = Histogram(
+        "io_retry_duration_seconds",
+        "Operation attempt durations during retry orchestration",
+        labelnames=("operation", "format"),
+        registry=reg,
+        buckets=(0.0005, 0.001, 0.005, 0.01, 0.02, 0.05, 0.1),
+    )
     download_signed_total = Counter(
         "download_signed_total",
         "Signed download URL activity",
@@ -92,5 +108,7 @@ def build_import_export_metrics(registry: CollectorRegistry | None = None) -> Im
         upload_rows_total=upload_rows_total,
         retry_total=retry_total,
         retry_exhausted_total=retry_exhausted_total,
+        retry_backoff_seconds=retry_backoff_seconds,
+        retry_duration_seconds=retry_duration_seconds,
         download_signed_total=download_signed_total,
     )

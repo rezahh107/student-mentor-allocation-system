@@ -12,7 +12,7 @@ def _read_csv(path: Path) -> list[list[str]]:
         return [row for row in reader]
 
 
-def test_csv_formula_guard_crlf_always_quote(tmp_path: Path) -> None:
+def test_formula_guard_and_crlf_preserved(tmp_path: Path) -> None:
     writer = ExportWriter(sensitive_columns=["national_id", "counter", "mobile"], include_bom=False)
     dangerous = {
         "national_id": "=1+2",

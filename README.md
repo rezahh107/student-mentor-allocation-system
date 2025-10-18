@@ -25,6 +25,8 @@ export SIGNING_KEY_HEX=0123456789abcdef0123456789abcdef0123456789abcdef012345678
 docker compose -f docker-compose.dev.yml up -d
 ```
 
+فایل `docker-compose.dev.yml` یک نمونهٔ Redis و PostgreSQL تمیز برای توسعهٔ محلی راه‌اندازی می‌کند و می‌توان پس از اتمام کار با `docker compose -f docker-compose.dev.yml down` آن را جمع‌آوری کرد.
+
 ### اجرا
 ```bash
 uvicorn main:app --host 127.0.0.1 --port 25119 --env-file .env.dev
@@ -42,6 +44,10 @@ METRICS_TOKEN=dev-metrics scripts/smoke.sh
 - سیاست Retry Redis از طریق متغیرهای `REDIS_MAX_RETRIES` (پیش‌فرض ۳)، `REDIS_BASE_DELAY_MS`، `REDIS_MAX_DELAY_MS` و `REDIS_JITTER_MS` قابل تنظیم است.
 - برای فعال‌سازی Fail-Open عمومی می‌توانید `RATE_LIMIT_FAIL_OPEN=1` را تنظیم کنید؛ GET ها در صورت خطا همیشه Fail-Open می‌شوند و `POST /allocations` تنها در صورت تنظیم صریح Fail-Open آزاد می‌ماند.
 - مسیر `/metrics` نیازمند تعیین یکی از `METRICS_TOKEN` یا قرار گرفتن IP در `METRICS_IP_ALLOWLIST` است؛ خروجی شامل متریک‌های `redis_retry_attempts_total` و `redis_retry_exhausted_total` است که برای پایش پایداری Redis ضروری‌اند.
+- مقداردهی متغیر سراسری `METRICS_TOKEN` بر مقدار تو در توی `IMPORT_TO_SABT_AUTH__METRICS_TOKEN` اولویت دارد؛ در صورت خالی بودن هر دو، پاسخ `/metrics` با خطای فارسی «متغیر METRICS_TOKEN یا IMPORT_TO_SABT_AUTH__METRICS_TOKEN را مقداردهی کنید» قطع می‌شود.
+- مسیر پیش‌فرض ذخیرهٔ خروجی‌ها `<ریشهٔ پروژه>/storage/exports` است و در اولین اجرا ساخته می‌شود؛ در صورت نیاز می‌توانید `EXPORT_STORAGE_DIR` را روی مسیر مطمئن دیگری تنظیم کنید.
+- برای کوتاه‌کردن زمان تست استریم بزرگ در CI، متغیر `EXPORT_STRESS_ROWS` تعداد ردیف‌های تولیدی را کنترل می‌کند (پیش‌فرض ۱۲٬۰۰۰).
+- برای اجرای آزمون یکپارچه‌ی ردیس واقعی، متغیر `LIVE_REDIS_URL` را روی DSN محیط زنده/لوکال تنظیم کنید؛ در غیر این صورت این مسیر جمع‌آوری نمی‌شود.
 - اجرای آزمون‌های سخت‌سازی اکنون بدون پرچم‌های اضافی انجام می‌شود: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p pytest_asyncio.plugin tests/hardened_api -q`. حلقهٔ پیش‌فرض asyncio در `pytest.ini` روی `function` ثابت شده و دیگر نیاز به `-o asyncio_default_fixture_loop_scope=function` نیست.
 - تمامی سناریوهای HTTP آزمایشی با `httpx.AsyncClient` و `ASGITransport` اجرا می‌شوند تا اخطارهای فرسودگی نسخه‌های آینده (`data=` خام) حذف شوند؛ برای بدنهٔ دلخواه از آرگومان‌های `json=` یا `content=` استفاده کنید.
 - لانچر Redis ابتدا باینری محلی را تلاش می‌کند و در صورت نبود، به طور خودکار کانتینر `redis:7` را با Docker اجرا می‌کند؛ با متغیر `REDIS_LAUNCH_MODE` می‌توانید حالت را به `binary`، `docker` یا `skip` محدود کنید. در صورت نبود Docker و باینری، مقدار `skip` باعث ثبت `xfail` مستند در تست‌ها می‌شود.

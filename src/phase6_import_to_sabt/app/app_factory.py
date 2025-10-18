@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+import os
+import unicodedata
 import importlib.resources as resources
 from pathlib import Path
 from typing import Mapping
+
+ZERO_WIDTH = {"\u200c", "\u200d", "\ufeff", "\u2060"}
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
@@ -62,6 +66,8 @@ class ApplicationContainer:
     token_registry: TokenRegistry
     download_signer: DualKeySigner
     metrics_token: str | None
+    metrics_token_error: str | None
+    metrics_token_source: str | None
 
 
 async def _run_probe(name: str, probe: AsyncProbe, timeout: float) -> ProbeResult:
@@ -75,38 +81,86 @@ def _build_templates() -> Jinja2Templates:
     return Jinja2Templates(directory=str(templates_dir))
 
 
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
 def _resolve_static_assets_root() -> Path:
-    project_root = Path(__file__).resolve().parents[4]
+    project_root = _project_root()
     candidate = project_root / "assets"
     if candidate.exists():
         return candidate
     return Path.cwd() / "assets"
 
 
+def _normalize_storage_text(value: str | os.PathLike[str] | None) -> str:
+    if value is None:
+        return ""
+    raw = str(value)
+    normalized = unicodedata.normalize("NFKC", raw)
+    for marker in ZERO_WIDTH:
+        normalized = normalized.replace(marker, "")
+    normalized = normalized.strip()
+    return normalized
+
+
+def _resolve_storage_root(
+    *,
+    workflow: ImportToSabtWorkflow | None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    if workflow is not None:
+        return Path(workflow.storage_dir).resolve()
+
+    env_mapping = dict(env or os.environ)
+    explicit = _normalize_storage_text(env_mapping.get("EXPORT_STORAGE_DIR"))
+    project_root = _project_root()
+    if explicit:
+        candidate = Path(explicit).expanduser()
+        if not candidate.is_absolute():
+            candidate = (project_root / candidate).resolve()
+        else:
+            candidate = candidate.resolve()
+        return candidate
+
+    default_root = project_root / "storage" / "exports"
+    return default_root.resolve()
+
+
 def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
     app.add_middleware(CorrelationIdMiddleware, clock=container.clock)
-    app.add_middleware(
-        AuthMiddleware,
-        token_registry=container.token_registry,
-        metrics=container.metrics.middleware,
-        timer=container.timer,
-        service_metrics=container.metrics,
-    )
-    app.add_middleware(
-        IdempotencyMiddleware,
-        store=container.idempotency_store,
-        metrics=container.metrics.middleware,
-        timer=container.timer,
-        clock=container.clock,
-    )
-    app.add_middleware(
-        RateLimitMiddleware,
-        store=container.rate_limit_store,
-        config=container.config.ratelimit,
-        clock=container.clock,
-        metrics=container.metrics.middleware,
-        timer=container.timer,
-    )
+    ordered_middlewares = [
+        (
+            RateLimitMiddleware,
+            {
+                "store": container.rate_limit_store,
+                "config": container.config.ratelimit,
+                "clock": container.clock,
+                "metrics": container.metrics.middleware,
+                "timer": container.timer,
+            },
+        ),
+        (
+            IdempotencyMiddleware,
+            {
+                "store": container.idempotency_store,
+                "metrics": container.metrics.middleware,
+                "timer": container.timer,
+                "clock": container.clock,
+            },
+        ),
+        (
+            AuthMiddleware,
+            {
+                "token_registry": container.token_registry,
+                "metrics": container.metrics.middleware,
+                "timer": container.timer,
+                "service_metrics": container.metrics,
+            },
+        ),
+    ]
+    for middleware_cls, kwargs in reversed(ordered_middlewares):
+        app.add_middleware(middleware_cls, **kwargs)
     app.add_middleware(MetricsMiddleware, metrics=container.metrics, timer=container.timer)
     app.add_middleware(RequestLoggingMiddleware, diagnostics=lambda: getattr(app.state, "diagnostics", None))
 
@@ -163,13 +217,35 @@ def create_application(
         return normalized
 
     service_token = _add_token(config.auth.service_token, "ADMIN")
-    if access and access.metrics_tokens:
-        metrics_token = access.metrics_tokens[0]
+    env_metrics_token = normalize_token(os.environ.get("METRICS_TOKEN"))
+    metrics_token_source: str | None = None
+    metrics_token_error: str | None = None
+    metrics_token: str | None = None
+
+    if env_metrics_token:
+        metrics_token = _add_token(env_metrics_token, "METRICS_RO", metrics_only=True)
+        metrics_token_source = "env:METRICS_TOKEN"
+    elif access and access.metrics_tokens:
+        metrics_token = _add_token(access.metrics_tokens[0], "METRICS_RO", metrics_only=True)
+        metrics_token_source = f"env:{config.auth.tokens_env_var}"
     else:
         metrics_token = _add_token(
             config.auth.metrics_token,
             "METRICS_RO",
             metrics_only=True,
+        )
+        if metrics_token:
+            metrics_token_source = "config:IMPORT_TO_SABT_AUTH__METRICS_TOKEN"
+
+    if not metrics_token:
+        metrics_token_error = "«پیکربندی ناقص است؛ متغیر METRICS_TOKEN یا IMPORT_TO_SABT_AUTH__METRICS_TOKEN را مقداردهی کنید.»"
+        logger.warning(
+            "metrics.token.missing",
+            extra={
+                "correlation_id": None,
+                "source_env": bool(env_metrics_token),
+                "tokens_env": bool(access and access.metrics_tokens),
+            },
         )
 
     if not tokens:
@@ -190,7 +266,8 @@ def create_application(
         default_ttl_seconds=access.download_ttl_seconds if access else config.auth.download_url_ttl_seconds,
     )
 
-    storage_root = Path(getattr(workflow, "storage_dir", Path("."))).resolve() if workflow else Path(".").resolve()
+    storage_root = _resolve_storage_root(workflow=workflow)
+    storage_root.mkdir(parents=True, exist_ok=True)
     download_secret = normalize_token(config.auth.service_token) or "import-to-sabt-download"
     download_settings = DownloadSettings(
         workspace_root=storage_root,
@@ -221,7 +298,9 @@ def create_application(
         readiness_probes=readiness_probes,
         token_registry=token_registry,
         download_signer=signer,
-        metrics_token=metrics_token or service_token,
+        metrics_token=metrics_token,
+        metrics_token_error=metrics_token_error,
+        metrics_token_source=metrics_token_source,
     )
 
     app = FastAPI(title="ImportToSabt")
@@ -234,6 +313,8 @@ def create_application(
         "last_rate_limit": None,
         "last_idempotency": None,
         "last_auth": None,
+        "metrics_token_source": metrics_token_source,
+        "metrics_token_error": metrics_token_error,
     }
     app.state.storage_root = storage_root
     app.state.download_metrics = download_metrics
@@ -422,7 +503,19 @@ def create_application(
         actor = getattr(request.state, "actor", None)
         provided_token = normalize_token(request.headers.get("X-Metrics-Token"))
         expected_token = container.metrics_token
-        if actor is None or not actor.metrics_only or not expected_token or provided_token != expected_token:
+        if not expected_token:
+            container.metrics.auth_fail_total.labels(reason="metrics_missing").inc()
+            message = container.metrics_token_error or "توکن متریک تنظیم نشده است."
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "fa_error_envelope": {
+                        "code": "METRICS_TOKEN_MISSING",
+                        "message": message,
+                    }
+                },
+            )
+        if actor is None or not actor.metrics_only or provided_token != expected_token:
             container.metrics.auth_fail_total.labels(reason="metrics_forbidden").inc()
             return JSONResponse(
                 status_code=403,

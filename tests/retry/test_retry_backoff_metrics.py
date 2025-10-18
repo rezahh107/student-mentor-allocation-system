@@ -1,111 +1,123 @@
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
-from typing import Iterator
-from zoneinfo import ZoneInfo
+import itertools
 
-import os
 import pytest
-from prometheus_client import CollectorRegistry
 
-from core.clock import FrozenClock, validate_timezone
-from core.retry import RetryPolicy
-from phase6_import_to_sabt.app.io_utils import write_atomic
-from phase6_import_to_sabt.obs.metrics import ServiceMetrics, build_metrics
-
-
-@pytest.fixture
-def service_metrics() -> Iterator[ServiceMetrics]:
-    registry = CollectorRegistry()
-    metrics = build_metrics("retry_fs", registry=registry)
-    metrics.reset()
-    yield metrics
-    metrics.reset()
+from tooling.metrics import (
+    get_retry_counter,
+    get_retry_exhaustion_counter,
+    get_retry_histogram,
+)
+from tooling.retry import RetryPolicy, retry
 
 
-def test_fs_atomic_write_with_transient_failures_emits_retries(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    service_metrics: ServiceMetrics,
-) -> None:
-    tz = validate_timezone("Asia/Tehran")
-    clock = FrozenClock(timezone=tz)
-    clock.set(datetime(2024, 1, 1, 12, 0, tzinfo=ZoneInfo("Asia/Tehran")))
+class FakeSleeper:
+    def __init__(self) -> None:
+        self.sleeps: list[float] = []
 
-    target = tmp_path / "exports" / "result.csv"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    attempts: list[int] = []
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
 
-    original_replace = os.replace
 
-    def flaky_replace(src: str | bytes | Path, dst: str | bytes | Path) -> None:
-        if not attempts:
-            attempts.append(1)
-            raise OSError("simulated-busy-fs")
-        original_replace(src, dst)
+def test_exhaustion_and_histograms(metrics_registry):
+    attempts = itertools.count()
 
-    monkeypatch.setattr(os, "replace", flaky_replace)
+    def func() -> int:
+        current = next(attempts)
+        if current < 2:
+            raise RuntimeError("boom")
+        return 42
 
-    payload = "سلام، این یک آزمون است.".encode("utf-8")
-    policy = RetryPolicy(base_delay=0.05, factor=2.0, max_delay=0.2, max_attempts=3)
-    backoff_expected = policy.backoff_for(1, correlation_id="fs-corr", op="fs.write")
+    def should_retry(exc: BaseException) -> bool:
+        return isinstance(exc, RuntimeError)
 
-    try:
-        write_atomic(
-            target,
-            payload,
-            retry_policy=policy,
-            metrics=service_metrics,
-            correlation_id="fs-corr",
-            sleeper=lambda seconds: clock.tick(seconds),
-            operation="fs.write",
-            route="default",
-            clock=clock,
-            on_retry=lambda attempt: attempts.append(attempt + 1),
+    sleeper = FakeSleeper()
+    policy = RetryPolicy(attempts=3, base_delay=0.1, max_delay=1.0)
+    result = retry(
+        func,
+        should_retry,
+        policy,
+        correlation_id="rid-1",
+        operation="op",
+        clock=sleeper,
+        counter=get_retry_counter(),
+        histogram=get_retry_histogram(),
+        exhaustion_counter=get_retry_exhaustion_counter(),
+    )
+    assert result == 42
+    assert len(sleeper.sleeps) == 2
+    assert all(delay > 0.1 for delay in sleeper.sleeps)
+
+    retry_count = metrics_registry.get_sample_value(
+        "retries_total", {"operation": "op", "result": "retry"}
+    )
+    success_count = metrics_registry.get_sample_value(
+        "retries_total", {"operation": "op", "result": "success"}
+    )
+    assert retry_count == 2
+    assert success_count == 1
+    exhaustion_total = metrics_registry.get_sample_value(
+        "retry_exhaustions_total", {"operation": "op"}
+    )
+    assert exhaustion_total in (None, 0)
+
+
+def test_retry_exhaustion_records_metrics(metrics_registry):
+    def func() -> int:
+        raise RuntimeError("boom")
+
+    def should_retry(exc: BaseException) -> bool:
+        return isinstance(exc, RuntimeError)
+
+    sleeper = FakeSleeper()
+    policy = RetryPolicy(attempts=2, base_delay=0.1, max_delay=0.2)
+    with pytest.raises(RuntimeError):
+        retry(
+            func,
+            should_retry,
+            policy,
+            correlation_id="rid-2",
+            operation="op2",
+            clock=sleeper,
+            counter=get_retry_counter(),
+            histogram=get_retry_histogram(),
+            exhaustion_counter=get_retry_exhaustion_counter(),
         )
-    finally:
-        monkeypatch.setattr(os, "replace", original_replace)
 
-    assert target.read_bytes() == payload, {
-        "context": "file-persisted",
-        "attempts": attempts,
-        "path": str(target),
-    }
+    exhausted = metrics_registry.get_sample_value(
+        "retries_total", {"operation": "op2", "result": "exhausted"}
+    )
+    exhaustion_total = metrics_registry.get_sample_value(
+        "retry_exhaustions_total", {"operation": "op2"}
+    )
+    assert exhausted == 1
+    assert exhaustion_total == 1
 
-    attempt_samples = {
-        (sample.labels["operation"], sample.labels["route"]): sample.value
-        for metric in service_metrics.retry_attempts_total.collect()
-        for sample in metric.samples
-        if sample.name.endswith("_total")
-    }
-    assert attempt_samples.get(("fs.write", "default")) == pytest.approx(2.0), {
-        "context": "retry-attempts",
-        "samples": attempt_samples,
-    }
 
-    exhaustion_samples = {
-        (sample.labels["operation"], sample.labels["route"]): sample.value
-        for metric in service_metrics.retry_exhausted_total.collect()
-        for sample in metric.samples
-        if sample.name.endswith("_total")
-    }
-    assert exhaustion_samples.get(("fs.write", "default"), 0.0) == 0.0, {
-        "context": "exhaustion-counter",
-        "samples": exhaustion_samples,
-    }
+def test_retry_fatal_records_metric(metrics_registry):
+    def func() -> int:
+        raise ValueError("fatal")
 
-    histogram_samples = list(service_metrics.retry_backoff_seconds.collect()[0].samples)
-    sum_sample = next(sample for sample in histogram_samples if sample.name.endswith("_sum"))
-    assert sum_sample.value == pytest.approx(backoff_expected), {
-        "context": "backoff-sum",
-        "expected": backoff_expected,
-        "samples": histogram_samples,
-    }
+    def should_retry(exc: BaseException) -> bool:
+        return False
 
-    count_sample = next(sample for sample in histogram_samples if sample.name.endswith("_count"))
-    assert count_sample.value == pytest.approx(1.0), {
-        "context": "backoff-count",
-        "samples": histogram_samples,
-    }
+    sleeper = FakeSleeper()
+    policy = RetryPolicy(attempts=2, base_delay=0.1, max_delay=0.2)
+    with pytest.raises(ValueError):
+        retry(
+            func,
+            should_retry,
+            policy,
+            correlation_id="rid-3",
+            operation="op3",
+            clock=sleeper,
+            counter=get_retry_counter(),
+            histogram=get_retry_histogram(),
+            exhaustion_counter=get_retry_exhaustion_counter(),
+        )
 
+    fatal = metrics_registry.get_sample_value(
+        "retries_total", {"operation": "op3", "result": "fatal"}
+    )
+    assert fatal == 1

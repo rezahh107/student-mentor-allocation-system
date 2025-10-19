@@ -39,6 +39,51 @@ METRICS_TOKEN=dev-metrics scripts/smoke.sh
 
 <!--dev-quick-start:end-->
 
+## Import Refactor (src-layout fixer)
+برای هماهنگی خودکار ایمپورت‌های مطلق با ساختار `src/` می‌توانید ابزار `tools/refactor_imports.py` را اجرا کنید. ابزار به صورت پیش‌فرض Dry-Run است و گزارش CSV/JSON تولید می‌کند.
+
+**PowerShell 7 (Windows 11):**
+
+```powershell
+$env:PYTHONPATH="$PWD;$PWD\src"
+\.\.venv\Scripts\python.exe tools\refactor_imports.py scan --report-csv out\refactor.csv --report-json out\refactor.json
+\.\.venv\Scripts\python.exe tools\refactor_imports.py apply --fix-entrypoint src.main:app
+\.\.venv\Scripts\python.exe tools\refactor_imports.py scan --serve-metrics --metrics-token token --metrics-port 9130
+```
+
+**Bash (Linux/macOS/WSL):**
+
+```bash
+export PYTHONPATH="$PWD:$PWD/src"
+.venv/bin/python tools/refactor_imports.py scan --report-csv out/refactor.csv --report-json out/refactor.json
+.venv/bin/python tools/refactor_imports.py apply --fix-entrypoint src.main:app
+.venv/bin/python tools/refactor_imports.py scan --serve-metrics --metrics-token token --metrics-port 9130
+```
+
+برای اجرای تست‌های ابزار:
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -c pytest.min.ini tests/refactor -q
+```
+
+برای بررسی بودجهٔ کارایی و گزارش ۵ بعدی:
+
+```bash
+.venv/bin/python strict_report.py --summary reports/pytest-summary.txt --json reports/pytest.json
+```
+
+برای جلوگیری از ورود ایمپورت‌های خام جدید، می‌توانید در فایل `.pre-commit-config.yaml` بخش زیر را اضافه کنید:
+
+```yaml
+- repo: local
+  hooks:
+    - id: forbid-bare-src-imports
+      name: forbid bare src imports
+      entry: python tools/refactor_imports.py scan
+      language: system
+      pass_filenames: false
+```
+
 ## FastAPI Hardened Service Configuration
 - `REDIS_NAMESPACE` و `REDIS_URL` برای تفکیک فضای کلید و اتصال به Redis استفاده می‌شوند؛ در CI مقدار `REDIS_URL` از سرویس `redis:7` تزریق می‌گردد.
 - سیاست Retry Redis از طریق متغیرهای `REDIS_MAX_RETRIES` (پیش‌فرض ۳)، `REDIS_BASE_DELAY_MS`، `REDIS_MAX_DELAY_MS` و `REDIS_JITTER_MS` قابل تنظیم است.

@@ -1,67 +1,30 @@
+
 from __future__ import annotations
-
-import hashlib
-import os
-import random
+import os, tempfile
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
-from .clock import DeterministicClock
+def _detect_crlf(text: str) -> bool:
+    # If any CRLFs exist and no lone LFs, treat as CRLF
+    return "\r\n" in text and "\n" in text
 
-_DEFAULT_BACKOFF = 0.05
-
-
-class AtomicWriteError(RuntimeError):
-    pass
-
-
-def _detect_newline(path: Path) -> str:
-    if not path.exists():
-        return "\n"
-    with path.open("rb") as handle:
-        chunk = handle.read(1024)
-    if b"\r\n" in chunk:
-        return "\r\n"
-    return "\n"
-
-
-def atomic_write(
-    path: Path,
-    data: str,
-    *,
-    encoding: str = "utf-8",
-    newline: Optional[str] = None,
-    attempts: int = 3,
-    backoff: float = _DEFAULT_BACKOFF,
-    jitter_seed: str = "reqs_doctor",
-    sleep: Optional[Callable[[float], None]] = None,
-    clock: Optional[DeterministicClock] = None,
-) -> None:
-    """Windows-safe atomic write preserving newline style."""
-
-    newline = newline or _detect_newline(path)
-    temp_path = Path(f"{path}.part")
-    sleep = sleep or (lambda _seconds: None)
-    hasher = hashlib.blake2b(str(path).encode("utf-8") + jitter_seed.encode("utf-8"))
-    rand = random.Random(hasher.digest())
-
-    for attempt in range(1, attempts + 1):
-        try:
-            with temp_path.open("w", encoding=encoding, newline="") as handle:
-                payload = data.replace("\n", newline)
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_path, path)
-            return
-        except OSError as exc:  # pragma: no cover - specific to Windows in practice
-            if attempt == attempts:
-                if clock is not None:
-                    clock.tick(seconds=backoff)
-                raise AtomicWriteError("نوشتن اتمیک شکست خورد؛ لطفاً مجدداً تلاش کنید.") from exc
-            delay = backoff * (2 ** (attempt - 1))
-            jitter = rand.uniform(0, backoff)
-            sleep(delay + jitter)
-            if clock is not None:
-                clock.tick(seconds=delay + jitter)
-    raise AtomicWriteError("نوشتن اتمیک شکست خورد؛ لطفاً مجدداً تلاش کنید.")
+def atomic_write(path: Path, data: str, *, clock=None) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Preserve newline style of existing file if present
+    newline = None
+    if path.exists():
+        with path.open("rb") as f:
+            sample = f.read(4096)
+        if b"\r\n" in sample and b"\n" in sample:
+            newline = "\r\n"
+    tmp = Path(str(path) + ".part")
+    # Write text exactly; if newline is set, normalize all \n to CRLF
+    out = data
+    if newline == "\r\n":
+        out = data.replace("\r\n", "\n").replace("\n", "\r\n")
+    with tmp.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(out)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)

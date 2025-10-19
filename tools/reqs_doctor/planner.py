@@ -1,223 +1,117 @@
+
 from __future__ import annotations
-
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+import uuid, difflib, re
 
-from .models import PlanAction, PlanResult, RequirementFile, RequirementLine
-from .parser import hash_plan_inputs, parse_requirement_line
+AGENTS_ERROR = "پروندهٔ AGENTS.md در ریشهٔ مخزن یافت نشد؛ لطفاً مطابق استاندارد agents.md اضافه کنید."
 
-SECURITY_TOOLS = {
-    "pip-audit",
-    "cyclonedx-bom",
-    "cyclonedx-python-lib",
-    "safety",
-    "bandit",
-}
-DEV_TOOLS = {
-    "pytest",
-    "coverage",
-    "pytest-cov",
-    "pytest-xdist",
-    "tox",
-    "black",
-    "ruff",
-    "mypy",
-}
+SECURITY_TOOLS = {"pip-audit", "cyclonedx-bom"}
 
-RUNTIME_FILES = (
-    "requirements.txt",
-    "requirements-dev.txt",
-    "requirements-test.txt",
-    "requirements-security.txt",
-    "requirements-ml.txt",
-    "requirements-advanced.txt",
-)
+@dataclass
+class Action:
+    updated_text: str
+    reasons: list[str]
 
+@dataclass
+class PlanResult:
+    plan_id: str
+    actions: dict[Path, Action]
+    diff: str
+    messages: list[str]
 
-def classify_requirement(line: RequirementLine) -> str:
-    if line.normalized_name in SECURITY_TOOLS:
-        return "security"
-    if line.normalized_name in DEV_TOOLS:
-        return "dev"
-    return "runtime"
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
 
+def _normalize_lines(text: str) -> list[str]:
+    return text.splitlines(keepends=True)
 
-def ensure_files(repo: Path) -> Dict[str, RequirementFile]:
-    files: Dict[str, RequirementFile] = {}
-    for filename in RUNTIME_FILES:
-        path = repo / filename
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
-        newline = "\r\n" if "\r\n" in text else "\n"
-        lines = [parse_requirement_line(raw) for raw in text.splitlines()]
-        files[filename] = RequirementFile(path=path, lines=lines, original_text=text, newline=newline)
-    return files
+def _unified_diff(old: str, new: str, path: Path) -> str:
+    a = _normalize_lines(old)
+    b = _normalize_lines(new)
+    return "".join(difflib.unified_diff(a, b, fromfile=str(path), tofile=str(path), lineterm=""))
 
+def _ensure_agents_md(repo: Path) -> None:
+    if not (repo / "AGENTS.md").exists():
+        raise FileNotFoundError(AGENTS_ERROR)
 
-def plan(repo: Path, *, policy: str = "A") -> PlanResult:
-    files = ensure_files(repo)
-    desired: Dict[str, List[str]] = {name: [] for name in files}
-    reasons: Dict[str, List[str]] = {name: [] for name in files}
+def _policy_a_line(line: str) -> str:
+    # Enforce cyclonedx-bom>=7.1,<8 regardless of current spec
+    if line.strip().startswith("cyclonedx-bom"):
+        return "cyclonedx-bom>=7.1,<8\n"
+    return line
 
-    seen: Dict[str, Tuple[str, RequirementLine]] = {}
-
-    for filename, file in files.items():
-        for line in file.lines:
-            if not line.normalized_name:
-                if line.is_include and filename == "requirements-test.txt":
-                    continue
-                if line.raw.strip().startswith("#"):
-                    desired[filename].append(line.raw.strip())
-                continue
-            key = line.normalized_name
-            category = classify_requirement(line)
-            target_file = {
-                "security": "requirements-security.txt",
-                "dev": "requirements-dev.txt",
-                "runtime": "requirements.txt",
-            }[category]
-            if key in seen:
-                prev_file, prev_line = seen[key]
-                # Keep stricter specifier
-                chosen = select_preferred(prev_line, line)
-                seen[key] = (target_file, chosen)
-            else:
-                seen[key] = (target_file, line)
-
-    runtime_lines: Dict[str, RequirementLine] = {}
-    for key, (target_file, line) in seen.items():
-        runtime_lines.setdefault(target_file, [])
-
-    arranged: Dict[str, List[RequirementLine]] = {
-        "requirements.txt": [],
-        "requirements-dev.txt": [],
-        "requirements-security.txt": [],
-    }
-
-    for key, (target_file, line) in seen.items():
-        arranged[target_file].append(line)
-
-    for key, lines in arranged.items():
-        sorted_lines = sorted(
-            lines,
-            key=lambda item: (item.normalized_name or "", item.marker, item.spec),
-        )
-        desired[key].extend(_render_requirement(line) for line in sorted_lines)
-
-    desired["requirements-test.txt"] = ["-r requirements.txt", "-r requirements-dev.txt"]
-
-    moved_names = {
-        line.normalized_name
-        for line in arranged["requirements.txt"]
-        if line.normalized_name
-    }
-
-    for filename in ("requirements-ml.txt", "requirements-advanced.txt"):
-        desired[filename] = [
-            line.raw.strip()
-            for line in files[filename].lines
-            if line.raw.strip() and line.normalized_name not in moved_names
-        ]
-
-    policy_applied = _ensure_policy_requirements(arranged, desired, policy=policy)
-    _ensure_python313_markers(desired)
-
-    actions: Dict[Path, PlanAction] = {}
-    for filename, file in files.items():
-        updated = "\n".join(desired[filename]).strip()
-        if updated:
-            updated += "\n"
-        if updated != file.original_text:
-            actions[file.path] = PlanAction(file=file.path, updated_text=updated, reasons=reasons[filename])
-
-    diff = _generate_diff(files, actions)
-    plan_id = hash_plan_inputs(files.values())
-    messages = []
-    if policy.upper() == "A" and policy_applied:
-        messages.append("تعارض نسخه بین pip-audit و cyclonedx-bom شناسایی شد؛ سیاست A اعمال شد.")
-    return PlanResult(plan_id=plan_id, policy=policy, actions=actions, diff=diff, messages=messages)
-
-
-def _ensure_policy_requirements(
-    arranged: Dict[str, List[RequirementLine]],
-    desired: Dict[str, List[str]],
-    *,
-    policy: str,
-) -> bool:
-    security_lines = arranged.get("requirements-security.txt", [])
-    names = {line.normalized_name: line for line in security_lines}
-    pip_audit = names.get("pip-audit")
-    cyclonedx = names.get("cyclonedx-bom")
-    if not pip_audit or not cyclonedx:
-        return False
-    if policy.upper() == "A":
-        desired_lines = desired["requirements-security.txt"]
-        desired_lines = [line for line in desired_lines if not line.lower().startswith("cyclonedx-bom")]
-        desired_lines.append("cyclonedx-bom>=7.1,<8")
-        desired_lines.sort()
-        desired["requirements-security.txt"] = desired_lines
-    else:
-        desired_lines = desired["requirements-security.txt"]
-        desired_lines = [line for line in desired_lines if not line.lower().startswith("pip-audit")]
-        desired_lines.append("pip-audit>=3.0.0")
-        desired_lines.sort()
-        desired["requirements-security.txt"] = desired_lines
-    return True
-
-
-def _ensure_python313_markers(desired: Dict[str, List[str]]) -> None:
-    runtime = desired["requirements.txt"]
-    packages = {line.split("==")[0].split(">=")[0].strip(): idx for idx, line in enumerate(runtime)}
-    for pkg, marker in ("numpy", 'numpy>=2.1 ; python_version >= "3.13"'), (
-        "pandas",
-        'pandas>=2.2.3 ; python_version >= "3.13"',
-    ):
-        existing = [line for line in runtime if line.lower().startswith(pkg)]
-        if not existing:
+def _clean_runtime(text: str) -> str:
+    out = []
+    for ln in text.splitlines(True):
+        if ln.strip().split("==")[0].strip() in ("pip-audit",):
             continue
-        if marker not in runtime:
-            runtime.append(marker)
+        if ln.strip().startswith("cyclonedx-bom"):
+            continue
+        out.append(ln)
+    return "".join(out)
 
+def _ensure_security(text: str) -> str:
+    # Ensure pip-audit and cyclonedx-bom with policy A
+    lines = []
+    have_pa = False
+    have_cdx = False
+    for ln in text.splitlines(True):
+        name = ln.strip().split("==")[0].split(">=")[0].split("<")[0].strip()
+        if not name:
+            lines.append(ln); continue
+        if name == "pip-audit":
+            have_pa = True
+            lines.append(ln)  # keep existing pin
+        elif name == "cyclonedx-bom":
+            have_cdx = True
+            lines.append("cyclonedx-bom>=7.1,<8\n")
+        else:
+            lines.append(ln)
+    if not have_pa:
+        lines.append("pip-audit==2.7.3\n")
+    if not have_cdx:
+        lines.append("cyclonedx-bom>=7.1,<8\n")
+    return "".join(lines)
 
-def select_preferred(first: RequirementLine, second: RequirementLine) -> RequirementLine:
-    if first.marker and not second.marker:
-        return second
-    if second.marker and not first.marker:
-        return first
-    # Choose the one with stricter specifier (longer spec string) or marker present
-    first_weight = (len(first.spec), 1 if first.marker else 0)
-    second_weight = (len(second.spec), 1 if second.marker else 0)
-    return first if first_weight >= second_weight else second
+def _simplify_test(text: str) -> str:
+    return "-r requirements.txt\n-r requirements-dev.txt\n"
 
+def plan(repo: Path, policy: str = "A") -> PlanResult:
+    _ensure_agents_md(repo)
+    actions: dict[Path, Action] = {}
+    messages: list[str] = []
+    # Paths
+    req = repo / "requirements.txt"
+    req_dev = repo / "requirements-dev.txt"
+    req_test = repo / "requirements-test.txt"
+    req_sec = repo / "requirements-security.txt"
 
-def _render_requirement(line: RequirementLine) -> str:
-    if not line.name:
-        return line.raw.strip()
-    requirement = line.name
-    if line.extras:
-        requirement += f"[{line.extras}]"
-    if line.spec:
-        requirement += line.spec
-    if line.marker:
-        requirement += f" ; {line.marker}"
-    return requirement
+    # requirements.txt => remove security tools
+    old = _read_text(req)
+    if old:
+        new = _clean_runtime(old)
+        if new != old:
+            actions[req] = Action(new, ["removed security tools from runtime"])
 
+    # requirements-security.txt => ensure policy A enforced
+    old = _read_text(req_sec)
+    if old or (repo / "requirements.txt").exists():
+        new = _ensure_security(old)
+        if new != old:
+            actions[req_sec] = Action(new, ["enforced Policy A for security tools"])
 
-def _generate_diff(files: Dict[str, RequirementFile], actions: Dict[Path, PlanAction]) -> str:
-    import difflib
+    # requirements-test.txt => simplify includes
+    old = _read_text(req_test)
+    if old.strip() != "-r requirements.txt\n-r requirements-dev.txt":
+        new = _simplify_test(old)
+        actions[req_test] = Action(new, ["standardized test includes"])
 
-    diff_chunks: List[str] = []
-    for filename in sorted(files.keys()):
-        file = files[filename]
-        updated = actions.get(file.path)
-        new_text = updated.updated_text if updated else file.original_text
-        old_lines = file.original_text.splitlines()
-        new_lines = new_text.splitlines()
-        diff = difflib.unified_diff(
-            old_lines,
-            new_lines,
-            fromfile=file.path.as_posix(),
-            tofile=file.path.as_posix(),
-            lineterm="",
-        )
-        diff_chunks.extend(list(diff))
-    return "\n".join(diff_chunks)
+    # Build diff
+    diffs = []
+    for path, action in actions.items():
+        prev = _read_text(path)
+        diffs.append(_unified_diff(prev, action.updated_text, path))
+    diff = "".join(diffs)
+    plan_id = uuid.uuid4().hex
+    return PlanResult(plan_id=plan_id, actions=actions, diff=diff, messages=messages)

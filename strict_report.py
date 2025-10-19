@@ -46,6 +46,14 @@ EVIDENCE_REGISTRY: Mapping[str, Sequence[str]] = {
     "tests::metrics::reset": (
         "tests/metrics/test_metrics_reset.py::test_registry_resets_between_tests",
     ),
+    "AGENTS.md::Observability": (
+        "tools/reqs_doctor/obs.py::serve_metrics_guarded",
+        "tests/obs/test_metrics_guard.py::test_metrics_requires_token_and_rejects_missing_or_wrong",
+    ),
+    "AGENTS.md::Security": (
+        "tools/reqs_doctor/obs.py::JsonLogger.redact",
+        "tests/obs/test_log_redaction.py::test_redacts_env_tokens_and_query_params",
+    ),
 }
 EVIDENCE_DIGEST = "8135252a29f03b6d5a1b28f2eb151edd"
 

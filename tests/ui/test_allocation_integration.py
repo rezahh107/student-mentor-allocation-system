@@ -9,9 +9,9 @@ pytestmark = [pytest.mark.ui]
 if _headless.PYTEST_SKIP_MARK is not None:
     pytestmark.append(_headless.PYTEST_SKIP_MARK)
 
-from src.ui.pages.allocation_page import AllocationPage
-from src.ui.pages.allocation_presenter import AllocationPresenter
-from src.ui.services.allocation_backend import MockBackendService
+from sma.ui.pages.allocation_page import AllocationPage
+from sma.ui.pages.allocation_presenter import AllocationPresenter
+from sma.ui.services.allocation_backend import MockBackendService
 from PySide6.QtWidgets import QMessageBox
 
 

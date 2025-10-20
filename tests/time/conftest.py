@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, TypeVar
 
 import pytest
 
-from src.core.clock import Clock
+from sma.core.clock import Clock
 
 T = TypeVar("T")
 

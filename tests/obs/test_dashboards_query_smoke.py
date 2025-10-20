@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ops import metrics
+from sma.ops import metrics
 
 PROMQL_METRIC_RE = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
 RESERVED_TOKENS = {

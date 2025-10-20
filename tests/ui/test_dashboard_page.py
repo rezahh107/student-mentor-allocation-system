@@ -16,9 +16,9 @@ import os
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QFileDialog
 
-from src.ui.pages.dashboard_page import DashboardPage
-from src.ui.pages.dashboard_presenter import DashboardPresenter
-from src.services.analytics_service import DashboardData
+from sma.ui.pages.dashboard_page import DashboardPage
+from sma.ui.pages.dashboard_presenter import DashboardPresenter
+from sma.services.analytics_service import DashboardData
 
 
 class DummyAnalytics:

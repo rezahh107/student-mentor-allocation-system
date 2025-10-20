@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.allocation_engine import AllocationEngine
-from src.core.allocation_rules import AllocationRules
-from src.core.models import Mentor, Student
+from sma.core.allocation_engine import AllocationEngine
+from sma.core.allocation_rules import AllocationRules
+from sma.core.models import Mentor, Student
 
 
 def test_allocation_basic() -> None:

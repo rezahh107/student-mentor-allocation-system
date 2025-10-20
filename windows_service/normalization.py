@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from src.phase6_import_to_sabt.sanitization import sanitize_text
+from sma.phase6_import_to_sabt.sanitization import sanitize_text
 
 _EXTRA_DIRECTIONALS = ("\u200e", "\u200f", "\u202a", "\u202b", "\u202c")
 

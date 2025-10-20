@@ -6,12 +6,12 @@ import uuid
 import pytest
 from prometheus_client import CollectorRegistry
 
-from phase6_import_to_sabt.app.timing import DeterministicTimer
-from phase6_import_to_sabt.metrics import ExporterMetrics
-from phase6_import_to_sabt.obs.metrics import build_metrics
-from phase6_import_to_sabt.perf.harness import PerformanceHarness
-from src.hardened_api.middleware import RateLimitRule
-from src.hardened_api.redis_support import RateLimitResult
+from sma.phase6_import_to_sabt.app.timing import DeterministicTimer
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.phase6_import_to_sabt.perf.harness import PerformanceHarness
+from sma.hardened_api.middleware import RateLimitRule
+from sma.hardened_api.redis_support import RateLimitResult
 
 from tests.hardened_api.conftest import setup_test_data, temporary_rate_limit_config
 

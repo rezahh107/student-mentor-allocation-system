@@ -4,8 +4,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.core.clock import Clock
-from src.core.retry import RetryPolicy
+from sma.core.clock import Clock
+from sma.core.retry import RetryPolicy
 
 
 @pytest.mark.parametrize(

@@ -7,10 +7,10 @@ import typer
 from sqlalchemy import create_engine
 from zoneinfo import ZoneInfo
 
-from src.audit import AuditArchiveConfig, AuditArchiver, ReleaseManifest
-from src.audit.service import build_metrics
-from src.reliability.clock import Clock
-from src.reliability.logging_utils import JSONLogger, configure_logging
+from sma.audit import AuditArchiveConfig, AuditArchiver, ReleaseManifest
+from sma.audit.service import build_metrics
+from sma.reliability.clock import Clock
+from sma.reliability.logging_utils import JSONLogger, configure_logging
 
 
 app = typer.Typer(help="Audit monthly archiver")

@@ -13,7 +13,7 @@ def test_post_migration_checks_pass():
 
 
 def test_post_migration_checks_fail_on_mapping(monkeypatch):
-    monkeypatch.setattr("src.phase2_counter_service.validation.COUNTER_PREFIX", {0: "000", 1: "357"}, raising=False)
+    monkeypatch.setattr("sma.phase2_counter_service.validation.COUNTER_PREFIX", {0: "000", 1: "357"}, raising=False)
     importlib.reload(post_migration_checks)
     issues = post_migration_checks.run_checks()
     assert any("drifted" in issue for issue in issues)

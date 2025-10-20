@@ -4,7 +4,7 @@ import asyncio
 
 import httpx
 
-from src.infrastructure.api.routes import create_app
+from sma.infrastructure.api.routes import create_app
 
 
 def test_ui_get_is_public_and_bypasses_auth(monkeypatch):

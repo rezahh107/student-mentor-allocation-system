@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from observability.metrics import PerformanceBudgets
 
-from src.tools import cli as cli_module
+from sma.tools import cli as cli_module
 
 
 def test_endpoint_docs_include_payload_examples(tmp_path) -> None:

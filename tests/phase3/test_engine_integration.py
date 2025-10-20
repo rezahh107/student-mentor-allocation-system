@@ -4,9 +4,9 @@ from typing import List
 
 import pytest
 
-from src.phase3_allocation.contracts import AllocationConfig
-from src.phase3_allocation.engine import AllocationEngine
-from src.phase3_allocation.policy import EligibilityPolicy
+from sma.phase3_allocation.contracts import AllocationConfig
+from sma.phase3_allocation.engine import AllocationEngine
+from sma.phase3_allocation.policy import EligibilityPolicy
 
 from tests.phase3.conftest import (
     DictManagerCentersProvider,

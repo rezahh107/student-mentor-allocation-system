@@ -12,12 +12,12 @@ from typing import Sequence
 
 from prometheus_client import CollectorRegistry, Counter, REGISTRY
 
-from src.core.clock import tehran_clock
-from src.infrastructure.monitoring.logging_adapter import (
+from sma.core.clock import tehran_clock
+from sma.infrastructure.monitoring.logging_adapter import (
     configure_json_logging,
     correlation_id_var,
 )
-from src.phase6_import_to_sabt.sanitization import secure_digest
+from sma.phase6_import_to_sabt.sanitization import secure_digest
 from windows_service.errors import DependencyNotReady, ServiceError
 from windows_service.normalization import sanitize_env_text
 from windows_service.readiness import plan_backoff, probe_dependencies

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from src.hardened_api.observability import get_metric, metrics_registry_guard
+from sma.hardened_api.observability import get_metric, metrics_registry_guard
 from tests.hardened_api.conftest import FakeRedis
 
 

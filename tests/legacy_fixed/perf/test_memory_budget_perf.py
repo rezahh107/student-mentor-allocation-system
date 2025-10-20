@@ -6,8 +6,8 @@ import sys
 import tracemalloc
 from pathlib import Path
 
-from phase6_import_to_sabt.exporter.csv_writer import write_csv_atomic
-from phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.phase6_import_to_sabt.exporter.csv_writer import write_csv_atomic
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
 
 
 def test_memory_budget_under_load(tmp_path: Path):

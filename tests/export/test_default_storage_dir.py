@@ -11,14 +11,14 @@ from io import StringIO
 import pytest
 from prometheus_client import CollectorRegistry
 
-from phase6_import_to_sabt.app.app_factory import create_application
-from phase6_import_to_sabt.app.clock import FixedClock
-from phase6_import_to_sabt.app.config import AppConfig
-from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
-from phase6_import_to_sabt.app.timing import DeterministicTimer
-from phase6_import_to_sabt.obs.metrics import build_metrics
-from phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
+from sma.phase6_import_to_sabt.app.app_factory import create_application
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.app.config import AppConfig
+from sma.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
+from sma.phase6_import_to_sabt.app.timing import DeterministicTimer
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 
 _ANCHOR = "AGENTS.md::Atomic I/O & Determinism"
 
@@ -127,7 +127,7 @@ def test_atomic_export_to_default_dir(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
     rename_calls: list[tuple[Path, Path]] = []
     fsync_calls: list[int] = []
-    from phase6_import_to_sabt.xlsx import utils as xlsx_utils
+    from sma.phase6_import_to_sabt.xlsx import utils as xlsx_utils
 
     original_replace = xlsx_utils.os.replace
     original_fsync = xlsx_utils.os.fsync
@@ -164,5 +164,5 @@ def test_atomic_export_to_default_dir(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
     assert not artifact_path.with_suffix(artifact_path.suffix + ".part").exists()
     assert rename_calls, _ANCHOR
-    assert any(src.suffix == ".part" and dst == artifact_path for src, dst in rename_calls), rename_calls
+    assert any(sma.suffix == ".part" and dst == artifact_path for src, dst in rename_calls), rename_calls
     assert fsync_calls, _ANCHOR

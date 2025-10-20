@@ -5,9 +5,9 @@ from datetime import datetime, timedelta, timezone
 import asyncio
 import httpx
 
-from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
-from phase6_import_to_sabt.clock import FixedClock
-from phase7_release.deploy import ReadinessGate
+from sma.phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
+from sma.phase6_import_to_sabt.clock import FixedClock
+from sma.phase7_release.deploy import ReadinessGate
 from tests.export.helpers import build_job_runner, make_row
 
 

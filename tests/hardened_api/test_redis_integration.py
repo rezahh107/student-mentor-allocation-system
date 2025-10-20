@@ -7,15 +7,15 @@ from httpx import ASGITransport, AsyncClient
 import redis
 from redis.asyncio import Redis
 
-from src.hardened_api.api import APISettings, create_app
-from src.hardened_api.middleware import (
+from sma.hardened_api.api import APISettings, create_app
+from sma.hardened_api.middleware import (
     AuthConfig,
     ensure_rate_limit_config_restored,
     restore_rate_limit_config,
     snapshot_rate_limit_config,
 )
-from src.hardened_api.observability import get_metric
-from src.hardened_api.redis_support import RedisNamespaces
+from sma.hardened_api.observability import get_metric
+from sma.hardened_api.redis_support import RedisNamespaces
 from tests.hardened_api.conftest import (
     FakeAllocator,
     get_debug_context,

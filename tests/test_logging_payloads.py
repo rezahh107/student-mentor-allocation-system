@@ -14,8 +14,8 @@ import logging
 
 import pytest
 
-from src.core.logging_utils import log_norm_error
-from src.core.normalize import normalize_national_id, normalize_reg_center
+from sma.core.logging_utils import log_norm_error
+from sma.core.normalize import normalize_national_id, normalize_reg_center
 
 
 @pytest.fixture(autouse=True)

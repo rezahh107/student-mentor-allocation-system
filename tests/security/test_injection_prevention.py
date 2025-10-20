@@ -7,9 +7,9 @@ from typing import Callable, Iterator, TypeVar
 
 import pytest
 
-from phase6_import_to_sabt.sanitization import deterministic_jitter
-from src.security.hardening import check_persian_injection
-from src.phase6_import_to_sabt.xlsx.sanitize import safe_cell
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter
+from sma.security.hardening import check_persian_injection
+from sma.phase6_import_to_sabt.xlsx.sanitize import safe_cell
 from tests.fixtures.state import CleanupFixtures
 
 

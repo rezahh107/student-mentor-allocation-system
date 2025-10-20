@@ -8,7 +8,7 @@ from typing import Iterator
 import csv
 import pytest
 
-from src.phase6_import_to_sabt.export_writer import ExportWriter, atomic_writer
+from sma.phase6_import_to_sabt.export_writer import ExportWriter, atomic_writer
 from tests.fixtures.state import CleanupFixtures
 
 

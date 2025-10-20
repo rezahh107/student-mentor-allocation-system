@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.infrastructure.api.routes import create_app
+from sma.infrastructure.api.routes import create_app
 
 
 def test_chain_preserved():

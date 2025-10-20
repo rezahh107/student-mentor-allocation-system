@@ -8,8 +8,8 @@ from uuid import uuid4
 
 import pytest
 
-from src.ops.retry import RetryMetrics, build_retry_metrics
-from src.phase6_import_to_sabt.sanitization import deterministic_jitter
+from sma.ops.retry import RetryMetrics, build_retry_metrics
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter
 from tests.fixtures.state import CleanupFixtures
 from windows_launcher.launcher import LauncherError, wait_for_backend
 

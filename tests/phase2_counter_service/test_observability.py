@@ -8,10 +8,10 @@ import urllib.request
 import pytest
 from prometheus_client import CollectorRegistry
 
-from src.phase2_counter_service import metrics as metrics_mod
-from src.phase2_counter_service import observability as observability_mod
-from src.phase2_counter_service.metrics import CounterMeters
-from src.phase2_counter_service.observability import MetricsServer, metrics_server
+from sma.phase2_counter_service import metrics as metrics_mod
+from sma.phase2_counter_service import observability as observability_mod
+from sma.phase2_counter_service.metrics import CounterMeters
+from sma.phase2_counter_service.observability import MetricsServer, metrics_server
 
 
 def _gauge_value(gauge):

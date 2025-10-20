@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from phase2_uploads.errors import UploadError
+from sma.phase2_uploads.errors import UploadError
 
 
 HEADERS = {

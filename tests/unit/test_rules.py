@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from src.api.exceptions import BusinessRuleException
-from src.api.mock_data import MockBackend
+from sma.api.exceptions import BusinessRuleException
+from sma.api.mock_data import MockBackend
 from tests.fixtures.factories import make_student, make_mentor
 
 

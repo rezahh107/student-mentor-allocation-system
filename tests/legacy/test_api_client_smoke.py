@@ -6,8 +6,8 @@ import pytest
 
 import aiohttp
 
-from src.api.client import APIClient, LEGACY_IMPORT_DIAGNOSTIC
-from src.api.exceptions import (
+from sma.api.client import APIClient, LEGACY_IMPORT_DIAGNOSTIC
+from sma.api.exceptions import (
     APIException,
     BusinessRuleException,
     NetworkException,

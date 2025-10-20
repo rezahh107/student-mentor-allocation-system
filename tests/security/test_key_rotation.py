@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from phase6_import_to_sabt.app.clock import FixedClock
-from phase6_import_to_sabt.security.config import SigningKeyDefinition
-from security.signing import KeyRingSigner, VerificationError, keyring_from_definitions, deterministic_secret
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.security.config import SigningKeyDefinition
+from sma.security.signing import KeyRingSigner, VerificationError, keyring_from_definitions, deterministic_secret
 
 
 @pytest.fixture()

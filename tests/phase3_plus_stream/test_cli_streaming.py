@@ -6,7 +6,7 @@ from typing import Any, Iterable, Mapping
 import pytest
 
 from scripts.phase3_cli import main as cli_main
-from src.tools.export_excel_safe import iter_rows
+from sma.tools.export_excel_safe import iter_rows
 
 
 def _write_csv(path: Path, headers: list[str], rows: Iterable[Iterable[Any]]) -> None:

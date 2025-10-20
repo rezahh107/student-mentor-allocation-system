@@ -15,9 +15,9 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
 
-from src.core.models import Mentor, Student
-from src.ui.pages.allocation_page import AllocationPage
-from src.ui.services.allocation_backend import IBackendService
+from sma.core.models import Mentor, Student
+from sma.ui.pages.allocation_page import AllocationPage
+from sma.ui.services.allocation_backend import IBackendService
 
 
 class DummyBackend(IBackendService):

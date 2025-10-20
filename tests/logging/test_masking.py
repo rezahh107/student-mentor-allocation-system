@@ -5,10 +5,10 @@ import json
 import logging
 from hashlib import blake2s
 
-from src.hardened_api.redis_support import RedisExecutor, RedisNamespaces, RedisRetryConfig
-from src.phase2_counter_service.academic_year import AcademicYearProvider
-from src.phase2_counter_service.counter_runtime import CounterRuntime
-from src.phase2_counter_service.runtime_metrics import CounterRuntimeMetrics
+from sma.hardened_api.redis_support import RedisExecutor, RedisNamespaces, RedisRetryConfig
+from sma.phase2_counter_service.academic_year import AcademicYearProvider
+from sma.phase2_counter_service.counter_runtime import CounterRuntime
+from sma.phase2_counter_service.runtime_metrics import CounterRuntimeMetrics
 
 
 class _SimpleRedis:

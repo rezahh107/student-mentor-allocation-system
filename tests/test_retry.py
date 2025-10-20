@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.infrastructure.resilience.retry import retry
+from sma.infrastructure.resilience.retry import retry
 
 
 def test_retry_raises_last_exception() -> None:

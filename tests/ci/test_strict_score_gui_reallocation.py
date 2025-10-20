@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.phase9_readiness.report import apply_gui_reallocation
+from sma.phase9_readiness.report import apply_gui_reallocation
 
 
 def test_gui_out_of_scope_reallocation_applies() -> None:

@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from src.domain.mentor.entities import Mentor
-from src.domain.shared.types import EduStatus, Gender, RegCenter, RegStatus, StudentType
-from src.domain.student.entities import Student
+from sma.domain.mentor.entities import Mentor
+from sma.domain.shared.types import EduStatus, Gender, RegCenter, RegStatus, StudentType
+from sma.domain.student.entities import Student
 
 
 def make_student(

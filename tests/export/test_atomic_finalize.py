@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-from src.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from src.phase6_import_to_sabt.xlsx.utils import atomic_write
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.utils import atomic_write
 
 _ANCHOR = "AGENTS.md::Atomic I/O & Excel-Safety"
 
@@ -23,7 +23,7 @@ def test_part_rename_fsync(cleanup_fixtures, monkeypatch) -> None:
         fsync_calls.append(fd)
         original_fsync(fd)
 
-    monkeypatch.setattr("src.phase6_import_to_sabt.xlsx.utils.os.fsync", capture_fsync)
+    monkeypatch.setattr("sma.phase6_import_to_sabt.xlsx.utils.os.fsync", capture_fsync)
 
     with atomic_write(
         target,

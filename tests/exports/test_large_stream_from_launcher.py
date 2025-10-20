@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from phase6_import_to_sabt.xlsx.constants import DEFAULT_CHUNK_SIZE
+from sma.phase6_import_to_sabt.xlsx.constants import DEFAULT_CHUNK_SIZE
 
 
 def test_streaming_memory_budget():

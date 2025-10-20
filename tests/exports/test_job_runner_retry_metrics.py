@@ -8,16 +8,16 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from phase6_import_to_sabt.clock import FixedClock
-from phase6_import_to_sabt.job_runner import ExportJobRunner
-from phase6_import_to_sabt.metrics import ExporterMetrics
-from phase6_import_to_sabt.models import (
+from sma.phase6_import_to_sabt.clock import FixedClock
+from sma.phase6_import_to_sabt.job_runner import ExportJobRunner
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics
+from sma.phase6_import_to_sabt.models import (
     ExportFilters,
     ExportJobStatus,
     ExportOptions,
     ExportSnapshot,
 )
-from phase6_import_to_sabt.sanitization import deterministic_jitter
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter
 from tests.export.helpers import build_exporter, make_row
 
 if TYPE_CHECKING:  # pragma: no cover - typing support only

@@ -13,12 +13,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from zoneinfo import ZoneInfo
 
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
-from src.audit.models import AuditEvent, Base
-from src.audit.release_manifest import ReleaseManifest
-from src.audit.retention import AuditArchiveConfig, AuditArchiver
-from src.audit.service import AuditMetrics, build_metrics
-from src.reliability.clock import Clock
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.models import AuditEvent, Base
+from sma.audit.release_manifest import ReleaseManifest
+from sma.audit.retention import AuditArchiveConfig, AuditArchiver
+from sma.audit.service import AuditMetrics, build_metrics
+from sma.reliability.clock import Clock
 
 
 FROZEN_INSTANT = datetime(2024, 3, 20, 8, 30, tzinfo=ZoneInfo("Asia/Tehran"))

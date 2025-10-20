@@ -1,8 +1,8 @@
 import pytest
 
-from src.core import normalize
+from sma.core import normalize
 
-from src.core import normalize
+from sma.core import normalize
 
 
 def _build_valid_national_id(seed: str = "001234567") -> str:

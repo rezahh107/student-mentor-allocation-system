@@ -6,7 +6,7 @@ from datetime import datetime
 from alembic import op
 from zoneinfo import ZoneInfo
 
-from src.audit.partitioning import ensure_monthly_partition_indexes
+from sma.audit.partitioning import ensure_monthly_partition_indexes
 
 
 revision = "006_audit_monthly_partitions"

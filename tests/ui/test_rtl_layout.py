@@ -13,9 +13,9 @@ if _headless.PYTEST_SKIP_MARK is not None:
 
 from PyQt5.QtCore import Qt
 
-from src.ui.windows.main_window import MainWindow
-from src.ui.presenters.main_presenter import MainPresenter
-from src.api.client import APIClient
+from sma.ui.windows.main_window import MainWindow
+from sma.ui.presenters.main_presenter import MainPresenter
+from sma.api.client import APIClient
 
 
 def test_app_is_rtl_and_persian_labels(qtbot):

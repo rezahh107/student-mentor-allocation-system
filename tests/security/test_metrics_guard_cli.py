@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from src.tools import cli as cli_module
+from sma.tools import cli as cli_module
 
 
 def test_metrics_endpoint_requires_token() -> None:

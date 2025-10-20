@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.phase7_release.sbom import generate_sbom
+from sma.phase7_release.sbom import generate_sbom
 
 from tests.phase7_utils import FakeDistribution
 

@@ -41,7 +41,7 @@ ci-checks:
 	PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.ci_no_pii_scan
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest \
             -p pytest_cov \
-            --cov=src.phase2_counter_service \
+            --cov=sma.phase2_counter_service \
 	            --cov-report=term-missing \
 	            --cov-fail-under=$(COV_MIN) \
 	            -q tests/phase2_counter_service

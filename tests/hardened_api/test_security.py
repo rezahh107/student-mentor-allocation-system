@@ -15,7 +15,7 @@ from tests.hardened_api.conftest import (
     get_debug_context,
     setup_test_data,
 )
-from src.hardened_api.observability import hash_national_id
+from sma.hardened_api.observability import hash_national_id
 
 
 FIXED_NOW = datetime(2024, 1, 1, tzinfo=timezone.utc)
@@ -84,7 +84,7 @@ async def test_rate_limit_exceeded_returns_429(clean_state, client, redis_client
     assert last.headers["Retry-After"] == "1"
     assert last.headers["X-RateLimit-Remaining"] == "0"
     assert last.json()["error"]["code"] == "RATE_LIMIT_EXCEEDED"
-    from src.hardened_api.observability import get_metric
+    from sma.hardened_api.observability import get_metric
 
     samples = get_metric("rate_limit_reject_total").collect()[0].samples
     assert any(sample.labels.get("route") == "/allocations" for sample in samples)
@@ -153,7 +153,7 @@ async def test_api_key_authentication(clean_state, client, auth_config):
 async def test_expired_api_key_rejected(clean_state, client, auth_config):
     raw = "EXPIREDKEY000000"
     hashed = hash_national_id(raw, salt=auth_config.api_key_salt)
-    from src.hardened_api.auth_repository import APIKeyRecord
+    from sma.hardened_api.auth_repository import APIKeyRecord
 
     expired_record = APIKeyRecord(
         name="expired",

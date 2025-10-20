@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from export.excel_writer import ExportWriter
+from sma.export.excel_writer import ExportWriter
 
 
 def _read_csv(path: Path) -> list[list[str]]:

@@ -10,10 +10,10 @@ import pytest
 from fakeredis import FakeStrictRedis
 from prometheus_client import CollectorRegistry
 
-from phase2_uploads.app import create_app
-from phase2_uploads.clock import FrozenClock, BAKU_TZ
-from phase2_uploads.config import UploadsConfig
-from phase2_uploads.repository import create_sqlite_repository
+from sma.phase2_uploads.app import create_app
+from sma.phase2_uploads.clock import FrozenClock, BAKU_TZ
+from sma.phase2_uploads.config import UploadsConfig
+from sma.phase2_uploads.repository import create_sqlite_repository
 
 
 @pytest.fixture

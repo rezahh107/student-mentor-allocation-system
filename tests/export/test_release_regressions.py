@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.phase6_import_to_sabt.sanitization import always_quote, fold_digits, guard_formula
+from sma.phase6_import_to_sabt.sanitization import always_quote, fold_digits, guard_formula
 
 
 @pytest.fixture

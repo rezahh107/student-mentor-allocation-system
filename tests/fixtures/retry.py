@@ -9,7 +9,7 @@ from typing import Callable, Iterator, Protocol, TypeVar
 import pytest
 
 from tests.conftest import DeterministicClock
-from phase6_import_to_sabt.observability import MetricsCollector
+from sma.phase6_import_to_sabt.observability import MetricsCollector
 
 _ANCHOR = "AGENTS.md::Determinism"
 _MIN_DELAY = 0.0

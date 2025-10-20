@@ -5,7 +5,7 @@ from typing import Iterable
 
 import pytest
 
-from src.core import enums
+from sma.core import enums
 
 
 @pytest.mark.parametrize(

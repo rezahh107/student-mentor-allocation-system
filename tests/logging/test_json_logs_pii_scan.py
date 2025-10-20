@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 
-from phase6_import_to_sabt.app.logging_config import configure_logging
+from sma.phase6_import_to_sabt.app.logging_config import configure_logging
 
 
 def test_no_pii_in_logs(capfd) -> None:

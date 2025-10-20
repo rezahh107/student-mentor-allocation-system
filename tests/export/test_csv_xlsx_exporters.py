@@ -8,9 +8,9 @@ from openpyxl import load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.infrastructure.persistence.models import AllocationRecord, Base
-from src.tools.export.csv_exporter import export_allocations_to_csv
-from src.tools.export.xlsx_exporter import export_allocations_to_xlsx
+from sma.infrastructure.persistence.models import AllocationRecord, Base
+from sma.tools.export.csv_exporter import export_allocations_to_csv
+from sma.tools.export.xlsx_exporter import export_allocations_to_xlsx
 
 
 GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden" / "export"

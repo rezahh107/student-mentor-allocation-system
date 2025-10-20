@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, Mapping
 from xml.etree import ElementTree as ET
 
-from src.reliability.clock import Clock
+from sma.reliability.clock import Clock
 
 from .errors import AuthError, ProviderError
 from .metrics import AuthMetrics

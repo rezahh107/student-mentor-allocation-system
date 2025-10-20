@@ -4,10 +4,10 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.infrastructure.persistence.models import StudentModel
-from src.phase2_counter_service.errors import CounterServiceError
-from src.phase2_counter_service.repository import FaultInjector, SqlAlchemyCounterRepository
-from src.phase2_counter_service.validation import COUNTER_PREFIX
+from sma.infrastructure.persistence.models import StudentModel
+from sma.phase2_counter_service.errors import CounterServiceError
+from sma.phase2_counter_service.repository import FaultInjector, SqlAlchemyCounterRepository
+from sma.phase2_counter_service.validation import COUNTER_PREFIX
 
 from .conftest import seed_student
 

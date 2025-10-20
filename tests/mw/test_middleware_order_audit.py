@@ -9,9 +9,9 @@ import pytest
 from prometheus_client import CollectorRegistry
 from zoneinfo import ZoneInfo
 
-from src.audit.api import create_audit_api
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
-from src.audit.service import build_metrics
+from sma.audit.api import create_audit_api
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.service import build_metrics
 
 
 class _DummyService:

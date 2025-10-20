@@ -1,7 +1,7 @@
 import unittest
 import asyncio
 
-from src.api.client import APIClient
+from sma.api.client import APIClient
 
 
 class TestAPIClientMock(unittest.IsolatedAsyncioTestCase):

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.observe.perf import PerformanceObserver
+from sma.observe.perf import PerformanceObserver
 
 
 def test_measure_records_samples() -> None:

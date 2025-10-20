@@ -52,10 +52,11 @@ dependencies = [
     "orjson==3.10.3",
     "jdatetime==4.1.1",
     "pywebview==4.4.1",
+    "uvicorn[standard]==0.27.1",
 ]
 
 [project.scripts]
-smasm = "tools.cli:main"
+smasm = "sma._local_tools.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -123,7 +124,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["*"]
+include = ["sma*"]
 
 [tool.setuptools.package-data]
 "phase6_import_to_sabt" = [
@@ -162,7 +163,7 @@ max-complexity = 12
 max-statements = 120
 
 [tool.ruff.lint.isort]
-known-first-party = ["student_mentor_allocation_system"]
+known-first-party = ["sma"]
 
 # ═══════════════════════════════════════════════════════════════
 # MyPy Configuration

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from src.infrastructure.monitoring.logging_adapter import configure_json_logging
+from sma.infrastructure.monitoring.logging_adapter import configure_json_logging
 
 
 def main() -> int:

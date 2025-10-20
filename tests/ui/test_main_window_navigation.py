@@ -13,9 +13,9 @@ import logging
 from typing import Tuple
 
 
-from src.api.client import APIClient
-from src.ui.presenters.main_presenter import MainPresenter
-from src.ui.windows.main_window import MainWindow
+from sma.api.client import APIClient
+from sma.ui.presenters.main_presenter import MainPresenter
+from sma.ui.windows.main_window import MainWindow
 
 
 def _build_window(qtbot, offscreen_qapp) -> Tuple[MainWindow, MainPresenter]:

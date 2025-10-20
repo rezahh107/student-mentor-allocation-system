@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 
-from src.repo_doctor.exporter import guard_formula, normalize_text, fold_persian_digits, stream_csv
+from sma.repo_doctor.exporter import guard_formula, normalize_text, fold_persian_digits, stream_csv
 
 
 def test_formula_guard_and_crlf() -> None:

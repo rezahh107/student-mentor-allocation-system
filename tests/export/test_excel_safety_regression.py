@@ -6,11 +6,11 @@ from pathlib import Path
 from prometheus_client import CollectorRegistry
 from zoneinfo import ZoneInfo
 
-from phase6_import_to_sabt.exporter.csv_writer import write_csv_atomic
-from src.phase6_import_to_sabt.app.clock import FixedClock
-from src.phase6_import_to_sabt.security.signer import DualKeySigner, SigningKeyDefinition, SigningKeySet
-from src.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from src.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
+from sma.phase6_import_to_sabt.exporter.csv_writer import write_csv_atomic
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.security.signer import DualKeySigner, SigningKeyDefinition, SigningKeySet
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 
 
 def test_formula_injection_guard(tmp_path: Path) -> None:

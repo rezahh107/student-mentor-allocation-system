@@ -5,8 +5,8 @@ import zipfile
 
 import pytest
 
-from phase2_uploads.errors import UploadError
-from phase2_uploads.service import UploadContext
+from sma.phase2_uploads.errors import UploadError
+from sma.phase2_uploads.service import UploadContext
 
 
 def make_zip(filename: str, data: bytes) -> bytes:

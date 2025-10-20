@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from io import StringIO
 
-from src.ui.trace_index import TraceFilterIndex
-from src.ui.trace_viewer import TraceViewerRow, render_text_ui
+from sma.ui.trace_index import TraceFilterIndex
+from sma.ui.trace_viewer import TraceViewerRow, render_text_ui
 
 
 class _LoggingStorage:

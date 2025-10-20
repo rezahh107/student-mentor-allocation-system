@@ -58,10 +58,19 @@ jobs:
           } elseif (Test-Path "requirements-dev.txt") {
             Install-WithRetry "python -m pip install -r requirements-dev.txt"
           }
-          Install-WithRetry "python -m pip install -e ."
+          Install-WithRetry "try { python -m pip install -e .[dev] } catch { python -m pip install -e . }"
           Install-WithRetry "python -m pip install pyinstaller==6.11.0"
           python -m pip check
           python -m pip list --format=json > artifacts-pip-list.json
+
+      - name: Verify AGENTS spec tokens
+        run: python scripts/verify_agents.py
+
+      - name: Guard PYTHONPATH front-loading
+        run: python scripts/guard_pythonpath.py
+
+      - name: Shadowing guard tests
+        run: python -m pytest tests/imports -q -p pytest_asyncio
 
       - name: Windows-focused tests (deterministic scope)
         run: |

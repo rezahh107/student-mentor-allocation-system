@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from phase6_import_to_sabt.exporter_service import ImportToSabtExporter
-from phase6_import_to_sabt.models import (
+from sma.phase6_import_to_sabt.exporter_service import ImportToSabtExporter
+from sma.phase6_import_to_sabt.models import (
     ExportFilters,
     ExportManifest,
     ExportOptions,

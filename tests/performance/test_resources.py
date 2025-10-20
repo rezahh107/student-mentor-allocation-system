@@ -20,7 +20,7 @@ if psutil is None:
 else:
     resource = None  # type: ignore
 
-from src.domain.allocation.engine import AllocationEngine
+from sma.domain.allocation.engine import AllocationEngine
 from tests.factories import make_mentor, make_student
 
 

@@ -6,7 +6,7 @@ from zipfile import ZipFile
 
 from openpyxl import load_workbook
 
-from phase6_import_to_sabt.export_writer import ExportWriter
+from sma.phase6_import_to_sabt.export_writer import ExportWriter
 from tests.export.helpers import make_row
 
 

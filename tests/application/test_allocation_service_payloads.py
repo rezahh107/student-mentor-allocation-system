@@ -1,14 +1,14 @@
 from dataclasses import dataclass
 from typing import Iterable, List
 
-from src.application.commands.allocation import StartBatchAllocation
-from src.application.services.allocation_service import AllocationService
-from src.domain.allocation.engine import AllocationEngine
-from src.domain.allocation.fairness import FairnessConfig, FairnessStrategy
-from src.domain.mentor.entities import Mentor
-from src.domain.shared.events import DomainEvent
-from src.domain.shared.types import AllocationStatus, EduStatus, Gender, RegCenter, RegStatus, StudentType
-from src.domain.student.entities import Student
+from sma.application.commands.allocation import StartBatchAllocation
+from sma.application.services.allocation_service import AllocationService
+from sma.domain.allocation.engine import AllocationEngine
+from sma.domain.allocation.fairness import FairnessConfig, FairnessStrategy
+from sma.domain.mentor.entities import Mentor
+from sma.domain.shared.events import DomainEvent
+from sma.domain.shared.types import AllocationStatus, EduStatus, Gender, RegCenter, RegStatus, StudentType
+from sma.domain.student.entities import Student
 
 
 @dataclass

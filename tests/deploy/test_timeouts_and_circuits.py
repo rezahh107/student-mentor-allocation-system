@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.phase7_release.deploy import CircuitBreaker, ReadinessGate
+from sma.phase7_release.deploy import CircuitBreaker, ReadinessGate
 
 
 @pytest.fixture

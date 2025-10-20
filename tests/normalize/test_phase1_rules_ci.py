@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.normalize import normalize_gender, normalize_reg_center, normalize_reg_status
-from src.phase6_import_to_sabt.sanitization import sanitize_phone, sanitize_text
+from sma.core.normalize import normalize_gender, normalize_reg_center, normalize_reg_status
+from sma.phase6_import_to_sabt.sanitization import sanitize_phone, sanitize_text
 
 
 def test_text_and_phone_rules() -> None:

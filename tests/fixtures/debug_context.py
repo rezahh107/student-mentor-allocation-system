@@ -6,8 +6,8 @@ from typing import Any, Iterable
 
 import pytest
 
-from src.debug.debug_context import DebugContext
-from src.fakeredis import FakeStrictRedis
+from sma.debug.debug_context import DebugContext
+from sma._local_fakeredis import FakeStrictRedis
 
 
 @pytest.fixture

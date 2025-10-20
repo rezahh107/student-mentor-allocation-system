@@ -6,9 +6,9 @@ from typing import Optional
 
 import typer
 
-from src.repo_doctor import RepoDoctor
-from src.repo_doctor.core import DoctorConfig
-from src.repo_doctor.clock import tehran_clock
+from sma.repo_doctor import RepoDoctor
+from sma.repo_doctor.core import DoctorConfig
+from sma.repo_doctor.clock import tehran_clock
 
 app = typer.Typer(add_completion=False, help="Repo Doctor CLI")
 

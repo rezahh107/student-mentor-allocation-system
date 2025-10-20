@@ -8,7 +8,7 @@ from typing import Iterator
 
 import pytest
 
-from core.normalize import (
+from sma.core.normalize import (
     GENDER_ERROR,
     MOBILE_ERROR,
     REG_STATUS_ERROR,
@@ -16,10 +16,10 @@ from core.normalize import (
     normalize_mobile,
     normalize_reg_status,
 )
-from phase6_import_to_sabt.exporter_service import ImportToSabtExporter
-from phase6_import_to_sabt.models import ExportFilters, NormalizedStudentRow, SpecialSchoolsRoster
-from phase6_import_to_sabt.sanitization import sanitize_phone
-from src.services.excel_import_service import ExcelImportService
+from sma.phase6_import_to_sabt.exporter_service import ImportToSabtExporter
+from sma.phase6_import_to_sabt.models import ExportFilters, NormalizedStudentRow, SpecialSchoolsRoster
+from sma.phase6_import_to_sabt.sanitization import sanitize_phone
+from sma.services.excel_import_service import ExcelImportService
 
 from tests.fixtures.state import CleanupFixtures
 

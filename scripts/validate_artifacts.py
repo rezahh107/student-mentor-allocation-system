@@ -11,11 +11,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from src.core.logging_config import setup_logging
+from sma.core.logging_config import setup_logging
 
 setup_logging()
 
-from src.phase2_counter_service.validation import COUNTER_PATTERN, COUNTER_PREFIX
+from sma.phase2_counter_service.validation import COUNTER_PATTERN, COUNTER_PREFIX
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS_DIR = ROOT / "reports"
 SPEC_MATRIX = REPORTS_DIR / "spec_matrix.md"

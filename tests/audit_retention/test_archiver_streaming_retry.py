@@ -4,8 +4,8 @@ from datetime import datetime
 
 import pytest
 
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
-from src.audit.retention import ArchiveFailure
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.retention import ArchiveFailure
 
 
 @pytest.mark.usefixtures("clean_state", "frozen_time")
@@ -30,7 +30,7 @@ def test_streaming_no_buffer_oom(monkeypatch, archiver, insert_event, tz) -> Non
     def fail_list(*args, **kwargs):  # pragma: no cover - defensive guard
         raise AssertionError("list() should not be invoked during streaming export")
 
-    monkeypatch.setattr("src.audit.retention.list", fail_list, raising=False)
+    monkeypatch.setattr("sma.audit.retention.list", fail_list, raising=False)
 
     result = archiver.archive_month("2024_03")
     assert result.row_count == 16

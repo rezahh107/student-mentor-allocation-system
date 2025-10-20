@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from src.domain.allocation.engine import AllocationEngine
+from sma.domain.allocation.engine import AllocationEngine
 from tests.factories import make_mentor, make_student
 
 

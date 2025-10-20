@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.phase9_readiness.report import PytestSummary, assert_no_unjustified_skips
+from sma.phase9_readiness.report import PytestSummary, assert_no_unjustified_skips
 
 
 def test_no_unjustified_skips_passes() -> None:

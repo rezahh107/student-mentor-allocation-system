@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import anyio
 
-from ops.replica_adapter import ReplicaAdapter
+from sma.ops.replica_adapter import ReplicaAdapter
 
 
 class FrozenClock:

@@ -6,7 +6,7 @@ import pytest
 from freezegun import freeze_time
 from zoneinfo import ZoneInfo
 
-from phase6_import_to_sabt.app.clock import build_system_clock
+from sma.phase6_import_to_sabt.app.clock import build_system_clock
 
 
 def test_now_tz_tehran(clock_test_context):

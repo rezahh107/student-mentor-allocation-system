@@ -10,12 +10,12 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 
-from src.audit.exporter import _atomic_async_write  # type: ignore
-from src.audit.release_manifest import ReleaseManifest, make_manifest_entry
-from src.audit.repository import AuditQuery, AuditRepository
-from src.audit.service import AuditService, build_metrics
-from src.phase7_release.hashing import sha256_file
-from src.reliability.clock import Clock
+from sma.audit.exporter import _atomic_async_write  # type: ignore
+from sma.audit.release_manifest import ReleaseManifest, make_manifest_entry
+from sma.audit.repository import AuditQuery, AuditRepository
+from sma.audit.service import AuditService, build_metrics
+from sma.phase7_release.hashing import sha256_file
+from sma.reliability.clock import Clock
 
 REPORTS_DIR = Path("reports")
 DEFAULT_DSN = "sqlite:///reports/audit.db"

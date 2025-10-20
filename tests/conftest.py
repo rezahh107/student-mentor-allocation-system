@@ -5,18 +5,81 @@ import pathlib
 import shutil
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator
+from zoneinfo import ZoneInfo
 
+import prometheus_client
+import prometheus_client.registry as prometheus_registry
 import pytest
-from prometheus_client import CollectorRegistry
 from click.testing import CliRunner
+from freezegun import freeze_time
+from prometheus_client import CollectorRegistry
 
-from src.fakeredis import FakeStrictRedis
-from src.repo_doctor.clock import tehran_clock
-from src.repo_doctor.metrics import DoctorMetrics
+from sma._local_fakeredis import FakeStrictRedis
+from sma.repo_doctor.clock import tehran_clock
+from sma.repo_doctor.metrics import DoctorMetrics
 from tools import reqs_doctor
 from tools.reqs_doctor.clock import DeterministicClock
+
+FREEZE_INSTANT = datetime(2024, 3, 20, 12, 0, tzinfo=ZoneInfo("Asia/Tehran"))
+FORBIDDEN_TIME_PATTERNS = ("datetime.now(", "datetime.utcnow(", "time.time(", "time.sleep(")
+WALL_CLOCK_ALLOWLIST = {
+    pathlib.Path("src/sma/core/system_clock.py"),
+    pathlib.Path("src/sma/core/clock.py"),
+    pathlib.Path("src/sma/phase6_import_to_sabt/app/clock.py"),
+    pathlib.Path("src/sma/_local_fakeredis/__init__.py"),
+    pathlib.Path("src/sma/git_sync_verifier/clock.py"),
+}
+SCAN_ROOTS = (pathlib.Path("src/sma"),)
+
+
+def _scan_wall_clock(repo_root: pathlib.Path) -> tuple[list[tuple[str, str]], list[str]]:
+    banned: list[tuple[str, str]] = []
+    scanned: list[str] = []
+    for relative_root in SCAN_ROOTS:
+        base = repo_root / relative_root
+        if not base.exists():
+            continue
+        for path in sorted(base.rglob("*.py")):
+            rel = path.relative_to(repo_root)
+            rel_str = str(rel)
+            scanned.append(rel_str)
+            if rel in WALL_CLOCK_ALLOWLIST:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:  # pragma: no cover - defensive for stub files
+                continue
+            for pattern in FORBIDDEN_TIME_PATTERNS:
+                if pattern in text:
+                    banned.append((rel_str, pattern))
+                    break
+    return banned, scanned
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    banned, scanned = _scan_wall_clock(repo_root)
+    config._repo_wall_clock_guard = {  # type: ignore[attr-defined]
+        "banned": banned,
+        "scanned": scanned,
+    }
+
+
+@pytest.fixture(scope="session", autouse=True)
+def freeze_tehran_time() -> Iterator[object]:
+    with freeze_time(FREEZE_INSTANT, tick=False) as frozen:
+        yield frozen
+
+
+@pytest.fixture(scope="function", autouse=True)
+def fresh_metrics_registry(monkeypatch: pytest.MonkeyPatch) -> Iterator[CollectorRegistry]:
+    registry = CollectorRegistry()
+    monkeypatch.setattr(prometheus_registry, "REGISTRY", registry, raising=False)
+    monkeypatch.setattr(prometheus_client, "REGISTRY", registry, raising=False)
+    yield registry
 
 
 def pytest_addoption(parser):

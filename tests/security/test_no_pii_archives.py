@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
 
 
 @pytest.mark.usefixtures("frozen_time")

@@ -13,10 +13,10 @@ import asyncio
 
 from PyQt5.QtWidgets import QFileDialog
 
-from src.api.client import APIClient
-from src.ui.core.event_bus import EventBus
-from src.ui.pages.students_page import StudentsPage
-from src.ui.pages.dialogs import student_dialog as student_dialog_module
+from sma.api.client import APIClient
+from sma.ui.core.event_bus import EventBus
+from sma.ui.pages.students_page import StudentsPage
+from sma.ui.pages.dialogs import student_dialog as student_dialog_module
 
 
 @pytest.mark.asyncio

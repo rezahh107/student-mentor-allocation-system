@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
+from sma.phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
 
 
 def _row(**kwargs):

@@ -1,0 +1,221 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Iterable, Optional
+
+from sma.shared.counter_rules import COUNTER_PREFIX_MAP
+from sma.phase6_import_to_sabt.clock import Clock
+
+COUNTER_PREFIX = dict(COUNTER_PREFIX_MAP)
+
+
+class ExportErrorCode(str, Enum):
+    EXPORT_VALIDATION_ERROR = "EXPORT_VALIDATION_ERROR"
+    EXPORT_IO_ERROR = "EXPORT_IO_ERROR"
+    EXPORT_EMPTY = "EXPORT_EMPTY"
+    EXPORT_PROFILE_UNKNOWN = "EXPORT_PROFILE_UNKNOWN"
+
+
+@dataclass(frozen=True)
+class ExportProfile:
+    """Represents a versioned export profile configuration."""
+
+    name: str
+    version: str
+    sensitive_columns: tuple[str, ...]
+    excel_risky_columns: tuple[str, ...]
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.name}_{self.version}"
+
+
+SABT_V1_PROFILE = ExportProfile(
+    name="SABT",
+    version="V1",
+    sensitive_columns=(
+        "national_id",
+        "counter",
+        "mobile",
+        "mentor_id",
+        "school_code",
+    ),
+    excel_risky_columns=(
+        "first_name",
+        "last_name",
+        "mentor_name",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class ExportSnapshot:
+    marker: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class ExportDeltaWindow:
+    created_at_watermark: datetime
+    id_watermark: int
+
+
+@dataclass(frozen=True)
+class ExportFilters:
+    year: int
+    center: Optional[int] = None
+    delta: Optional[ExportDeltaWindow] = None
+
+
+@dataclass(frozen=True)
+class ExportOptions:
+    chunk_size: int = 50_000
+    include_bom: bool = False
+    newline: str = "\r\n"
+    excel_mode: bool = True
+    output_format: str = "xlsx"
+
+    def __post_init__(self) -> None:
+        normalized = (self.output_format or "xlsx").lower()
+        if normalized not in {"csv", "xlsx"}:
+            raise ValueError(f"unsupported_format:{self.output_format}")
+        object.__setattr__(self, "output_format", normalized)
+
+
+@dataclass(frozen=True)
+class NormalizedStudentRow:
+    national_id: str
+    counter: str
+    first_name: str
+    last_name: str
+    gender: int
+    mobile: str
+    reg_center: int
+    reg_status: int
+    group_code: int
+    student_type: int
+    school_code: Optional[int]
+    mentor_id: Optional[str]
+    mentor_name: Optional[str]
+    mentor_mobile: Optional[str]
+    allocation_date: datetime
+    year_code: str
+    created_at: datetime
+    id: int
+
+
+@dataclass(frozen=True)
+class ExportManifestFile:
+    name: str
+    sha256: str
+    row_count: int
+    byte_size: int
+    sheets: tuple[tuple[str, int], ...] = ()
+
+
+@dataclass(frozen=True)
+class ExportManifest:
+    profile: ExportProfile
+    filters: ExportFilters
+    snapshot: ExportSnapshot
+    generated_at: datetime
+    total_rows: int
+    files: tuple[ExportManifestFile, ...]
+    delta_window: Optional[ExportDeltaWindow] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    format: str = "csv"
+    excel_safety: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ExportExecutionStats:
+    """Collects timing information for an export execution."""
+
+    phase_durations: dict[str, float] = field(default_factory=dict)
+
+    def add_duration(self, phase: str, duration: float) -> None:
+        if duration < 0:
+            duration = 0.0
+        self.phase_durations[phase] = self.phase_durations.get(phase, 0.0) + duration
+
+
+class ExportJobStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+
+
+@dataclass
+class ExportJob:
+    id: str
+    status: ExportJobStatus
+    filters: ExportFilters
+    options: ExportOptions
+    snapshot: ExportSnapshot
+    namespace: str
+    correlation_id: str
+    queued_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    manifest: Optional[ExportManifest] = None
+    error: Optional[dict[str, str]] = None
+
+
+class ExporterDataSource:
+    """Abstract interface for fetching normalized rows."""
+
+    def fetch_rows(self, filters: ExportFilters, snapshot: ExportSnapshot) -> Iterable[NormalizedStudentRow]:
+        raise NotImplementedError
+
+
+class SpecialSchoolsRoster:
+    def is_special(self, year: int, school_code: Optional[int]) -> bool:
+        raise NotImplementedError
+
+
+class RedisLike:
+    def setnx(self, key: str, value: str, ex: int | None = None) -> bool:
+        raise NotImplementedError
+
+    def delete(self, key: str) -> None:
+        raise NotImplementedError
+
+    def get(self, key: str) -> Optional[str]:
+        raise NotImplementedError
+
+    def hset(self, key: str, mapping: dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    def hgetall(self, key: str) -> dict[str, str]:
+        raise NotImplementedError
+
+    def expire(self, key: str, ttl: int) -> None:
+        raise NotImplementedError
+
+
+class StorageBackend:
+    def ensure_directory(self, path: str) -> None:
+        raise NotImplementedError
+
+    def cleanup_partials(self, path: str) -> None:
+        raise NotImplementedError
+
+
+class SignedURLProvider:
+    """Abstraction for generating and validating download URLs."""
+
+    def sign(self, file_path: str, expires_in: int = 3600) -> str:
+        raise NotImplementedError
+
+    def verify(self, url: str, *, now: datetime | None = None) -> bool:
+        """Validate that a signed URL remains usable.
+
+        Concrete providers may raise if the url is malformed.  The default
+        implementation simply rejects all URLs which keeps previous
+        subclasses, if any, explicit about their capabilities.
+        """
+
+        raise NotImplementedError

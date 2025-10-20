@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from src.core.clock import Clock, FrozenClock, ensure_clock
+from sma.core.clock import Clock, FrozenClock, ensure_clock
 
 
 def test_now_returns_tehran_aware_datetime(clock_test_context):

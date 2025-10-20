@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$env:PYTHONPATH = "src"
+Write-Host "⚠️  PYTHONPATH تنظیم نشد؛ لطفاً از pip install -e . استفاده کنید."
 
 # Provide deterministic defaults for local smoke tests if not set by caller.
 if (-not $env:IMPORT_TO_SABT_REDIS__DSN) {

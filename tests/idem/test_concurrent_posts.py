@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import concurrent.futures
 
-from src.repo_doctor.clock import tehran_clock
-from src.repo_doctor.idempotency import IdempotencyEnforcer
-from src.repo_doctor.retry import RetryPolicy
+from sma.repo_doctor.clock import tehran_clock
+from sma.repo_doctor.idempotency import IdempotencyEnforcer
+from sma.repo_doctor.retry import RetryPolicy
 
 
 def test_only_one_succeeds(fake_redis) -> None:

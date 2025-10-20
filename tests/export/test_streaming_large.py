@@ -5,15 +5,15 @@ import tracemalloc
 from datetime import datetime, timezone
 from types import MethodType
 
-from phase6_import_to_sabt.exporter_service import _chunk
-from phase6_import_to_sabt.models import (
+from sma.phase6_import_to_sabt.exporter_service import _chunk
+from sma.phase6_import_to_sabt.models import (
     ExportFilters,
     ExportManifestFile,
     ExportOptions,
     ExportSnapshot,
 )
-from phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from phase6_import_to_sabt.xlsx.retry import retry_with_backoff
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.retry import retry_with_backoff
 
 from tests.export.helpers import build_exporter, make_row
 

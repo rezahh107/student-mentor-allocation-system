@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.repo_doctor.report import parse_pytest_summary
+from sma.repo_doctor.report import parse_pytest_summary
 
 
 def test_parse_pytest_summary() -> None:

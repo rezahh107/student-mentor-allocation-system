@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import pytest
 
-from src.api.exceptions import ValidationException
-from src.api.mock_data import MockBackend
+from sma.api.exceptions import ValidationException
+from sma.api.mock_data import MockBackend
 
 
 def test_reject_invalid_grade_level_on_create():

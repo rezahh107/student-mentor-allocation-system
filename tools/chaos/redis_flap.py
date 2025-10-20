@@ -5,8 +5,8 @@ from typing import List
 
 import typer
 
-from src.reliability import Clock, RedisFlapInjector, ReliabilityMetrics, ReliabilitySettings
-from src.reliability.logging_utils import JSONLogger, configure_logging
+from sma.reliability import Clock, RedisFlapInjector, ReliabilityMetrics, ReliabilitySettings
+from sma.reliability.logging_utils import JSONLogger, configure_logging
 
 app = typer.Typer(help="Redis chaos-lite fault injector.")
 

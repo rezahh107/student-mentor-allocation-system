@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src.audit.api import Principal, create_audit_api, get_principal
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.api import Principal, create_audit_api, get_principal
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
 
 
 @pytest.mark.asyncio

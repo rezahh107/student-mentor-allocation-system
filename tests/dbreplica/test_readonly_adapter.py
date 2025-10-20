@@ -6,7 +6,7 @@ import datetime as dt
 import anyio
 import pytest
 
-from ops.replica_adapter import ReplicaAdapter, ReplicaTimeoutError
+from sma.ops.replica_adapter import ReplicaAdapter, ReplicaTimeoutError
 
 
 class FrozenClock:

@@ -4,8 +4,8 @@ import asyncio
 import pytest
 from sqlalchemy import text
 
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
-from src.audit.repository import AuditQuery
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.repository import AuditQuery
 
 
 @pytest.mark.asyncio

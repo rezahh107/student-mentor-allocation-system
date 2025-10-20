@@ -4,17 +4,87 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
 from prometheus_client import CollectorRegistry
 
-from phase6_import_to_sabt.exporter_service import ImportToSabtExporter
-from phase6_import_to_sabt.job_runner import DeterministicRedis, ExportJobRunner
-from phase6_import_to_sabt.metrics import ExporterMetrics, reset_registry
-from phase6_import_to_sabt.models import ExportFilters, ExportJobStatus, ExportOptions, NormalizedStudentRow, SpecialSchoolsRoster
-from phase6_import_to_sabt.roster import InMemoryRoster
-from phase6_import_to_sabt.clock import FixedClock
-from core.retry import RetryPolicy
+from sma.core.retry import (
+    RetryExhaustedError,
+    RetryPolicy,
+    retry_attempts_total,
+    retry_exhausted_total,
+)
+from sma.phase6_import_to_sabt.clock import FixedClock
+from sma.phase6_import_to_sabt.exporter_service import ImportToSabtExporter
+from sma.phase6_import_to_sabt.job_runner import DeterministicRedis, ExportJobRunner
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics, reset_registry
+from sma.phase6_import_to_sabt.models import (
+    ExportFilters,
+    ExportJobStatus,
+    ExportOptions,
+    NormalizedStudentRow,
+    SpecialSchoolsRoster,
+)
+from sma.phase6_import_to_sabt.roster import InMemoryRoster
+from sma.utils.retry import build_retry_metrics, retry
 
 from tests.export.helpers import make_row
+
+
+@pytest.mark.evidence("AGENTS.md::6 Observability & Security")
+def test_retry_metrics_namespace_records_success() -> None:
+    retry_attempts_total.clear()
+    retry_exhausted_total.clear()
+    namespace_metrics = build_retry_metrics(namespace="unit_retry", registry=CollectorRegistry())
+    call_state = {"count": 0}
+
+    def flaky() -> str:
+        call_state["count"] += 1
+        if call_state["count"] == 1:
+            raise ValueError("transient failure")
+        return "ok"
+
+    result = retry(
+        flaky,
+        attempts=3,
+        base_ms=10,
+        max_ms=100,
+        jitter_seed="unit",
+        correlation_id="unit-op",
+        op="obs-success",
+        metrics=namespace_metrics,
+    )
+    assert result == "ok"
+    assert namespace_metrics.retry_attempts_total.labels(op="obs-success", outcome="retry")._value.get() == 1.0
+    assert namespace_metrics.retry_attempts_total.labels(op="obs-success", outcome="success")._value.get() == 1.0
+    assert namespace_metrics.retry_exhausted_total.labels(op="obs-success")._value.get() == 0.0
+    assert retry_attempts_total.labels(op="obs-success", outcome="success")._value.get() >= 1.0
+    assert retry_exhausted_total.labels(op="obs-success")._value.get() == 0.0
+
+
+@pytest.mark.evidence("AGENTS.md::6 Observability & Security")
+def test_retry_metrics_records_exhaustion() -> None:
+    retry_attempts_total.clear()
+    retry_exhausted_total.clear()
+    namespace_metrics = build_retry_metrics(namespace="unit_retry_fail", registry=CollectorRegistry())
+
+    def failing() -> None:
+        raise RuntimeError("permanent failure")
+
+    with pytest.raises(RetryExhaustedError):
+        retry(
+            failing,
+            attempts=2,
+            base_ms=5,
+            max_ms=20,
+            jitter_seed="unit-fail",
+            correlation_id="cid-fail",
+            op="obs-failure",
+            metrics=namespace_metrics,
+        )
+
+    assert namespace_metrics.retry_exhausted_total.labels(op="obs-failure")._value.get() == 1.0
+    assert retry_exhausted_total.labels(op="obs-failure")._value.get() == 1.0
+    assert retry_attempts_total.labels(op="obs-failure", outcome="failure")._value.get() == 1.0
 
 
 class FlakyDataSource:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.phase2_counter_service.config import load_from_env
+from sma.phase2_counter_service.config import load_from_env
 
 
 def test_load_from_env_valid(monkeypatch):

@@ -4,7 +4,7 @@ import io
 
 import pytest
 
-from phase6_import_to_sabt.sanitization import secure_digest
+from sma.phase6_import_to_sabt.sanitization import secure_digest
 
 
 def test_secure_digest_accepts_str_and_bytes() -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from prometheus_client import CollectorRegistry
 
-from phase6_import_to_sabt.metrics import ExporterMetrics, reset_registry
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics, reset_registry
 
 
 def test_export_metrics_labels_present() -> None:

@@ -3,11 +3,11 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 import logging
 
-from core.retry import retry_attempts_total, retry_backoff_seconds, retry_exhaustion_total
+from sma.core.retry import retry_attempts_total, retry_backoff_seconds, retry_exhaustion_total
 
 from fastapi.testclient import TestClient
 
-from phase6_import_to_sabt.app.app_factory import create_application
+from sma.phase6_import_to_sabt.app.app_factory import create_application
 from tests.mw.test_order_retry import FlakyStore, _build_context
 
 

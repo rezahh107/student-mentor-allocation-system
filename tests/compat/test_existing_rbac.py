@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.phase6_import_to_sabt.security.rbac import AuthenticatedActor
+from sma.phase6_import_to_sabt.security.rbac import AuthenticatedActor
 
 
 def test_existing_rbac():

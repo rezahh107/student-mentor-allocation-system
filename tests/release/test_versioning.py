@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.phase7_release.versioning import resolve_build_version
+from sma.phase7_release.versioning import resolve_build_version
 
 
 @pytest.fixture

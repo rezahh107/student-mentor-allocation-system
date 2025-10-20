@@ -5,11 +5,11 @@ import asyncio
 import httpx
 import pytest
 
-from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
-from phase6_import_to_sabt.errors import EXPORT_IO_FA_MESSAGE, EXPORT_VALIDATION_FA_MESSAGE
-from phase6_import_to_sabt.exporter import ExportIOError
-from phase6_import_to_sabt.models import ExportJobStatus
-from phase7_release.deploy import ReadinessGate
+from sma.phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
+from sma.phase6_import_to_sabt.errors import EXPORT_IO_FA_MESSAGE, EXPORT_VALIDATION_FA_MESSAGE
+from sma.phase6_import_to_sabt.exporter import ExportIOError
+from sma.phase6_import_to_sabt.models import ExportJobStatus
+from sma.phase7_release.deploy import ReadinessGate
 
 from tests.export.helpers import build_job_runner, make_row
 

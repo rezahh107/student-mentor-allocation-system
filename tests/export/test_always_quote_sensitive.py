@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot, SABT_V1_PROFILE
+from sma.phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot, SABT_V1_PROFILE
 from tests.export.helpers import build_exporter, make_row
 
 

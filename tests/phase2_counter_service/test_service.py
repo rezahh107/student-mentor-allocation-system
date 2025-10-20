@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.infrastructure.persistence.models import CounterSequenceModel
-from src.phase2_counter_service.errors import CounterServiceError
-from src.phase2_counter_service.validation import COUNTER_PATTERN, COUNTER_PREFIX
+from sma.infrastructure.persistence.models import CounterSequenceModel
+from sma.phase2_counter_service.errors import CounterServiceError
+from sma.phase2_counter_service.validation import COUNTER_PATTERN, COUNTER_PREFIX
 
 from .conftest import seed_student
 

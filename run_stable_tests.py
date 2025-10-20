@@ -61,7 +61,7 @@ class TestRunner:
             sys.executable,
             "-m",
             "pytest",
-            "--cov=src",
+            "--cov=sma",
             "--cov-report=term",
             "--cov-report=html",
             "--cov-fail-under=0",

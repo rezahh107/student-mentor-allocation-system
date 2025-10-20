@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ci_orchestrator import orchestrator as orch_mod
-from ci_orchestrator.orchestrator import OrchestratorConfig, Orchestrator, atomic_write_text, atomic_write_bytes
+from sma.ci_orchestrator import orchestrator as orch_mod
+from sma.ci_orchestrator.orchestrator import OrchestratorConfig, Orchestrator, atomic_write_text, atomic_write_bytes
 
 
 def _patch_artifacts(monkeypatch, tmp_path: Path) -> Path:

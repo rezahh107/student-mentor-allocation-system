@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.core.normalize import normalize_digits
-from src.phase6_import_to_sabt.sanitization import sanitize_text
+from sma.core.normalize import normalize_digits
+from sma.phase6_import_to_sabt.sanitization import sanitize_text
 
 
 def test_nfkc_digitfold_unify() -> None:

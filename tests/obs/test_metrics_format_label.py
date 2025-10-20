@@ -1,4 +1,4 @@
-from phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
 
 
 def test_export_metrics_have_format_label() -> None:

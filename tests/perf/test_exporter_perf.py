@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.repo_doctor.exporter import stream_csv
+from sma.repo_doctor.exporter import stream_csv
 
 
 def test_exporter_perf_budget() -> None:

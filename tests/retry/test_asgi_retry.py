@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from src.phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
 from tests.helpers import RetryExhaustedError, request_with_retry
 
 

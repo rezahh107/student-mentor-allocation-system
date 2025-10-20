@@ -12,7 +12,7 @@
 
 ```python
 from fastapi import Depends
-from src.web.deps.clock import injected_clock
+from sma.web.deps.clock import injected_clock
 
 @app.get("/now")
 def read_time(clock: Clock = Depends(injected_clock)):
@@ -22,8 +22,8 @@ def read_time(clock: Clock = Depends(injected_clock)):
 در تست‌ها می‌توانید Clock را موقتاً فریز کنید:
 
 ```python
-from src.core.clock import FrozenClock
-from src.web.deps.clock import override_clock
+from sma.core.clock import FrozenClock
+from sma.web.deps.clock import override_clock
 
 with override_clock(FrozenClock(timezone=Clock.for_tehran().timezone)) as clock:
     clock.set(datetime(2023, 3, 21, tzinfo=ZoneInfo("Asia/Tehran")))

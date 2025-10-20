@@ -1,6 +1,6 @@
 from prometheus_client import CollectorRegistry
 
-from src.phase2_counter_service.runtime_metrics import CounterRuntimeMetrics
+from sma.phase2_counter_service.runtime_metrics import CounterRuntimeMetrics
 
 
 def test_retry_and_exhaustion_metrics() -> None:

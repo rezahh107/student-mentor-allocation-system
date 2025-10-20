@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, timezone
 
-from phase6_import_to_sabt.exporter import ExportValidationError
-from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
+from sma.phase6_import_to_sabt.exporter import ExportValidationError
+from sma.phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
 
 from .helpers import build_exporter, make_row
 

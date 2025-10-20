@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from sqlalchemy.exc import IntegrityError
 
-from src.phase2_counter_service.validation import COUNTER_PATTERN
+from sma.phase2_counter_service.validation import COUNTER_PATTERN
 
 from .conftest import seed_student
 

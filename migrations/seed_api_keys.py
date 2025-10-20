@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy import Column, MetaData, String, Table, create_engine
 from sqlalchemy.sql import insert
 
-from src.hardened_api.observability import hash_national_id
+from sma.hardened_api.observability import hash_national_id
 
 
 @dataclass(slots=True)

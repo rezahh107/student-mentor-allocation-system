@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from src.reliability.clock import Clock
+from sma.reliability.clock import Clock
 from tests.mock.oidc import MockOIDCProvider
 
 

@@ -11,7 +11,7 @@ import pytest
 
 from auth.metrics import AuthMetrics
 from auth.session_store import SessionStore
-from src.reliability.clock import Clock
+from sma.reliability.clock import Clock
 from tests.mock.oidc import MockOIDCProvider
 from tests.mock.saml import MockSAMLProvider
 
@@ -41,7 +41,7 @@ def sso_clock_fixture() -> SimpleNamespace:
 
 @pytest.fixture
 def session_store(sso_clock: SimpleNamespace):
-    from src.fakeredis import FakeStrictRedis
+    from sma._local_fakeredis import FakeStrictRedis
 
     redis = FakeStrictRedis()
     store = SessionStore(redis, ttl_seconds=900, clock=_extract_clock(sso_clock), namespace=f"sso:{id(redis)}")

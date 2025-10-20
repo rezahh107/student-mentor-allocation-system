@@ -7,7 +7,7 @@ from typing import Iterator
 
 import pytest
 
-from src.phase6_import_to_sabt.sanitization import (
+from sma.phase6_import_to_sabt.sanitization import (
     guard_formula,
     sanitize_phone,
     sanitize_text,

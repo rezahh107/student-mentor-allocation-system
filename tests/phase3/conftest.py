@@ -6,13 +6,13 @@ from typing import FrozenSet, Iterable, Mapping
 
 import pytest
 
-from src.phase3_allocation.contracts import (
+from sma.phase3_allocation.contracts import (
     AllocationConfig,
     NormalizedMentor,
     NormalizedStudent,
 )
-from src.phase3_allocation.policy import EligibilityPolicy
-from src.phase3_allocation.providers import ManagerCentersProvider, SpecialSchoolsProvider
+from sma.phase3_allocation.policy import EligibilityPolicy
+from sma.phase3_allocation.providers import ManagerCentersProvider, SpecialSchoolsProvider
 
 
 @dataclass

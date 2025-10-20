@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.hardened_api.middleware import (
+from sma.hardened_api.middleware import (
     ensure_rate_limit_config_restored,
     RateLimitConfig,
     RateLimitRule,

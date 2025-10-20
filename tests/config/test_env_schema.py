@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from config.env_schema import SSOConfig
+from sma.config.env_schema import SSOConfig
 
 
 def _base_env() -> dict[str, str]:

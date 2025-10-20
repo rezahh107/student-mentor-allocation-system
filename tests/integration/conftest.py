@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.fakeredis import FakeStrictRedis
+from sma._local_fakeredis import FakeStrictRedis
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ async def clean_db_state(db_session: InMemorySession) -> AsyncIterator[InMemoryS
 def middleware_order_validator() -> Callable[[Any], None]:
     """Return a validator asserting RateLimit→Idempotency→Auth ordering."""
 
-    from phase6_import_to_sabt.app.middleware import AuthMiddleware, IdempotencyMiddleware, RateLimitMiddleware
+    from sma.phase6_import_to_sabt.app.middleware import AuthMiddleware, IdempotencyMiddleware, RateLimitMiddleware
 
     def _validate(app: Any) -> None:
         chain = [entry.cls for entry in getattr(app, "user_middleware", [])]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from phase2_uploads.storage import AtomicStorage
+from sma.phase2_uploads.storage import AtomicStorage
 
 
 def test_write_part_fsync_then_rename(tmp_path):

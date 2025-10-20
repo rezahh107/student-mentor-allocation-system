@@ -440,7 +440,7 @@ def build_module_graph(src: Path) -> ModuleGraph:
     bare_to_full: Dict[str, str] = {}
     module_to_path: Dict[str, Path] = {}
     package_modules: List[str] = []
-    for path in src.rglob("*.py"):
+    for path in sma.rglob("*.py"):
         if "__pycache__" in path.parts:
             continue
         rel = path.relative_to(src)
@@ -677,7 +677,7 @@ class ImportRefactorer:
         if module_name not in self.graph.package_modules:
             depth_limit -= 1
         for depth in range(1, depth_limit + 1):
-            package_path = self.context.src.joinpath(*parts[:depth])
+            package_path = self.context.sma.joinpath(*parts[:depth])
             init_file = package_path / "__init__.py"
             if not package_path.exists():
                 continue
@@ -865,7 +865,7 @@ def _execute(command: str, config: RefactorConfig) -> None:
 
 @APP.command()
 def scan(
-    convert_relative: bool = typer.Option(False, help="Convert relative imports to absolute src.*"),
+    convert_relative: bool = typer.Option(False, help="Convert relative imports to absolute sma.*"),
     report_csv: Optional[Path] = typer.Option(None, help="Path to CSV report."),
     report_json: Optional[Path] = typer.Option(None, help="Path to JSON report."),
     rate_limit: int = typer.Option(30, help="Maximum operations per run."),
@@ -889,7 +889,7 @@ def scan(
 
 @APP.command()
 def apply(
-    convert_relative: bool = typer.Option(False, help="Convert relative imports to absolute src.*"),
+    convert_relative: bool = typer.Option(False, help="Convert relative imports to absolute sma.*"),
     report_csv: Optional[Path] = typer.Option(None, help="Path to CSV report."),
     report_json: Optional[Path] = typer.Option(None, help="Path to JSON report."),
     fix_entrypoint: Optional[str] = typer.Option(None, help="Update uvicorn entrypoint."),

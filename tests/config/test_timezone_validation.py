@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from phase6_import_to_sabt.app.config import AppConfig
+from sma.phase6_import_to_sabt.app.config import AppConfig
 
 
 def test_invalid_tz_rejected_persian_error() -> None:

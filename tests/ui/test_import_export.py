@@ -21,9 +21,9 @@ if _headless.PYTEST_SKIP_MARK is not None:
 import openpyxl
 from PyQt5.QtWidgets import QFileDialog
 
-from src.api.client import APIClient
-from src.ui.core.event_bus import EventBus
-from src.ui.pages.students_page import StudentsPage
+from sma.api.client import APIClient
+from sma.ui.core.event_bus import EventBus
+from sma.ui.pages.students_page import StudentsPage
 
 
 @pytest.mark.asyncio
@@ -53,7 +53,7 @@ async def test_download_template_and_import_preview(qtbot, tmp_path, monkeypatch
     wb2.save(str(import_path))
 
     # Patch open dialog to return file path and auto-accept preview dialog
-    from src.ui.pages.dialogs import import_preview_dialog as ipd
+    from sma.ui.pages.dialogs import import_preview_dialog as ipd
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(import_path), "Excel Files (*.xlsx)"))
     monkeypatch.setattr(ipd.ImportPreviewDialog, "exec_", lambda self: self.Accepted)
 

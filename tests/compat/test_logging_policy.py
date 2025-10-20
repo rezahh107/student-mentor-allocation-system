@@ -5,8 +5,8 @@ import logging
 
 import httpx
 
-from config.env_schema import SSOConfig
-from src.security.sso_app import create_sso_app
+from sma.config.env_schema import SSOConfig
+from sma.security.sso_app import create_sso_app
 
 
 def test_logging_policy(caplog, oidc_provider, oidc_http_client, session_store, auth_metrics, sso_clock, audit_log):

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from src.audit.enums import AuditAction, AuditActorRole
-from src.audit.hooks import audited_config_parse
-from src.audit.repository import AuditQuery
-from src.phase7_release.config_guard import ConfigGuard, ConfigValidationError
+from sma.audit.enums import AuditAction, AuditActorRole
+from sma.audit.hooks import audited_config_parse
+from sma.audit.repository import AuditQuery
+from sma.phase7_release.config_guard import ConfigGuard, ConfigValidationError
 
 
 @pytest.mark.asyncio

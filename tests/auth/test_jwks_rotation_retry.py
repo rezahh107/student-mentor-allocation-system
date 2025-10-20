@@ -10,8 +10,8 @@ from auth.metrics import AuthMetrics
 from auth.oidc_adapter import OIDCAdapter
 from auth.session_store import SessionStore
 from auth.utils import exponential_backoff
-from config.env_schema import SSOConfig
-from src.fakeredis import FakeStrictRedis
+from sma.config.env_schema import SSOConfig
+from sma._local_fakeredis import FakeStrictRedis
 
 
 def test_kid_rotation_success_then_exhaustion_metrics(

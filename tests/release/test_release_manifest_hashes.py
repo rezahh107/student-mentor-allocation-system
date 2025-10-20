@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from src.phase7_release.release_builder import ReleaseBuilder
-from src.phase7_release.hashing import sha256_file
+from sma.phase7_release.release_builder import ReleaseBuilder
+from sma.phase7_release.hashing import sha256_file
 
 from tests.phase7_utils import FakeDistribution
 
@@ -22,8 +22,8 @@ def test_all_artifacts_sha256(monkeypatch, tmp_path, clean_state):
         FakeDistribution(name="alpha", release="1.0.0"),
         FakeDistribution(name="beta", release="2.5.1"),
     ]
-    monkeypatch.setattr("src.phase7_release.lockfiles.importlib_metadata.distributions", lambda: dists)
-    monkeypatch.setattr("src.phase7_release.sbom.importlib_metadata.distributions", lambda: dists)
+    monkeypatch.setattr("sma.phase7_release.lockfiles.importlib_metadata.distributions", lambda: dists)
+    monkeypatch.setattr("sma.phase7_release.sbom.importlib_metadata.distributions", lambda: dists)
 
     clock_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
     builder = ReleaseBuilder(

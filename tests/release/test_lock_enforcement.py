@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.phase7_release.dependency_guard import LockedDependencyError, enforce_runtime_dependencies
+from sma.phase7_release.dependency_guard import LockedDependencyError, enforce_runtime_dependencies
 
 from tests.phase7_utils import FakeDistribution
 

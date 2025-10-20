@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from src.phase2_counter_service.errors import CounterServiceError, db_conflict, invalid_year_code
+from sma.phase2_counter_service.errors import CounterServiceError, db_conflict, invalid_year_code
 
 
 def test_invalid_year_code_payload() -> None:

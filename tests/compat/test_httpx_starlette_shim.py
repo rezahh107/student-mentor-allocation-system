@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from phase6_import_to_sabt.compat import TestClient, create_test_client
+from sma.phase6_import_to_sabt.compat import TestClient, create_test_client
 
 
 def test_testclient_basic_flow():

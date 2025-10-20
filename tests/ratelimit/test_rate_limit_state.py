@@ -12,9 +12,9 @@ import pytest
 from prometheus_client import CollectorRegistry
 from zoneinfo import ZoneInfo
 
-from src.phase6_import_to_sabt.app.app_factory import create_application
-from src.phase6_import_to_sabt.app.clock import FixedClock
-from src.phase6_import_to_sabt.app.config import (
+from sma.phase6_import_to_sabt.app.app_factory import create_application
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.app.config import (
     AppConfig,
     AuthConfig,
     DatabaseConfig,
@@ -22,10 +22,10 @@ from src.phase6_import_to_sabt.app.config import (
     RateLimitConfig,
     RedisConfig,
 )
-from src.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
-from src.phase6_import_to_sabt.app.timing import DeterministicTimer
-from src.phase6_import_to_sabt.obs.metrics import build_metrics
-from src.ops.ratelimit_metrics import build_rate_limit_metrics
+from sma.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
+from sma.phase6_import_to_sabt.app.timing import DeterministicTimer
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.ops.ratelimit_metrics import build_rate_limit_metrics
 
 _ANCHOR = "AGENTS.md::Middleware Order"
 _EXPECTED_CHAIN = ["RateLimit", "Idempotency", "Auth"]

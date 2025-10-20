@@ -7,9 +7,9 @@ import anyio
 import pytest
 from prometheus_client import CollectorRegistry
 
-from phase6_import_to_sabt.app.timing import DeterministicTimer
-from phase6_import_to_sabt.obs.metrics import build_metrics
-from phase6_import_to_sabt.perf.harness import PerformanceHarness
+from sma.phase6_import_to_sabt.app.timing import DeterministicTimer
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.phase6_import_to_sabt.perf.harness import PerformanceHarness
 
 
 async def _retry(operation: Callable[[], Awaitable[None]], *, attempts: int = 3) -> None:

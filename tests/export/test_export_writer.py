@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from phase6_import_to_sabt.export_writer import ExportWriter
+from sma.phase6_import_to_sabt.export_writer import ExportWriter
 
 
 @pytest.fixture

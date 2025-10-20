@@ -36,14 +36,14 @@ def test_bare_to_src_absolute(tmp_path: Path, clean_state, monkeypatch) -> None:
             "--report-json",
             str(report_json),
             "--fix-entrypoint",
-            "src.main:app",
+            "sma.main:app",
         ],
     )
     debug = get_debug_context(clean_state["redis"])
     assert result.exit_code == 0, f"stdout={result.stdout}\nexc={result.exception}\ncontext={debug}"
 
     updated = (root / "app.py").read_text(encoding="utf-8")
-    assert "from src.phase6_import_to_sabt import service" in updated
+    assert "from sma.phase6_import_to_sabt import service" in updated
 
     init_file = root / "src/phase6_import_to_sabt/__init__.py"
     assert init_file.exists()
@@ -53,7 +53,7 @@ def test_bare_to_src_absolute(tmp_path: Path, clean_state, monkeypatch) -> None:
 
     report = json.loads(report_json.read_text(encoding="utf-8"))
     assert report["fixes"], report
-    assert report["fixes"][0]["updated"].startswith("src."), report
+    assert report["fixes"][0]["updated"].startswith("sma."), report
 
     entrypoint = (root / "run_application.bat").read_text(encoding="utf-8")
-    assert "uvicorn src.main:app" in entrypoint
+    assert "uvicorn sma.main:app" in entrypoint

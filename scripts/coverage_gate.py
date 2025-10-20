@@ -311,7 +311,7 @@ def _emit_pytest_cov_missing() -> None:
 def _ensure_pytest_cov() -> None:
     """بررسی در دسترس بودن افزونه pytest-cov با مدیریت خطا."""
 
-    from src.tools.cov_plugin_shim import PluginValidationError
+    from sma.tools.cov_plugin_shim import PluginValidationError
 
     try:
         import pytest  # type: ignore
@@ -354,7 +354,7 @@ def _build_pytest_command(
         "pytest",
         "-p",
         "pytest_cov",
-        "--cov=src",
+        "--cov=sma",
         "--cov-report=term",
         "--cov-report=xml",
         "--cov-report=html",

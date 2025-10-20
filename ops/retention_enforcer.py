@@ -9,11 +9,11 @@ import typer
 from sqlalchemy import create_engine
 from zoneinfo import ZoneInfo
 
-from src.audit import AuditArchiveConfig, AuditArchiver, AuditRetentionEnforcer, ReleaseManifest
-from src.audit.service import AuditMetrics, build_metrics as build_audit_metrics
-from src.reliability import ReliabilityMetrics, ReliabilitySettings, RetentionEnforcer
-from src.reliability.clock import Clock
-from src.reliability.logging_utils import JSONLogger, configure_logging
+from sma.audit import AuditArchiveConfig, AuditArchiver, AuditRetentionEnforcer, ReleaseManifest
+from sma.audit.service import AuditMetrics, build_metrics as build_audit_metrics
+from sma.reliability import ReliabilityMetrics, ReliabilitySettings, RetentionEnforcer
+from sma.reliability.clock import Clock
+from sma.reliability.logging_utils import JSONLogger, configure_logging
 
 app = typer.Typer(help="Retention enforcer (dry-run then enforce).")
 

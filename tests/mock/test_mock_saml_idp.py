@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from src.reliability.clock import Clock
+from sma.reliability.clock import Clock
 from tests.mock.saml import MockSAMLProvider
 
 

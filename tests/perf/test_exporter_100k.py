@@ -9,9 +9,9 @@ import tracemalloc
 from typing import Dict, List
 from types import MethodType
 
-from phase6_import_to_sabt.exporter import ImportToSabtExporter
-from phase6_import_to_sabt.exporter_service import _chunk
-from phase6_import_to_sabt.models import (
+from sma.phase6_import_to_sabt.exporter import ImportToSabtExporter
+from sma.phase6_import_to_sabt.exporter_service import _chunk
+from sma.phase6_import_to_sabt.models import (
     ExportExecutionStats,
     ExportFilters,
     ExportOptions,
@@ -21,9 +21,9 @@ from phase6_import_to_sabt.models import (
     ExportManifest,
     NormalizedStudentRow,
 )
-from phase6_import_to_sabt.roster import InMemoryRoster
-from phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from phase6_import_to_sabt.xlsx.retry import retry_with_backoff
+from sma.phase6_import_to_sabt.roster import InMemoryRoster
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.retry import retry_with_backoff
 
 
 class SyntheticDataSource(ExporterDataSource):

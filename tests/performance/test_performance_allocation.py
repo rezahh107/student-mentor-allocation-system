@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from src.api.mock_data import MockBackend
+from sma.api.mock_data import MockBackend
 from tests.fixtures.factories import make_mentor, make_student
 
 

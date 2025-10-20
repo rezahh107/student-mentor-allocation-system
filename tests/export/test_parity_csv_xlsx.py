@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from openpyxl import load_workbook
 
-from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
+from sma.phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
 from tests.export.helpers import build_exporter, make_row
 
 

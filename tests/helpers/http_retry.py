@@ -8,8 +8,8 @@ from typing import Iterable, Mapping, MutableMapping, Sequence
 
 import httpx
 
-from src.phase6_import_to_sabt.obs.metrics import ServiceMetrics
-from src.phase6_import_to_sabt.sanitization import sanitize_text
+from sma.phase6_import_to_sabt.obs.metrics import ServiceMetrics
+from sma.phase6_import_to_sabt.sanitization import sanitize_text
 
 _ALLOWED_DEBUG_HEADERS = {"retry-after", "x-request-id", "x-ratelimit-remaining"}
 

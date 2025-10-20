@@ -5,9 +5,9 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from src.core.clock import Clock, FrozenClock
-from src.infrastructure.api.routes import create_app
-from src.web.deps.clock import override_clock
+from sma.core.clock import Clock, FrozenClock
+from sma.infrastructure.api.routes import create_app
+from sma.web.deps.clock import override_clock
 
 
 class _StubRedisClient:
@@ -51,7 +51,7 @@ def test_middleware_chain_uses_injected_clock(monkeypatch, clock_test_context):
     redis_clients: list[_StubRedisClient] = []
     stub_module = _StubRedisModule(redis_clients)
     stub_module.bind()
-    monkeypatch.setattr("src.infrastructure.security.rate_limit.redis", stub_module, raising=False)
+    monkeypatch.setattr("sma.infrastructure.security.rate_limit.redis", stub_module, raising=False)
 
     with override_clock(frozen):
         app = create_app()

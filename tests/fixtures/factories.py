@@ -4,8 +4,8 @@ import random
 from datetime import date, datetime, timedelta
 from typing import List
 
-from src.api.models import MentorDTO, StudentDTO, validate_national_code
-from src.core.datetime_utils import utc_now
+from sma.api.models import MentorDTO, StudentDTO, validate_national_code
+from sma.core.datetime_utils import utc_now
 
 
 def _gen_valid_melli(rng: random.Random) -> str:

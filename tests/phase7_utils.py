@@ -8,8 +8,8 @@ from typing import Any, Deque
 
 from prometheus_client import CollectorRegistry
 
-from src.phase6_import_to_sabt.logging_utils import ExportLogger
-from src.phase6_import_to_sabt.metrics import ExporterMetrics
+from sma.phase6_import_to_sabt.logging_utils import ExportLogger
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics
 
 
 @dataclass

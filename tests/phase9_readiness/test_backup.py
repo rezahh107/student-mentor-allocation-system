@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.phase9_readiness.retention import RetentionPolicy, RetentionValidator
+from sma.phase9_readiness.retention import RetentionPolicy, RetentionValidator
 
 
 @pytest.mark.usefixtures("frozen_time")

@@ -6,7 +6,7 @@ from typing import Iterable
 
 import pytest
 
-from src.core.models import (
+from sma.core.models import (
     Mentor,
     StudentNormalized,
     _normalize_special_schools,

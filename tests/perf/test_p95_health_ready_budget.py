@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from phase6_import_to_sabt.app.utils import get_debug_context
-from phase6_import_to_sabt.perf.harness import PerformanceHarness
+from sma.phase6_import_to_sabt.app.utils import get_debug_context
+from sma.phase6_import_to_sabt.perf.harness import PerformanceHarness
 
 pytestmark = pytest.mark.asyncio
 

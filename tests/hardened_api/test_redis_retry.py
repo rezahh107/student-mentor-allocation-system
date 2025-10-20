@@ -3,8 +3,8 @@ from typing import List
 
 import pytest
 
-from src.hardened_api.observability import get_metric
-from src.hardened_api.redis_support import RedisExecutor, RedisOperationError, RedisRetryConfig
+from sma.hardened_api.observability import get_metric
+from sma.hardened_api.redis_support import RedisExecutor, RedisOperationError, RedisRetryConfig
 
 
 @pytest.mark.asyncio

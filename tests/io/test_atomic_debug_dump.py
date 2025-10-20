@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.phase2_counter_service.logging_utils import atomic_debug_dump
+from sma.phase2_counter_service.logging_utils import atomic_debug_dump
 
 
 def test_atomic_write(tmp_path: Path) -> None:

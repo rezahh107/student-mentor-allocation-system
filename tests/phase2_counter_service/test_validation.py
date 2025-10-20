@@ -8,8 +8,8 @@ pytest.importorskip(
 )
 from hypothesis import given, strategies as st
 
-from src.phase2_counter_service import validation
-from src.phase2_counter_service.errors import CounterServiceError
+from sma.phase2_counter_service import validation
+from sma.phase2_counter_service.errors import CounterServiceError
 
 
 def test_ensure_valid_inputs_normalizes():

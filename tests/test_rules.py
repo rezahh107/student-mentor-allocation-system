@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from src.domain.allocation.engine import AllocationEngine
-from src.domain.shared.types import Gender
+from sma.domain.allocation.engine import AllocationEngine
+from sma.domain.shared.types import Gender
 from tests.factories import make_mentor, make_student
 
 

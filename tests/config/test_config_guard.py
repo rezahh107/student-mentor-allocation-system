@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from ops.config import OpsSettings, SLOThresholds
+from sma.ops.config import OpsSettings, SLOThresholds
 
 
 def test_forbid_unknown_keys():

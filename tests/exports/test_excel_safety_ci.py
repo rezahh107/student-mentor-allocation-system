@@ -3,7 +3,7 @@ from __future__ import annotations
 import codecs
 from io import StringIO
 
-from ci_orchestrator.excel import always_quote, normalize_text, sanitize_cell
+from sma.ci_orchestrator.excel import always_quote, normalize_text, sanitize_cell
 
 
 def test_quotes_formula_guard_crlf_bom(tmp_path) -> None:

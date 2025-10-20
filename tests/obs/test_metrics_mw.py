@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from src.hardened_api.observability import get_metric
+from sma.hardened_api.observability import get_metric
 from tests.hardened_api.conftest import setup_test_data
 
 pytest_plugins = ("pytest_asyncio.plugin", "tests.hardened_api.conftest")

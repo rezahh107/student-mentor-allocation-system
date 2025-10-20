@@ -5,11 +5,11 @@ import pathlib
 import pytest
 from fastapi import FastAPI
 
-from src.repo_doctor.healthcheck import HealthDoctor, MIDDLEWARE_EXPECTED_ORDER
-from src.repo_doctor.clock import tehran_clock
-from src.repo_doctor.logging_utils import JsonLogger
-from src.repo_doctor.metrics import DoctorMetrics
-from src.repo_doctor.retry import RetryPolicy
+from sma.repo_doctor.healthcheck import HealthDoctor, MIDDLEWARE_EXPECTED_ORDER
+from sma.repo_doctor.clock import tehran_clock
+from sma.repo_doctor.logging_utils import JsonLogger
+from sma.repo_doctor.metrics import DoctorMetrics
+from sma.repo_doctor.retry import RetryPolicy
 
 
 class RateLimit:

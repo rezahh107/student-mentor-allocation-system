@@ -6,7 +6,7 @@ from typing import Callable
 
 import pytest
 
-from shared.counter_rules import COUNTER_PREFIX_MAP, COUNTER_REGEX, gender_prefix, validate_counter
+from sma.shared.counter_rules import COUNTER_PREFIX_MAP, COUNTER_REGEX, gender_prefix, validate_counter
 
 
 def _retry(action: Callable[[], None], *, attempts: int = 3, base_delay: float = 0.0005) -> None:

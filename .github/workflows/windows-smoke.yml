@@ -71,8 +71,23 @@ jobs:
           } elseif (Test-Path 'requirements.txt') {
             Install-WithRetry "python -m pip install -r requirements.txt"
           }
-          Install-WithRetry "python -m pip install -e ."
+          Install-WithRetry "try { python -m pip install -e .[dev] } catch { python -m pip install -e . }"
           python -m pip check
+
+      - name: Verify AGENTS spec tokens
+        run: |
+          & ".\.venv\Scripts\Activate.ps1"
+          python scripts/verify_agents.py
+
+      - name: Guard PYTHONPATH front-loading
+        run: |
+          & ".\.venv\Scripts\Activate.ps1"
+          python scripts/guard_pythonpath.py
+
+      - name: Shadowing guard tests
+        run: |
+          & ".\.venv\Scripts\Activate.ps1"
+          python -m pytest tests/imports -q -p pytest_asyncio
 
       - name: Pre-clean
         run: |
@@ -100,7 +115,7 @@ jobs:
             '--ignore-glob=**/System Volume Information',
             '--ignore-glob=**/WindowsApps',
             '--ignore-glob=**/Program Files*',
-            '--cov=src','--cov-report=xml','--cov-report=term',
+            '--cov=sma','--cov-report=xml','--cov-report=term',
             '--junitxml=artifacts/junit.xml',
             '--html=artifacts/report.html','--self-contained-html'
           )

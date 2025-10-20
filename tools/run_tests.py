@@ -82,7 +82,7 @@ def _core_suite() -> float:
         args = [
             "-p",
             "pytest_cov",
-            "--cov=src",
+            "--cov=sma",
             "--cov-report=xml",
             f"--cov-fail-under={threshold}",
             target,

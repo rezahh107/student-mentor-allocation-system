@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 import httpx
 
-from src.infrastructure.api.routes import create_app as create_infra_app
+from sma.infrastructure.api.routes import create_app as create_infra_app
 from tests.mw.test_middleware_order_all_apps import _build_phase6_app
 
 _ANCHOR = "AGENTS.md::Observability & No PII"

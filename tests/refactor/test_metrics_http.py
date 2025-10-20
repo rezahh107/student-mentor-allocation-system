@@ -19,7 +19,7 @@ def test_guarded_metrics_multiple_requests(tmp_path, monkeypatch):
     project.mkdir()
     (project / "AGENTS.md").write_text("spec", encoding="utf-8")
     src = project / "src"
-    src.mkdir()
+    sma.mkdir()
     module = src / "main.py"
     module.write_text("from phase6_import_to_sabt import handler\n", encoding="utf-8")
     monkeypatch.chdir(project)

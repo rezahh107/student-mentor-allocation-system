@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
-from src.reliability.clock import Clock
+from sma.reliability.clock import Clock
 
 from .errors import ProviderError
 from .models import BridgeSession

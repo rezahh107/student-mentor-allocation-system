@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.phase7_release.release_builder import ReleaseBuilder
+from sma.phase7_release.release_builder import ReleaseBuilder
 
 from tests.phase7_utils import FakeDistribution
 
@@ -17,8 +17,8 @@ def clean_state():
 
 def test_prometheus_rules_loaded(tmp_path, monkeypatch, clean_state):
     dists = [FakeDistribution(name="alpha", release="1.0.0")]
-    monkeypatch.setattr("src.phase7_release.lockfiles.importlib_metadata.distributions", lambda: dists)
-    monkeypatch.setattr("src.phase7_release.sbom.importlib_metadata.distributions", lambda: dists)
+    monkeypatch.setattr("sma.phase7_release.lockfiles.importlib_metadata.distributions", lambda: dists)
+    monkeypatch.setattr("sma.phase7_release.sbom.importlib_metadata.distributions", lambda: dists)
     builder = ReleaseBuilder(
         project_root=Path.cwd(),
         env={"GIT_SHA": "f00dbabe99887766"},

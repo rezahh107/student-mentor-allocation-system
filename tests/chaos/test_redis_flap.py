@@ -7,8 +7,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.reliability import Clock, RedisFlapInjector, ReliabilityMetrics
-from src.reliability.logging_utils import JSONLogger
+from sma.reliability import Clock, RedisFlapInjector, ReliabilityMetrics
+from sma.reliability.logging_utils import JSONLogger
 
 
 class FakeNow:

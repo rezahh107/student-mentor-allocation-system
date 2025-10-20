@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from src.phase9_readiness.http_app import create_readiness_app
+from sma.phase9_readiness.http_app import create_readiness_app
 
 
 @pytest.mark.usefixtures("frozen_time")

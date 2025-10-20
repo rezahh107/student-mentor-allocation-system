@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from phase6_import_to_sabt.app.middleware import IdempotencyMiddleware
-from phase6_import_to_sabt.app.utils import get_debug_context
+from sma.phase6_import_to_sabt.app.middleware import IdempotencyMiddleware
+from sma.phase6_import_to_sabt.app.utils import get_debug_context
 
 pytestmark = pytest.mark.asyncio
 

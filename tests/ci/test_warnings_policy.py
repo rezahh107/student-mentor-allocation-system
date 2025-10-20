@@ -4,8 +4,8 @@ from collections import deque
 from dataclasses import dataclass
 
 
-from ci_orchestrator import orchestrator as orch_mod
-from ci_orchestrator.orchestrator import Orchestrator, OrchestratorConfig
+from sma.ci_orchestrator import orchestrator as orch_mod
+from sma.ci_orchestrator.orchestrator import Orchestrator, OrchestratorConfig
 
 
 @dataclass

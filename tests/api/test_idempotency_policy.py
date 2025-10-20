@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
+from sma.phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
 from tests.export.helpers import build_job_runner, make_row
 
 

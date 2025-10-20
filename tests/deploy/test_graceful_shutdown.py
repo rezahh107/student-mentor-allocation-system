@@ -6,7 +6,7 @@ from collections import deque
 import pytest
 from prometheus_client import CollectorRegistry
 
-from src.phase7_release.runtime import GracefulShutdownController
+from sma.phase7_release.runtime import GracefulShutdownController
 
 
 @pytest.fixture

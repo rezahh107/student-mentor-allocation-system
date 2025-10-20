@@ -6,8 +6,8 @@ import os
 from types import SimpleNamespace
 
 
-from src.phase2_counter_service import cli
-from src.phase2_counter_service.backfill import BackfillStats
+from sma.phase2_counter_service import cli
+from sma.phase2_counter_service.backfill import BackfillStats
 
 
 def _non_empty_lines(text: str) -> list[str]:

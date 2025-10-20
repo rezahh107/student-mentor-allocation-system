@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
+import os
 import pathlib
 import shutil
 import uuid
+import weakref
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import prometheus_client
@@ -20,6 +25,7 @@ from prometheus_client import CollectorRegistry
 from sma._local_fakeredis import FakeStrictRedis
 from sma.repo_doctor.clock import tehran_clock
 from sma.repo_doctor.metrics import DoctorMetrics
+from sma.testing.state import get_test_namespace, maybe_connect_redis
 from tools import reqs_doctor
 from tools.reqs_doctor.clock import DeterministicClock
 
@@ -33,6 +39,25 @@ WALL_CLOCK_ALLOWLIST = {
     pathlib.Path("src/sma/git_sync_verifier/clock.py"),
 }
 SCAN_ROOTS = (pathlib.Path("src/sma"),)
+STATE_LOGGER = logging.getLogger("tests.state_hygiene")
+_FAKE_REDIS_INSTANCES: "weakref.WeakSet[FakeStrictRedis]" = weakref.WeakSet()
+
+
+def _track_fake_redis_instances() -> None:
+    original_init = getattr(FakeStrictRedis, "__init__")
+
+    if getattr(original_init, "_state_tracking_enabled", False):
+        return
+
+    def _tracked_init(self: FakeStrictRedis, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]
+        original_init(self, *args, **kwargs)
+        _FAKE_REDIS_INSTANCES.add(self)
+
+    setattr(_tracked_init, "_state_tracking_enabled", True)
+    FakeStrictRedis.__init__ = _tracked_init  # type: ignore[assignment]
+
+
+_track_fake_redis_instances()
 
 
 def _scan_wall_clock(repo_root: pathlib.Path) -> tuple[list[tuple[str, str]], list[str]]:
@@ -80,6 +105,99 @@ def fresh_metrics_registry(monkeypatch: pytest.MonkeyPatch) -> Iterator[Collecto
     monkeypatch.setattr(prometheus_registry, "REGISTRY", registry, raising=False)
     monkeypatch.setattr(prometheus_client, "REGISTRY", registry, raising=False)
     yield registry
+
+
+@pytest.fixture()
+def rid(request: pytest.FixtureRequest) -> str:
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+    digest = hashlib.blake2s(request.node.nodeid.encode("utf-8"), digest_size=8).hexdigest()
+    return f"rid-{worker}-{digest}"
+
+
+def _emit_state_log(event: str, correlation_id: str, namespace: str, **extra: Any) -> None:
+    payload = {
+        "correlation_id": correlation_id,
+        "event": event,
+        "namespace": namespace,
+        **extra,
+    }
+    STATE_LOGGER.info(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+_DB_RESET_MISSING_LOGGED = False
+
+
+def _reset_test_database(correlation_id: str, namespace: str) -> None:
+    global _DB_RESET_MISSING_LOGGED
+    try:
+        from sma.testing import reset_db  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover - optional hook
+        if not _DB_RESET_MISSING_LOGGED:
+            _emit_state_log(
+                "db-reset-missing",
+                correlation_id,
+                namespace,
+                message="هشدار: هوک بازنشانی پایگاه‌داده پیدا نشد؛ انجام نشد (بدون اثر).",
+            )
+            _DB_RESET_MISSING_LOGGED = True
+        return
+
+    try:
+        reset_db()
+        _emit_state_log("db-reset-success", correlation_id, namespace)
+    except Exception as exc:  # pragma: no cover - defensive
+        _emit_state_log("db-reset-failed", correlation_id, namespace, error=str(exc))
+
+
+def _flush_fake_redis_clients(correlation_id: str, namespace: str) -> None:
+    for client in list(_FAKE_REDIS_INSTANCES):
+        try:
+            client.flushall()
+        except Exception as exc:  # pragma: no cover - defensive
+            _emit_state_log("fakeredis-flush-error", correlation_id, namespace, error=str(exc))
+
+
+def _flush_real_redis_namespace(client: Any, namespace: str, correlation_id: str) -> None:
+    pattern = f"{namespace}:*"
+    cursor = 0
+    deleted = 0
+    while True:
+        cursor, keys = client.scan(cursor=cursor, match=pattern, count=100)
+        if keys:
+            client.delete(*keys)
+            deleted += len(keys)
+        if cursor == 0:
+            break
+    _emit_state_log("redis-namespace-flushed", correlation_id, namespace, keys=deleted)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def fresh_state_namespaces(rid: str) -> Iterator[None]:
+    namespace = get_test_namespace()
+    correlation_id = rid
+    redis_client = maybe_connect_redis(correlation_id=correlation_id)
+
+    if redis_client is None:
+        _emit_state_log(
+            "redis-unavailable",
+            correlation_id,
+            namespace,
+            message="پاک‌سازی فضای آزمون Redis انجام نشد؛ اتصال در دسترس نیست.",
+        )
+
+    _flush_fake_redis_clients(correlation_id, namespace)
+    if redis_client is not None:
+        _flush_real_redis_namespace(redis_client, namespace, correlation_id)
+
+    _reset_test_database(correlation_id, namespace)
+
+    yield
+
+    _flush_fake_redis_clients(correlation_id, namespace)
+    if redis_client is not None:
+        _flush_real_redis_namespace(redis_client, namespace, correlation_id)
+
+    _reset_test_database(correlation_id, namespace)
 
 
 def pytest_addoption(parser):

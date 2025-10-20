@@ -22,8 +22,8 @@ pipeline {
     }
     stage('Setup') {
       steps {
-        sh "PYTHONWARNINGS=default python3 -m pip install --upgrade pip"
-        sh "PYTHONWARNINGS=default pip install -r requirements.txt -r requirements-dev.txt"
+        sh "PYTHONWARNINGS=default python3 -m scripts.deps.ensure_lock --root . install --attempts 3"
+        sh "PYTHONWARNINGS=default python3 -m pip install --no-deps -e ."
       }
     }
     stage('CI Orchestrator Smoke') {

@@ -3,7 +3,7 @@
 این مخزن برای اطمینان از یکسان بودن نتایج در CI و اجراهای محلی سخت‌گیر شده است. برای آماده‌سازی وابستگی‌ها از دستور واحد زیر استفاده کنید تا وابستگی‌های اصلی و توسعه به‌طور همزمان نصب شوند:
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt
+make init
 ```
 
 ## اجرای محلی
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: python -m scripts.deps.ensure_lock --root . install --attempts 3
       - name: Run pytest in ${{ matrix.mode }} mode
         run: python tools/ci_pytest_runner.py --mode ${{ matrix.mode }} --flush-redis auto --probe-mw-order auto
 ```

@@ -4,12 +4,6 @@ chcp 65001 >nul
 set "SCRIPT_DIR=%~dp0"
 pushd "%SCRIPT_DIR%" >nul
 set "PYTHON_BIN="
-set "REQUIREMENTS_FILE=%SCRIPT_DIR%requirements.txt"
-if not exist "%REQUIREMENTS_FILE%" (
-    echo ❌ فایل الزامی یافت نشد: requirements.txt
-    popd >nul
-    exit /b 1
-)
 set "VENV_PY=%SCRIPT_DIR%.venv\Scripts\python.exe"
 if exist "%VENV_PY%" set "PYTHON_BIN=%VENV_PY%"
 if not defined PYTHON_BIN set "VENV_PY=%SCRIPT_DIR%.venv/bin/python"
@@ -44,20 +38,19 @@ if errorlevel 1 (
     popd >nul
     exit /b 1
 )
-set "CONSTRAINT_ARGS="
-for %%f in (constraints*.txt) do (
-    if exist "%%~ff" call :APPEND_CONSTRAINT "%%~ff"
-)
-echo 📦 نصب وابستگی‌ها بر اساس requirements.txt...
-"%PYTHON_BIN%" -m pip install --requirement "%REQUIREMENTS_FILE%"!CONSTRAINT_ARGS!
+echo 📦 نصب وابستگی‌ها از constraints-dev.txt...
+"%PYTHON_BIN%" -m scripts.deps.ensure_lock --root "%SCRIPT_DIR%" install --attempts 3 >nul
 if errorlevel 1 (
-    echo ❌ نصب کتابخانه‌ها با خطا روبه‌رو شد.
+    echo ❌ نصب از constraints-dev.txt مجاز نشد؛ خروجی بالا را بررسی کنید.
+    popd >nul
+    exit /b 1
+)
+"%PYTHON_BIN%" -m pip install --no-deps -e "%SCRIPT_DIR%" >nul
+if errorlevel 1 (
+    echo ❌ نصب editable پروژه با خطا روبه‌رو شد.
     popd >nul
     exit /b 1
 )
 echo ✅ همهٔ وابستگی‌ها با موفقیت نصب شدند.
 popd >nul
-exit /b 0
-:APPEND_CONSTRAINT
-set "CONSTRAINT_ARGS=%CONSTRAINT_ARGS% -c ""%~1"""
 exit /b 0

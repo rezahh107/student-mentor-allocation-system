@@ -4,11 +4,10 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y     fonts-farsiweb     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY requirements-advanced.txt .
-RUN pip install --no-cache-dir -r requirements-advanced.txt
+COPY requirements.in requirements-dev.in constraints.txt constraints-dev.txt ./
+COPY scripts ./scripts
+RUN python -m scripts.deps.ensure_lock --root . install --attempts 3
+RUN python -m pip install --no-cache-dir --no-deps -e .
 
 RUN mkdir -p /app/test-results
 

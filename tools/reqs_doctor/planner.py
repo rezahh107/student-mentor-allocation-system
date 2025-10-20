@@ -75,17 +75,25 @@ def _ensure_security(text: str) -> str:
     return "".join(lines)
 
 def _simplify_test(text: str) -> str:
-    return "-r requirements.txt\n-r requirements-dev.txt\n"
+    return "-r requirements.in\n-r requirements-dev.in\n"
 
 def plan(repo: Path, policy: str = "A") -> PlanResult:
     _ensure_agents_md(repo)
     actions: dict[Path, Action] = {}
     messages: list[str] = []
     # Paths
-    req = repo / "requirements.txt"
-    req_dev = repo / "requirements-dev.txt"
-    req_test = repo / "requirements-test.txt"
-    req_sec = repo / "requirements-security.txt"
+    req = repo / "requirements.in"
+    if not req.exists():
+        req = repo / "requirements.txt"
+    req_dev = repo / "requirements-dev.in"
+    if not req_dev.exists():
+        req_dev = repo / "requirements-dev.txt"
+    req_test = repo / "requirements-test.in"
+    if not req_test.exists():
+        req_test = repo / "requirements-test.txt"
+    req_sec = repo / "requirements-security.in"
+    if not req_sec.exists():
+        req_sec = repo / "requirements-security.txt"
 
     # requirements.txt => remove security tools
     old = _read_text(req)
@@ -103,7 +111,7 @@ def plan(repo: Path, policy: str = "A") -> PlanResult:
 
     # requirements-test.txt => simplify includes
     old = _read_text(req_test)
-    if old.strip() != "-r requirements.txt\n-r requirements-dev.txt":
+    if old.strip() != "-r requirements.in\n-r requirements-dev.in":
         new = _simplify_test(old)
         actions[req_test] = Action(new, ["standardized test includes"])
 

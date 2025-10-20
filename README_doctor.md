@@ -9,7 +9,7 @@
 ```powershell
 python -m venv .venv
 . .venv\\Scripts\\Activate.ps1
-pip install -r requirements-dev.txt
+make init
 python tools/repo_doctor.py all --apply
 ```
 

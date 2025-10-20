@@ -211,6 +211,7 @@ __marimo__/
 
 # Bandit artifacts
 reports/bandit-report.json
+reports/deps.prom
 # Windows packaging artifacts
 *.exe
 *.dll

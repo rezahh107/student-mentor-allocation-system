@@ -3,7 +3,7 @@
 # Aggregates the application stack plus pytest add-ons required by CI.
 # ═══════════════════════════════════════════════════════════════
 
--r requirements.txt
+-r requirements.in
 
 # Deterministic test execution & retries
 pytest-rerunfailures>=13.0.0

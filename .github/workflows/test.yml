@@ -77,21 +77,9 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference='Stop'
           function Invoke-Retry([scriptblock]$Cmd,[int]$Max=3){ for($i=1;$i -le $Max;$i++){ try{ & $Cmd; return } catch{ if($i -eq $Max){ throw } Start-Sleep -Seconds ([int][Math]::Pow(2,$i)) } } }
-          Invoke-Retry { python -m pip install -U pip setuptools wheel }
-          if ((Test-Path "constraints-dev.txt") -and (Test-Path "requirements-dev.in")) {
-            Invoke-Retry { python -m pip install -c constraints-dev.txt -r requirements-dev.in }
-          } elseif (Test-Path "requirements-dev.txt") {
-            Invoke-Retry { python -m pip install -r requirements-dev.txt }
-          } elseif (Test-Path "requirements.txt") {
-            Invoke-Retry { python -m pip install -r requirements.txt }
-          }
-          Invoke-Retry {
-            try {
-              python -m pip install -e .[dev]
-            } catch {
-              python -m pip install -e .
-            }
-          }
+          Invoke-Retry { python -m scripts.deps.ensure_lock --root . install --attempts 3 }
+          Invoke-Retry { python -m pip install --no-deps -e . }
+          python -m scripts.deps.ensure_lock --root . verify
           python -m pip check
           python -m pip list --format=json > artifacts/pip-list-${{ matrix.python-version }}.json
 

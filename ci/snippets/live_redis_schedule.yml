@@ -21,7 +21,8 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt -r requirements-dev.txt
+          python -m scripts.deps.ensure_lock --root . install --attempts 3
+          python -m pip install --no-deps -e .
       - name: Flush Redis namespace
         run: python tools/ci_pytest_runner.py --mode live-redis --flush-redis yes --log-context full
       - name: Run live Redis retry suite

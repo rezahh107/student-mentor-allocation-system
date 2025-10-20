@@ -6,8 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY ./ .
-# Optionally install dependencies if requirements.txt exists
-RUN if [ -f requirements.txt ]; then pip install --prefix=/install -r requirements.txt; fi
+RUN python -m scripts.deps.ensure_lock --root . install --attempts 3
+RUN python -m pip install --prefix=/install --no-deps .
 
 FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \

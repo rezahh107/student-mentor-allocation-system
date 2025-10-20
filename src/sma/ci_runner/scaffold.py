@@ -70,30 +70,26 @@ repos:
     rev: v2.7.3
     hooks:
       - id: pip-audit
-        args: ["--requirement", "requirements-dev.txt", "--output", "artifacts/pip-audit.json", "--format", "json"]
+        args: ["--requirement", "requirements-dev.in", "--constraint", "constraints-dev.txt", "--output", "artifacts/pip-audit.json", "--format", "json"]
 """,
-    "requirements-dev.txt": """
--e .
-click>=8.1
-jinja2>=3.1
-pyyaml>=6.0
-packaging>=23.2
-platformdirs>=3.11
-pytest>=7.4
-pytest-asyncio>=0.23
-pytest-cov>=4.1
-pytest-xdist>=3.3
-pytest-json-report>=1.5
-coverage[toml]>=7.4
-ruff>=0.5
-mypy>=1.8
-bandit>=1.7
-pre-commit>=3.5
-pip-audit>=2.7
-freezegun>=1.3
-fakeredis>=2.19
-redis>=5
-cyclonedx-bom>=3.1
+    "requirements-dev.in": """
+-r requirements.in
+pip-tools==7.5.1
+pytest==8.4.2
+pytest-asyncio==0.23.7
+pytest-cov==5.0.0
+pytest-xdist==3.5.0
+pytest-json-report==1.5.0
+coverage[toml]==7.4.4
+ruff==0.5.5
+mypy==1.10.0
+pre-commit==3.7.1
+pip-audit==2.7.3
+bandit==1.7.9
+freezegun==1.4.0
+fakeredis==2.30.3
+GitPython==3.1.43
+pipdeptree==2.23.1
 """,
     "scripts/ci.sh": """
 #!/usr/bin/env bash

@@ -52,13 +52,8 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           function Install-WithRetry([string]$Cmd,[int]$Max=3){ for($i=1;$i -le $Max;$i++){ try{ iex $Cmd; return } catch{ if($i -eq $Max){ throw } Start-Sleep -Seconds ([int][Math]::Pow(2,$i)) } } }
-          python -m pip install -U pip setuptools wheel
-          if ((Test-Path "constraints-dev.txt") -and (Test-Path "requirements-dev.in")) {
-            Install-WithRetry "python -m pip install -c constraints-dev.txt -r requirements-dev.in"
-          } elseif (Test-Path "requirements-dev.txt") {
-            Install-WithRetry "python -m pip install -r requirements-dev.txt"
-          }
-          Install-WithRetry "try { python -m pip install -e .[dev] } catch { python -m pip install -e . }"
+          Install-WithRetry "python -m scripts.deps.ensure_lock --root . install --attempts 3"
+          Install-WithRetry "python -m pip install --no-deps -e ."
           Install-WithRetry "python -m pip install pyinstaller==6.11.0"
           python -m pip check
           python -m pip list --format=json > artifacts-pip-list.json

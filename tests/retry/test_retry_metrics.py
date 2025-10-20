@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from src.core.clock import Clock
-from src.core.retry import (
+from sma.core.clock import Clock
+from sma.core.retry import (
     RetryExhaustedError,
     RetryPolicy,
     execute_with_retry_async,

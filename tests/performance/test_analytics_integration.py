@@ -3,13 +3,13 @@ import time
 
 import pytest
 
-from src.core.models import Mentor, Student
-from src.ui.services.config_manager import ConfigManager
-from src.ui.services.performance_monitor import PerformanceMonitor
-from src.ui.services.allocation_backend import MockBackendService
+from sma.core.models import Mentor, Student
+from sma.ui.services.config_manager import ConfigManager
+from sma.ui.services.performance_monitor import PerformanceMonitor
+from sma.ui.services.allocation_backend import MockBackendService
 
 try:
-    from src.ui.pages.allocation_presenter import AllocationPresenter
+    from sma.ui.pages.allocation_presenter import AllocationPresenter
 except RuntimeError as exc:  # pragma: no cover - headless environments
     pytest.skip(
         f"GUI_HEADLESS_SKIPPED: محیط گرافیکی برای تست آنالیز در دسترس نیست ({exc})",

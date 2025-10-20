@@ -6,11 +6,11 @@ from pathlib import Path
 
 from prometheus_client import CollectorRegistry
 
-from core.retry import retry_attempts_total, retry_backoff_seconds, retry_exhaustion_total
-from phase6_import_to_sabt.app.clock import FixedClock
-from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
-from phase6_import_to_sabt.exporter_service import atomic_writer
-from phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.core.retry import retry_attempts_total, retry_backoff_seconds, retry_exhaustion_total
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
+from sma.phase6_import_to_sabt.exporter_service import atomic_writer
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
 
 
 def test_registry_reset_and_namespaces(tmp_path: Path) -> None:

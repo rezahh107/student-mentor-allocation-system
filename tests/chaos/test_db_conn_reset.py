@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.reliability import Clock, DbConnectionResetInjector, ReliabilityMetrics
-from src.reliability.logging_utils import JSONLogger
+from sma.reliability import Clock, DbConnectionResetInjector, ReliabilityMetrics
+from sma.reliability.logging_utils import JSONLogger
 
 
 class FakeNow:

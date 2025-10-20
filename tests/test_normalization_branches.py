@@ -20,13 +20,13 @@ pytest.importorskip(
 )
 from hypothesis import given, strategies as st
 
-from src.core.models import (
+from sma.core.models import (
     Mentor,
     StudentNormalized,
     _normalize_student_type_value,
     to_student_normalized,
 )
-from src.core.normalize import (
+from sma.core.normalize import (
     GENDER_ERROR,
     MOBILE_ERROR,
     NATIONAL_ID_ERROR,

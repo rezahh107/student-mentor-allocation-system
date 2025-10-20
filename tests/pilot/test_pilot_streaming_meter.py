@@ -6,8 +6,8 @@ from typing import Iterator
 
 from zoneinfo import ZoneInfo
 
-from src.phase9_readiness.pilot import StreamingPilotMeter
-from src.reliability.clock import Clock
+from sma.phase9_readiness.pilot import StreamingPilotMeter
+from sma.reliability.clock import Clock
 
 
 class CountingIterable:

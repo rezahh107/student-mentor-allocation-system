@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import importlib
 
-counter_init = importlib.import_module("src.phase2_counter_service")
-from src.phase2_counter_service.config import ServiceConfig
+counter_init = importlib.import_module("sma.phase2_counter_service")
+from sma.phase2_counter_service.config import ServiceConfig
 
 
 def test_assign_counter_bootstrap(monkeypatch):

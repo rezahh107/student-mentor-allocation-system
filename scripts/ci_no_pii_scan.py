@@ -19,7 +19,7 @@ from typing import Iterator, List, Optional, Sequence, Tuple
 
 import re
 
-from src.phase6_import_to_sabt.sanitization import sanitize_phone, sanitize_text
+from sma.phase6_import_to_sabt.sanitization import sanitize_phone, sanitize_text
 
 
 class ScanError(RuntimeError):

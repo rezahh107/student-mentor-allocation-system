@@ -1,9 +1,9 @@
-from src.domain.allocation.engine import AllocationEngine
-from src.domain.allocation.fairness import FairnessConfig, FairnessStrategy
-from src.domain.allocation.reasons import ReasonCode, build_reason
-from src.domain.mentor.entities import Mentor
-from src.domain.shared.types import EduStatus, Gender, RegCenter, RegStatus, StudentType
-from src.domain.student.entities import Student
+from sma.domain.allocation.engine import AllocationEngine
+from sma.domain.allocation.fairness import FairnessConfig, FairnessStrategy
+from sma.domain.allocation.reasons import ReasonCode, build_reason
+from sma.domain.mentor.entities import Mentor
+from sma.domain.shared.types import EduStatus, Gender, RegCenter, RegStatus, StudentType
+from sma.domain.student.entities import Student
 
 
 def _student() -> Student:

@@ -3,9 +3,9 @@ from __future__ import annotations
 import io
 import pytest
 
-from phase2_uploads.errors import UploadError
-from phase2_uploads.validator import CSVValidator
-from phase2_uploads.service import UploadContext
+from sma.phase2_uploads.errors import UploadError
+from sma.phase2_uploads.validator import CSVValidator
+from sma.phase2_uploads.service import UploadContext
 
 
 def write_csv(tmp_path, content: bytes):

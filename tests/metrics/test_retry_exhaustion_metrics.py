@@ -6,8 +6,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("clean_state")
 
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
-from src.audit.retention import ArchiveFailure
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.retention import ArchiveFailure
 
 
 @pytest.mark.usefixtures("clean_state", "frozen_time")

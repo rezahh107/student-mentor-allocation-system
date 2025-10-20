@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import StringIO
 
-from infrastructure.export.excel_safe import make_excel_safe_writer, sanitize_row
+from sma.infrastructure.export.excel_safe import make_excel_safe_writer, sanitize_row
 
 
 def test_csv_crlf_formula_guard():

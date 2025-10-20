@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.phase3_allocation.outbox import BackoffPolicy
-from src.phase3_allocation.outbox.dispatcher import OutboxDispatcher
-from src.phase3_allocation.outbox.models import OutboxMessage
+from sma.phase3_allocation.outbox import BackoffPolicy
+from sma.phase3_allocation.outbox.dispatcher import OutboxDispatcher
+from sma.phase3_allocation.outbox.models import OutboxMessage
 
 
 class _ClockStub:

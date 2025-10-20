@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import MethodType
 
-from src.ui.trace_index import TraceFilterIndex
-from src.ui.trace_viewer import TraceViewerApp, TraceViewerRow, TraceViewerStorageWriter
+from sma.ui.trace_index import TraceFilterIndex
+from sma.ui.trace_viewer import TraceViewerApp, TraceViewerRow, TraceViewerStorageWriter
 
 
 class _FakeWidget:

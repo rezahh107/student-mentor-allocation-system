@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from src.core.clock import FrozenClock, validate_timezone
-from src.ops.retry import build_retry_metrics
+from sma.core.clock import FrozenClock, validate_timezone
+from sma.ops.retry import build_retry_metrics
 from windows_launcher.launcher import FakeWebviewBackend, Launcher
 
 

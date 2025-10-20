@@ -4,9 +4,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.infrastructure.persistence.models import OutboxMessageModel
-from src.phase3_allocation.outbox.backoff import BackoffPolicy
-from src.phase3_allocation.outbox.models import OutboxMessage
+from sma.infrastructure.persistence.models import OutboxMessageModel
+from sma.phase3_allocation.outbox.backoff import BackoffPolicy
+from sma.phase3_allocation.outbox.models import OutboxMessage
 
 
 class SkewClock:

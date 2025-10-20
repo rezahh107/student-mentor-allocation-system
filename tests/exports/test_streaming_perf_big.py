@@ -11,13 +11,13 @@ from openpyxl import load_workbook
 from prometheus_client import CollectorRegistry
 from zoneinfo import ZoneInfo
 
-from phase6_import_to_sabt.clock import FixedClock
-from phase6_import_to_sabt.exporter_service import ImportToSabtExporter
-from phase6_import_to_sabt.job_runner import ExportJobRunner, ExportJobStatus
-from phase6_import_to_sabt.external_sorter import ExternalSorter, _HeapItem
-from phase6_import_to_sabt.metrics import ExporterMetrics, reset_registry
-from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot, ExporterDataSource, NormalizedStudentRow
-from phase6_import_to_sabt.roster import InMemoryRoster
+from sma.phase6_import_to_sabt.clock import FixedClock
+from sma.phase6_import_to_sabt.exporter_service import ImportToSabtExporter
+from sma.phase6_import_to_sabt.job_runner import ExportJobRunner, ExportJobStatus
+from sma.phase6_import_to_sabt.external_sorter import ExternalSorter, _HeapItem
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics, reset_registry
+from sma.phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot, ExporterDataSource, NormalizedStudentRow
+from sma.phase6_import_to_sabt.roster import InMemoryRoster
 from tests.export.helpers import make_row
 from tests.fixtures.state import CleanupFixtures
 

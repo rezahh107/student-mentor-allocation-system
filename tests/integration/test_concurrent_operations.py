@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from phase6_import_to_sabt.sanitization import deterministic_jitter
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter
 
 
 @pytest.mark.asyncio

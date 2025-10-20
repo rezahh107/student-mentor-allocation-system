@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from phase6_import_to_sabt.export_writer import ExportWriter
+from sma.phase6_import_to_sabt.export_writer import ExportWriter
 from tests.export.helpers import make_row
 
 

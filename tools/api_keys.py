@@ -11,8 +11,8 @@ from datetime import timedelta
 from sqlalchemy import Column, MetaData, String, Table, create_engine, select, update
 from sqlalchemy.sql import insert
 
-from src.core.clock import Clock
-from src.hardened_api.observability import hash_national_id
+from sma.core.clock import Clock
+from sma.hardened_api.observability import hash_national_id
 
 
 @dataclass(slots=True)

@@ -25,3 +25,22 @@ repos:
         entry: python -m scripts.check_no_weak_hashes
         language: system
         pass_filenames: false
+      - id: no-shadowing-guard
+        name: Block package shadowing & PYTHONPATH anti-pattern
+        entry: python scripts/check_no_shadowing.py
+        language: system
+        pass_filenames: false
+        stages: [commit, push]
+      - id: pythonpath-guard
+        name: Block PYTHONPATH front-loading of src
+        entry: python scripts/guard_pythonpath.py
+        language: system
+        pass_filenames: false
+        stages: [commit, push]
+      - id: verify-agents-md
+        name: Verify AGENTS manifest tokens
+        entry: python scripts/verify_agents.py
+        language: system
+        pass_filenames: false
+        stages: [commit, push]
+

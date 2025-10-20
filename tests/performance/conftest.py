@@ -17,9 +17,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.core.clock import FrozenClock
-from src.core.retry import RetryPolicy, build_sync_clock_sleeper, execute_with_retry
-from src.fakeredis import FakeStrictRedis
+from sma.core.clock import FrozenClock
+from sma.core.retry import RetryPolicy, build_sync_clock_sleeper, execute_with_retry
+from sma._local_fakeredis import FakeStrictRedis
 
 _TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 

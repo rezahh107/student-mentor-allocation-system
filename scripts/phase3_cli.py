@@ -13,18 +13,18 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from src.core.logging_config import setup_logging
+from sma.core.logging_config import setup_logging
 
 setup_logging()
 
-from src.observe.perf import PerformanceObserver
-from src.phase3_allocation.contracts import AllocationConfig
-from src.phase3_allocation.engine import AllocationEngine
-from src.phase3_allocation.policy import EligibilityPolicy
-from src.phase3_allocation.providers import ManagerCentersProvider, SpecialSchoolsProvider
-from src.tools.export_excel_safe import ExcelSafeExporter, iter_rows, normalize_cell
-from src.ui.trace_index import TraceFilterIndex
-from src.ui.trace_viewer import (
+from sma.observe.perf import PerformanceObserver
+from sma.phase3_allocation.contracts import AllocationConfig
+from sma.phase3_allocation.engine import AllocationEngine
+from sma.phase3_allocation.policy import EligibilityPolicy
+from sma.phase3_allocation.providers import ManagerCentersProvider, SpecialSchoolsProvider
+from sma.tools.export_excel_safe import ExcelSafeExporter, iter_rows, normalize_cell
+from sma.ui.trace_index import TraceFilterIndex
+from sma.ui.trace_viewer import (
     TraceViewerApp,
     TraceViewerRow,
     TraceViewerStorage,

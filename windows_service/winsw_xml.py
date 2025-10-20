@@ -15,8 +15,8 @@ from xml.etree import ElementTree as ET
 
 from prometheus_client import CollectorRegistry, Counter, REGISTRY
 
-from src.infrastructure.monitoring.logging_adapter import correlation_id_var
-from src.phase6_import_to_sabt.sanitization import sanitize_text, secure_digest
+from sma.infrastructure.monitoring.logging_adapter import correlation_id_var
+from sma.phase6_import_to_sabt.sanitization import sanitize_text, secure_digest
 from windows_service.errors import ServiceError
 from windows_service.normalization import sanitize_env_text
 

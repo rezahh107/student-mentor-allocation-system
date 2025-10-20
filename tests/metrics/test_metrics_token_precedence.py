@@ -11,9 +11,9 @@ from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry
 from zoneinfo import ZoneInfo
 
-from phase6_import_to_sabt.app.app_factory import create_application
-from phase6_import_to_sabt.app.clock import FixedClock
-from phase6_import_to_sabt.app.config import (
+from sma.phase6_import_to_sabt.app.app_factory import create_application
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.app.config import (
     AppConfig,
     AuthConfig,
     DatabaseConfig,
@@ -21,10 +21,10 @@ from phase6_import_to_sabt.app.config import (
     RateLimitConfig,
     RedisConfig,
 )
-from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
-from phase6_import_to_sabt.app.timing import DeterministicTimer
-from phase6_import_to_sabt.app.utils import get_debug_context
-from phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
+from sma.phase6_import_to_sabt.app.timing import DeterministicTimer
+from sma.phase6_import_to_sabt.app.utils import get_debug_context
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
 
 _ANCHOR = "AGENTS.md::Middleware Order"
 _MISSING_ERROR = "«پیکربندی ناقص است؛ متغیر METRICS_TOKEN یا IMPORT_TO_SABT_AUTH__METRICS_TOKEN را مقداردهی کنید.»"

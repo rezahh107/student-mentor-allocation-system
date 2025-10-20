@@ -8,8 +8,8 @@ from typing import Dict, Iterator, List
 import pytest
 from prometheus_client import CollectorRegistry
 
-from src.phase6_import_to_sabt.job_runner import DeterministicRedis
-from src.phase6_import_to_sabt.metrics import reset_registry
+from sma.phase6_import_to_sabt.job_runner import DeterministicRedis
+from sma.phase6_import_to_sabt.metrics import reset_registry
 
 
 def _sorted_relative_files(base_dir: Path) -> List[str]:

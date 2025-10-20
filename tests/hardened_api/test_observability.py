@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 
 from tests.hardened_api.conftest import assert_clean_final_state, setup_test_data
-from src.hardened_api.middleware import ensure_rate_limit_config_restored, snapshot_rate_limit_config
-from src.hardened_api.observability import get_metric, metrics_registry_guard
+from sma.hardened_api.middleware import ensure_rate_limit_config_restored, snapshot_rate_limit_config
+from sma.hardened_api.observability import get_metric, metrics_registry_guard
 
 
 @pytest.mark.asyncio

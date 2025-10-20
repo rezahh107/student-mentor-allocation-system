@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.observe.perf import PerfSummary, PerformanceObserver
+from sma.observe.perf import PerfSummary, PerformanceObserver
 
 
 def test_perf_summary_json_roundtrip(tmp_path: Path) -> None:

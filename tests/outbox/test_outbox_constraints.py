@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.infrastructure.persistence.models import Base, OutboxMessageModel
-from src.phase3_allocation.outbox import BackoffPolicy, OutboxDispatcher, OutboxEvent, SystemClock
+from sma.infrastructure.persistence.models import Base, OutboxMessageModel
+from sma.phase3_allocation.outbox import BackoffPolicy, OutboxDispatcher, OutboxEvent, SystemClock
 
 
 FIXED_NOW = datetime(2024, 1, 1, tzinfo=timezone.utc)

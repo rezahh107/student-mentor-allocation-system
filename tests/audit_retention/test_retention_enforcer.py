@@ -7,8 +7,8 @@ import pytest
 pytestmark = pytest.mark.usefixtures("clean_state")
 from sqlalchemy import text
 
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
-from src.audit.retention import AuditArchiveConfig, AuditRetentionEnforcer
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.retention import AuditArchiveConfig, AuditRetentionEnforcer
 
 
 @pytest.mark.usefixtures("frozen_time")

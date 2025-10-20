@@ -14,7 +14,7 @@ import openpyxl
 import pytest
 from openpyxl.worksheet.worksheet import Worksheet
 
-from phase6_import_to_sabt.sanitization import deterministic_jitter, sanitize_text
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter, sanitize_text
 from tests.fixtures.state import CleanupFixtures
 
 

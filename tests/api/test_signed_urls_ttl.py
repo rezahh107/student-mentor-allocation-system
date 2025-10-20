@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
-from phase6_import_to_sabt.api import HMACSignedURLProvider
-from phase6_import_to_sabt.clock import FixedClock
+from sma.phase6_import_to_sabt.api import HMACSignedURLProvider
+from sma.phase6_import_to_sabt.clock import FixedClock
 
 
 def test_signed_url_ttl_is_clock_driven() -> None:

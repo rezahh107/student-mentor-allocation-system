@@ -6,8 +6,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.phase6_import_to_sabt.api import ExportAPI, ExportJobStatus, ExportLogger, ExporterMetrics
-from src.phase7_release.deploy import ReadinessGate
+from sma.phase6_import_to_sabt.api import ExportAPI, ExportJobStatus, ExportLogger, ExporterMetrics
+from sma.phase7_release.deploy import ReadinessGate
 
 from tests.phase7_utils import DummyJob, DummyRunner, FrozenClock
 

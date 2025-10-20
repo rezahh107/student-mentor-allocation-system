@@ -12,7 +12,7 @@ import scripts.run_bandit_gate as bandit_gate
 try:
     import fakeredis  # type: ignore
 except ModuleNotFoundError:  # pragma: no cover - fallback to local stub
-    from src import fakeredis  # type: ignore
+    from sma import fakeredis  # type: ignore
 
 
 @pytest.fixture

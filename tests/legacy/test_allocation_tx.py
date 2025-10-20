@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.phase3_allocation.allocation_tx import AllocationRequest, SimpleAllocationSequenceProvider
-from src.phase3_allocation.idempotency import derive_idempotency_key
+from sma.phase3_allocation.allocation_tx import AllocationRequest, SimpleAllocationSequenceProvider
+from sma.phase3_allocation.idempotency import derive_idempotency_key
 
 
 class _FixedClock:

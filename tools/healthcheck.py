@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from src.repo_doctor.healthcheck import HealthDoctor
-from src.repo_doctor.core import DoctorConfig
-from src.repo_doctor.clock import tehran_clock
-from src.repo_doctor.logging_utils import JsonLogger
-from src.repo_doctor.metrics import DoctorMetrics
-from src.repo_doctor.retry import RetryPolicy
+from sma.repo_doctor.healthcheck import HealthDoctor
+from sma.repo_doctor.core import DoctorConfig
+from sma.repo_doctor.clock import tehran_clock
+from sma.repo_doctor.logging_utils import JsonLogger
+from sma.repo_doctor.metrics import DoctorMetrics
+from sma.repo_doctor.retry import RetryPolicy
 import pathlib
 
 

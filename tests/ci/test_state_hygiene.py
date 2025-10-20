@@ -1,4 +1,4 @@
-from phase6_import_to_sabt.metrics import reset_registry
+from sma.phase6_import_to_sabt.metrics import reset_registry
 
 from tests.export.helpers import build_job_runner, make_row
 

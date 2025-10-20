@@ -5,8 +5,8 @@ from datetime import datetime
 
 import pytest
 
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
-from src.audit.retention import ArchiveFailure, AuditArchiveConfig, AuditRetentionEnforcer
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.retention import ArchiveFailure, AuditArchiveConfig, AuditRetentionEnforcer
 
 
 @pytest.mark.usefixtures("frozen_time")

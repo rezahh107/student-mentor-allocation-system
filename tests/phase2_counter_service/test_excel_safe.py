@@ -8,7 +8,7 @@ from typing import Iterator
 
 import pytest
 
-from src.infrastructure.export.excel_safe import (
+from sma.infrastructure.export.excel_safe import (
     BOM_UTF8,
     make_excel_safe_writer,
     sanitize_cell,

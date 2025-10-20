@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.ui.trace_viewer import TraceViewerApp, TraceViewerRow
+from sma.ui.trace_viewer import TraceViewerApp, TraceViewerRow
 
 
 class FakeWidget:

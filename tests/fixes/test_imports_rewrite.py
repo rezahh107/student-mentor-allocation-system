@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import pathlib
 
-from src.repo_doctor.core import DoctorConfig, RepoDoctor
-from src.repo_doctor.clock import tehran_clock
+from sma.repo_doctor.core import DoctorConfig, RepoDoctor
+from sma.repo_doctor.clock import tehran_clock
 
 
 def test_adds_src_prefix_phase6(tmp_path: pathlib.Path) -> None:
@@ -22,7 +22,7 @@ def test_adds_src_prefix_phase6(tmp_path: pathlib.Path) -> None:
     doctor.import_doctor.apply(report)
 
     result = file_path.read_text(encoding="utf-8")
-    assert "from src.phase6_import_to_sabt.exporter_service" in result
+    assert "from sma.phase6_import_to_sabt.exporter_service" in result
 
     init_path = src_dir / "__init__.py"
     assert init_path.exists()

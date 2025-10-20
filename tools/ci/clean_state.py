@@ -130,7 +130,7 @@ def _cleanup_database(url: str) -> CleanupResult:
 def _cleanup_rate_limiter() -> CleanupResult:
     start = _now_ms()
     try:
-        from src.infrastructure.rate_limit import registry  # type: ignore
+        from sma.infrastructure.rate_limit import registry  # type: ignore
     except Exception:  # pragma: no cover - optional module
         return CleanupResult("rate_limiter", "skipped", "registry unavailable", _now_ms() - start)
 

@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
+from sma.phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
 
 from .helpers import build_exporter, make_row
 

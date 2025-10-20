@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from prometheus_client import CollectorRegistry
 
-from phase6_import_to_sabt.external_sorter import ExternalSorter, SortPlan
-from phase6_import_to_sabt.metrics import ExporterMetrics, reset_registry
-from phase6_import_to_sabt.sanitization import sanitize_text
+from sma.phase6_import_to_sabt.external_sorter import ExternalSorter, SortPlan
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics, reset_registry
+from sma.phase6_import_to_sabt.sanitization import sanitize_text
 
 
 SORT_KEYS = ("year_code", "reg_center", "group_code", "school_code", "national_id")

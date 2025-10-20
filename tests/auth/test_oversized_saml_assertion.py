@@ -6,7 +6,7 @@ import pytest
 
 from auth.errors import ProviderError
 from auth.saml_adapter import SAMLAdapter
-from config.env_schema import SSOConfig
+from sma.config.env_schema import SSOConfig
 
 
 def test_oversized_saml_assertion(

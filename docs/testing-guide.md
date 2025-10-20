@@ -15,7 +15,7 @@
 3. برای مشاهده جزئیات پوشش کد و گزارش خرابی‌های مرتبط با میان‌افزار، فرمان زیر پیشنهاد می‌شود:
    ```bash
    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/integration/test_middleware_chain.py \
-       --cov=src --cov-report=term-missing:skip-covered --log-cli-level=DEBUG
+       --cov=sma --cov-report=term-missing:skip-covered --log-cli-level=DEBUG
    ```
 
 ## قواعد نرمال‌سازی فارسی و اکسل

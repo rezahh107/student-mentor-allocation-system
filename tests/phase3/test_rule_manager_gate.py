@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.phase3_allocation.rules import ManagerCenterGateRule
+from sma.phase3_allocation.rules import ManagerCenterGateRule
 
 from tests.phase3.conftest import (
     DictManagerCentersProvider,

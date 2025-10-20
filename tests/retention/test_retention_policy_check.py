@@ -4,8 +4,8 @@ import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from src.phase9_readiness.retention import RetentionPolicy, RetentionValidator
-from src.reliability.clock import Clock
+from sma.phase9_readiness.retention import RetentionPolicy, RetentionValidator
+from sma.reliability.clock import Clock
 
 
 def test_retention_fs_timestamp_validation(tmp_path) -> None:

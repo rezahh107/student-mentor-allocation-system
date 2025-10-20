@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from prometheus_client import generate_latest
 
-from phase6_import_to_sabt.models import ExportFilters, ExportOptions
+from sma.phase6_import_to_sabt.models import ExportFilters, ExportOptions
 
 from tests.export.helpers import build_job_runner, make_row
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.app.clock import FixedClock
 
 
 def test_returns_injected_instant(clock_test_context):

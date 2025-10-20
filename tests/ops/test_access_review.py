@@ -5,8 +5,8 @@ from datetime import datetime
 
 import pytest
 
-from ops.audit_review import generate_access_review
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.ops.audit_review import generate_access_review
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
 
 
 @pytest.mark.asyncio

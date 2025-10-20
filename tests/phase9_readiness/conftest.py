@@ -13,17 +13,17 @@ from freezegun import freeze_time
 from prometheus_client import CollectorRegistry
 from zoneinfo import ZoneInfo
 
-from src.phase2_counter_service.academic_year import AcademicYearProvider
-from src.phase9_readiness import ReadinessMetrics, ReadinessOrchestrator, RetryPolicy
-from src.phase9_readiness.orchestrator import (
+from sma.phase2_counter_service.academic_year import AcademicYearProvider
+from sma.phase9_readiness import ReadinessMetrics, ReadinessOrchestrator, RetryPolicy
+from sma.phase9_readiness.orchestrator import (
     AcceptanceChecklistItem,
     EnvironmentConfig,
     TokenConfig,
     UATScenario,
 )
-from src.fakeredis import FakeStrictRedis
-from src.reliability.clock import Clock
-from src.reliability.logging_utils import JSONLogger, configure_logging
+from sma._local_fakeredis import FakeStrictRedis
+from sma.reliability.clock import Clock
+from sma.reliability.logging_utils import JSONLogger, configure_logging
 
 
 @pytest.fixture(scope="function")

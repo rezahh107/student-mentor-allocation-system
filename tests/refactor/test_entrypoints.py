@@ -13,9 +13,9 @@ def test_ps1_bat_sh_variants(tmp_path: Path) -> None:
     sh = tmp_path / "launch.sh"
     sh.write_text("#!/bin/sh\nuvicorn app.main:run --factory\n", encoding="utf-8")
 
-    results = list(patch_files([ps1, bat, sh], "src.main:app"))
+    results = list(patch_files([ps1, bat, sh], "sma.main:app"))
 
     assert all(result.changed for result in results)
-    assert "src.main:app" in ps1.read_text(encoding="utf-8")
-    assert "src.main:app" in bat.read_text(encoding="utf-8")
-    assert "src.main:app" in sh.read_text(encoding="utf-8")
+    assert "sma.main:app" in ps1.read_text(encoding="utf-8")
+    assert "sma.main:app" in bat.read_text(encoding="utf-8")
+    assert "sma.main:app" in sh.read_text(encoding="utf-8")

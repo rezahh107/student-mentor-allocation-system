@@ -8,9 +8,9 @@ import pytest
 
 from sqlalchemy import select
 
-from src.infrastructure.persistence.models import StudentModel
-from src.phase2_counter_service.backfill import BackfillRow, run_backfill
-from src.phase2_counter_service.errors import CounterServiceError
+from sma.infrastructure.persistence.models import StudentModel
+from sma.phase2_counter_service.backfill import BackfillRow, run_backfill
+from sma.phase2_counter_service.errors import CounterServiceError
 
 from .conftest import seed_student
 
@@ -128,7 +128,7 @@ def test_backfill_observer_streams(tmp_path, service, session, monkeypatch):
     def fake_parse(path: Path):  # noqa: ARG001 - deterministic stream
         yield from rows
 
-    monkeypatch.setattr("src.phase2_counter_service.backfill._parse_rows", fake_parse)
+    monkeypatch.setattr("sma.phase2_counter_service.backfill._parse_rows", fake_parse)
 
     seed_student(
         session,

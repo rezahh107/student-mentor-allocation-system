@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.phase6_import_to_sabt.sanitization import deterministic_jitter
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 

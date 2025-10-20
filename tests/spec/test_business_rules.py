@@ -8,16 +8,16 @@ from typing import Iterator
 
 import pytest
 
-from src.phase2_counter_service.academic_year import AcademicYearProvider
-from phase6_import_to_sabt.exceptions import ExportValidationError
-from phase6_import_to_sabt.exporter_service import ImportToSabtExporter
-from phase6_import_to_sabt.models import (
+from sma.phase2_counter_service.academic_year import AcademicYearProvider
+from sma.phase6_import_to_sabt.exceptions import ExportValidationError
+from sma.phase6_import_to_sabt.exporter_service import ImportToSabtExporter
+from sma.phase6_import_to_sabt.models import (
     ExportFilters,
     ExportSnapshot,
     NormalizedStudentRow,
     SpecialSchoolsRoster,
 )
-from src.shared.counter_rules import COUNTER_REGEX, gender_prefix, validate_counter
+from sma.shared.counter_rules import COUNTER_REGEX, gender_prefix, validate_counter
 from tests.fixtures.state import CleanupFixtures
 
 

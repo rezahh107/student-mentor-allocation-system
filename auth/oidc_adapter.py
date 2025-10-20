@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping
 
 import httpx
 
-from src.reliability.clock import Clock
+from sma.reliability.clock import Clock
 
 if TYPE_CHECKING:
-    from src.debug.debug_context import DebugContext
+    from sma.debug.debug_context import DebugContext
 
 from .errors import AuthError, ProviderError
 from .metrics import AuthMetrics

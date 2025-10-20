@@ -1,7 +1,7 @@
 import codecs
 
-from phase6_import_to_sabt.compat import TestClient
-from phase6_import_to_sabt.metrics import reset_registry
+from sma.phase6_import_to_sabt.compat import TestClient
+from sma.phase6_import_to_sabt.metrics import reset_registry
 
 from tests.export.helpers import build_export_app, make_row
 

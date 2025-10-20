@@ -705,8 +705,8 @@ def run_tests(
             [
                 "-p",
                 "pytest_cov",
-                "--cov=src.core.normalize",
-                "--cov=src.core.models",
+                "--cov=sma.core.normalize",
+                "--cov=sma.core.models",
                 "--cov-report=term-missing",
             ]
         )

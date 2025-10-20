@@ -5,7 +5,7 @@ import uuid
 
 import httpx
 
-from src.hardened_api.observability import metrics_registry_guard
+from sma.hardened_api.observability import metrics_registry_guard
 from tests.hardened_api.conftest import build_counter_app, get_debug_context
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.infrastructure.api.routes import create_app
+from sma.infrastructure.api.routes import create_app
 
 
 def test_requires_token():

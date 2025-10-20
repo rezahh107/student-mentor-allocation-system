@@ -7,16 +7,16 @@ from zoneinfo import ZoneInfo
 
 from prometheus_client import CollectorRegistry
 
-from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
-from phase6_import_to_sabt.clock import Clock, FixedClock, ensure_clock
-from phase6_import_to_sabt.data_source import InMemoryDataSource
-from phase6_import_to_sabt.exporter import ImportToSabtExporter
-from phase6_import_to_sabt.job_runner import DeterministicRedis, ExportJobRunner
-from phase6_import_to_sabt.metrics import ExporterMetrics
-from phase6_import_to_sabt.models import NormalizedStudentRow
-from phase6_import_to_sabt.roster import InMemoryRoster
-from phase7_release.deploy import ReadinessGate
-from src.shared.counter_rules import gender_prefix
+from sma.phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
+from sma.phase6_import_to_sabt.clock import Clock, FixedClock, ensure_clock
+from sma.phase6_import_to_sabt.data_source import InMemoryDataSource
+from sma.phase6_import_to_sabt.exporter import ImportToSabtExporter
+from sma.phase6_import_to_sabt.job_runner import DeterministicRedis, ExportJobRunner
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics
+from sma.phase6_import_to_sabt.models import NormalizedStudentRow
+from sma.phase6_import_to_sabt.roster import InMemoryRoster
+from sma.phase7_release.deploy import ReadinessGate
+from sma.shared.counter_rules import gender_prefix
 
 
 def make_row(

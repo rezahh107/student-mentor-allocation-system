@@ -1,9 +1,9 @@
 import datetime as dt
 from pathlib import Path
 
-from phase6_import_to_sabt.app.clock import FixedClock
-from phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 
 
 def _rows() -> list[dict[str, object]]:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-from phase6_import_to_sabt.exporter_service import PHONE_RE
-from phase6_import_to_sabt.sanitization import sanitize_phone, sanitize_text
+from sma.phase6_import_to_sabt.exporter_service import PHONE_RE
+from sma.phase6_import_to_sabt.sanitization import sanitize_phone, sanitize_text
 
 
 def test_phone_nfkc_digit_folding() -> None:

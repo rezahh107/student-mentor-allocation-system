@@ -17,9 +17,9 @@ except Exception as exc:  # pragma: no cover - redis might be unavailable locall
 else:
     _IMPORT_ERROR = None
 
-from phase6_import_to_sabt.sanitization import deterministic_jitter
-from phase6_import_to_sabt.xlsx.job_store import RedisExportJobStore
-from phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter
+from sma.phase6_import_to_sabt.xlsx.job_store import RedisExportJobStore
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
 from tests.retry.test_datastore_retry_metrics import (
     SequenceTimer,
     _collect_counter_samples,

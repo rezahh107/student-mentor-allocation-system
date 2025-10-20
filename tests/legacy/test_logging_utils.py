@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-from src.core import logging_utils
+from sma.core import logging_utils
 
 
 def test_masking_and_normalization_helpers() -> None:

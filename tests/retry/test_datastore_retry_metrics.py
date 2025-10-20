@@ -6,10 +6,10 @@ from typing import Iterator
 import pytest
 from prometheus_client import CollectorRegistry
 
-from phase6_import_to_sabt.job_runner import DeterministicRedis
-from phase6_import_to_sabt.sanitization import deterministic_jitter
-from phase6_import_to_sabt.xlsx.job_store import RedisExportJobStore
-from phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.job_runner import DeterministicRedis
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter
+from sma.phase6_import_to_sabt.xlsx.job_store import RedisExportJobStore
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
 
 
 class SequenceTimer:

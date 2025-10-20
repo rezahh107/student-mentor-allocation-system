@@ -4,8 +4,8 @@ from pathlib import Path
 
 import typer
 
-from src.reliability import CleanupDaemon, ReliabilityMetrics, ReliabilitySettings
-from src.reliability.logging_utils import JSONLogger, configure_logging
+from sma.reliability import CleanupDaemon, ReliabilityMetrics, ReliabilitySettings
+from sma.reliability.logging_utils import JSONLogger, configure_logging
 
 app = typer.Typer(help="Cleanup daemon for .part files and expired links.")
 

@@ -8,14 +8,14 @@ from typing import Iterator
 
 import pytest
 
-from phase6_import_to_sabt.exporter_service import ImportToSabtExporter
-from phase6_import_to_sabt.models import (
+from sma.phase6_import_to_sabt.exporter_service import ImportToSabtExporter
+from sma.phase6_import_to_sabt.models import (
     ExportFilters,
     NormalizedStudentRow,
     SpecialSchoolsRoster,
 )
-from phase6_import_to_sabt.sanitization import sanitize_phone, sanitize_text, secure_digest
-from phase6_import_to_sabt.xlsx.utils import iter_chunks
+from sma.phase6_import_to_sabt.sanitization import sanitize_phone, sanitize_text, secure_digest
+from sma.phase6_import_to_sabt.xlsx.utils import iter_chunks
 
 from tests.fixtures.state import CleanupFixtures
 

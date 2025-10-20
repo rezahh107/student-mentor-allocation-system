@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from phase6_import_to_sabt.clock import FixedClock
-from phase6_import_to_sabt.job_runner import ExportJobRunner
-from phase6_import_to_sabt.logging_utils import ExportLogger
-from phase6_import_to_sabt.metrics import ExporterMetrics
-from phase6_import_to_sabt.models import (
+from sma.phase6_import_to_sabt.clock import FixedClock
+from sma.phase6_import_to_sabt.job_runner import ExportJobRunner
+from sma.phase6_import_to_sabt.logging_utils import ExportLogger
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics
+from sma.phase6_import_to_sabt.models import (
     ExportFilters,
     ExportManifest,
     ExportManifestFile,
@@ -16,7 +16,7 @@ from phase6_import_to_sabt.models import (
     ExportJobStatus,
     SABT_V1_PROFILE,
 )
-from phase6_import_to_sabt.sanitization import deterministic_jitter
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter
 
 
 class FlakyExporter:

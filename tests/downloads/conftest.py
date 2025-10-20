@@ -11,8 +11,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from phase6_import_to_sabt.clock import FixedClock
-from phase6_import_to_sabt.download_api import (
+from sma.phase6_import_to_sabt.clock import FixedClock
+from sma.phase6_import_to_sabt.download_api import (
     DownloadMetrics,
     DownloadRetryPolicy,
     DownloadSettings,

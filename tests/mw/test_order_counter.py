@@ -2,10 +2,10 @@ import uuid
 
 import pytest
 
-from src.hardened_api.api import APISettings, create_app
-from src.hardened_api.auth_repository import APIKeyRecord, InMemoryAPIKeyRepository
-from src.hardened_api.middleware import AuthConfig
-from src.hardened_api.observability import hash_national_id, metrics_registry_guard
+from sma.hardened_api.api import APISettings, create_app
+from sma.hardened_api.auth_repository import APIKeyRecord, InMemoryAPIKeyRepository
+from sma.hardened_api.middleware import AuthConfig
+from sma.hardened_api.observability import hash_national_id, metrics_registry_guard
 from tests.hardened_api.conftest import FakeAllocator, FakeRedis, verify_middleware_order
 
 

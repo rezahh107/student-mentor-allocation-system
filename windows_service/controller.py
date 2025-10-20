@@ -16,18 +16,18 @@ from uuid import uuid4
 
 from prometheus_client import Counter, REGISTRY
 
-from src.core.clock import Clock, tehran_clock
-from src.core.retry import (
+from sma.core.clock import Clock, tehran_clock
+from sma.core.retry import (
     RetryExhaustedError,
     RetryPolicy,
     build_sync_clock_sleeper,
     execute_with_retry,
 )
-from src.infrastructure.monitoring.logging_adapter import (
+from sma.infrastructure.monitoring.logging_adapter import (
     configure_json_logging,
     correlation_id_var,
 )
-from src.phase6_import_to_sabt.sanitization import secure_digest
+from sma.phase6_import_to_sabt.sanitization import secure_digest
 from windows_service.errors import DependencyNotReady, ServiceError
 from windows_service.normalization import sanitize_env_text
 from windows_service.readiness import probe_dependencies
@@ -96,7 +96,7 @@ def _run_uvicorn(port: int) -> None:
     token = correlation_id_var.set(str(uuid4()))
     try:
         uvicorn.run(
-            "src.infrastructure.api.routes:create_app",
+            "sma.infrastructure.api.routes:create_app",
             factory=True,
             host="127.0.0.1",
             port=port,

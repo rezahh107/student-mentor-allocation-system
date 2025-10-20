@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from phase2_uploads.logging_utils import get_debug_context
+from sma.phase2_uploads.logging_utils import get_debug_context
 
 
 def _base_headers():

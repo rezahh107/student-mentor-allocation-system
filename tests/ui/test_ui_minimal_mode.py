@@ -18,9 +18,9 @@ def test_allocation_page_minimal_mode(
     caplog: pytest.LogCaptureFixture,
     offscreen_qapp,
 ) -> None:
-    caplog.set_level(logging.INFO, logger="src.ui.pages.allocation_page")
+    caplog.set_level(logging.INFO, logger="sma.ui.pages.allocation_page")
     monkeypatch.setenv("UI_MINIMAL", "1")
-    from src.ui.pages.allocation_page import AllocationPage
+    from sma.ui.pages.allocation_page import AllocationPage
 
     page = AllocationPage()
     assert getattr(page, "_minimal_mode", False) is True

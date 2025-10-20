@@ -9,7 +9,7 @@ import httpx
 import pytest
 from redis.asyncio import Redis
 
-from src.hardened_api.middleware import (
+from sma.hardened_api.middleware import (
     ensure_rate_limit_config_restored,
     restore_rate_limit_config,
     snapshot_rate_limit_config,

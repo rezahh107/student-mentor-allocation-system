@@ -12,9 +12,9 @@ from zipfile import ZipFile
 import pytest
 from freezegun import freeze_time
 
-from phase6_import_to_sabt.export_writer import ExportWriter, atomic_writer
-from phase6_import_to_sabt.sanitization import deterministic_jitter, sanitize_text
-from src.fakeredis import FakeStrictRedis
+from sma.phase6_import_to_sabt.export_writer import ExportWriter, atomic_writer
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter, sanitize_text
+from sma._local_fakeredis import FakeStrictRedis
 from tests.integration.conftest import InMemorySession, RedisNamespace
 
 

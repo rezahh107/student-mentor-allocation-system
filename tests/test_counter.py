@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.domain.counter.value_objects import Counter
-from src.domain.shared.types import Gender
+from sma.domain.counter.value_objects import Counter
+from sma.domain.shared.types import Gender
 
 
 def test_counter_format():

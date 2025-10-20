@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from prometheus_client import CollectorRegistry
 
-from src.infrastructure.persistence.models import Base, CounterSequenceModel, StudentModel
-from src.infrastructure.persistence.session import make_engine, make_session_factory
-from src.phase2_counter_service.logging_utils import build_logger, make_hash_fn
-from src.phase2_counter_service.metrics import CounterMeters
-from src.phase2_counter_service.repository import FaultInjector, SqlAlchemyCounterRepository
-from src.phase2_counter_service.service import CounterAssignmentService
+from sma.infrastructure.persistence.models import Base, CounterSequenceModel, StudentModel
+from sma.infrastructure.persistence.session import make_engine, make_session_factory
+from sma.phase2_counter_service.logging_utils import build_logger, make_hash_fn
+from sma.phase2_counter_service.metrics import CounterMeters
+from sma.phase2_counter_service.repository import FaultInjector, SqlAlchemyCounterRepository
+from sma.phase2_counter_service.service import CounterAssignmentService
 
 
 @pytest.fixture()

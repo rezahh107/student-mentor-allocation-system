@@ -4,13 +4,13 @@ import uuid
 
 import httpx
 
-from phase6_import_to_sabt.app import create_application
-from phase6_import_to_sabt.app.clock import FixedClock
-from phase6_import_to_sabt.app.config import AppConfig
-from phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
-from phase6_import_to_sabt.app.timing import DeterministicTimer
-from phase6_import_to_sabt.app.utils import get_debug_context
-from phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.phase6_import_to_sabt.app import create_application
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.app.config import AppConfig
+from sma.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore
+from sma.phase6_import_to_sabt.app.timing import DeterministicTimer
+from sma.phase6_import_to_sabt.app.utils import get_debug_context
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
 
 
 def test_metrics_requires_token(tmp_path) -> None:

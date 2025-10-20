@@ -27,7 +27,7 @@ def test_snapshot_restore_and_reject_unknowns(clean_state):
         asyncio_module.Redis = _Redis
         sys.modules["redis"] = redis_module
         sys.modules["redis.asyncio"] = asyncio_module
-    middleware = importlib.import_module("src.hardened_api.middleware")
+    middleware = importlib.import_module("sma.hardened_api.middleware")
     RateLimitConfig = middleware.RateLimitConfig
     RateLimitRule = middleware.RateLimitRule
     rate_limit_config_guard = middleware.rate_limit_config_guard

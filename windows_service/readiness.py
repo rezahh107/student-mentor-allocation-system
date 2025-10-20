@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 from prometheus_client import CollectorRegistry, Counter, REGISTRY
 
-from src.phase6_import_to_sabt.sanitization import sanitize_text
+from sma.phase6_import_to_sabt.sanitization import sanitize_text
 from windows_service.errors import DependencyNotReady, ServiceError
 from windows_service.normalization import sanitize_env_text
 

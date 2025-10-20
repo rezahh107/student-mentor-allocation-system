@@ -5,8 +5,8 @@ import hashlib
 import json
 from typing import Any, Dict
 
-from src.core.clock import Clock, ensure_clock
-from infrastructure.monitoring.logging_adapter import correlation_id_var
+from sma.core.clock import Clock, ensure_clock
+from sma.infrastructure.monitoring.logging_adapter import correlation_id_var
 
 
 def mask(value: str) -> str:

@@ -7,7 +7,7 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timedelta
 from typing import Iterable, Mapping
 
-from src.reliability.clock import Clock
+from sma.reliability.clock import Clock
 
 LOGGER = logging.getLogger("sso")
 

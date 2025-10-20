@@ -85,9 +85,24 @@ jobs:
           } elseif (Test-Path "requirements.txt") {
             Invoke-Retry { python -m pip install -r requirements.txt }
           }
-          Invoke-Retry { python -m pip install -e . }
+          Invoke-Retry {
+            try {
+              python -m pip install -e .[dev]
+            } catch {
+              python -m pip install -e .
+            }
+          }
           python -m pip check
           python -m pip list --format=json > artifacts/pip-list-${{ matrix.python-version }}.json
+
+      - name: Verify AGENTS spec tokens
+        run: python scripts/verify_agents.py
+
+      - name: Guard PYTHONPATH front-loading
+        run: python scripts/guard_pythonpath.py
+
+      - name: Shadowing guard tests
+        run: python -m pytest tests/imports -q -p pytest_asyncio
 
       - name: Pre-flight info
         run: |
@@ -117,7 +132,7 @@ PY
             '--self-contained-html'
           )
           if ("${{ matrix.coverage }}" -eq "true") {
-            $args += @('--cov=src','--cov-branch',
+            $args += @('--cov=sma','--cov-branch',
                        '--cov-report=xml:coverage/coverage-${{ matrix.python-version }}.xml',
                        '--cov-report=html:coverage/htmlcov-${{ matrix.python-version }}')
           }

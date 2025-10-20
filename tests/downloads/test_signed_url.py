@@ -6,9 +6,9 @@ import pytest
 from prometheus_client import CollectorRegistry
 from zoneinfo import ZoneInfo
 
-from src.phase6_import_to_sabt.app.clock import FixedClock
-from src.phase6_import_to_sabt.obs.metrics import build_metrics
-from src.phase6_import_to_sabt.security.signer import (
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.phase6_import_to_sabt.security.signer import (
     DualKeySigner,
     SignatureError,
     SigningKeyDefinition,

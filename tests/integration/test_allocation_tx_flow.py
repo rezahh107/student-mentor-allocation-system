@@ -3,16 +3,16 @@ from __future__ import annotations
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.infrastructure.persistence.models import Base, MentorModel, OutboxMessageModel, StudentModel
-from src.phase3_allocation.allocation_tx import (
+from sma.infrastructure.persistence.models import Base, MentorModel, OutboxMessageModel, StudentModel
+from sma.phase3_allocation.allocation_tx import (
     AllocationRequest,
     AtomicAllocator,
     PolicyEngine,
     PolicyVerdict,
     SimpleAllocationSequenceProvider,
 )
-from src.phase3_allocation.outbox import OutboxDispatcher, SystemClock
-from src.phase3_allocation.uow import SQLAlchemyUnitOfWork
+from sma.phase3_allocation.outbox import OutboxDispatcher, SystemClock
+from sma.phase3_allocation.uow import SQLAlchemyUnitOfWork
 
 
 class CapturePublisher:

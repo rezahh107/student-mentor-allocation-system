@@ -9,8 +9,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("clean_state")
 
-from src.audit.enums import AuditAction, AuditActorRole, AuditOutcome
-from src.audit.retention import AuditArchiveResult
+from sma.audit.enums import AuditAction, AuditActorRole, AuditOutcome
+from sma.audit.retention import AuditArchiveResult
 
 
 def _read_csv(path: Path) -> list[list[str]]:

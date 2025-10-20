@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.core.clock import FrozenClock
-from src.core.retry import RetryPolicy, build_sync_clock_sleeper, execute_with_retry
+from sma.core.clock import FrozenClock
+from sma.core.retry import RetryPolicy, build_sync_clock_sleeper, execute_with_retry
 from windows_launcher import launcher as launcher_mod
 
 _TEHRAN_TZ = ZoneInfo("Asia/Tehran")

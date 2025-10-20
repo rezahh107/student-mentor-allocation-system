@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.ui.trace_index import TraceFilterIndex
-from src.ui.trace_viewer import TraceViewerRow
+from sma.ui.trace_index import TraceFilterIndex
+from sma.ui.trace_viewer import TraceViewerRow
 
 
 @dataclass

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from src.phase6_import_to_sabt.security.config import AccessConfigGuard, ConfigGuardError
+from sma.phase6_import_to_sabt.security.config import AccessConfigGuard, ConfigGuardError
 
 
 def test_reject_unknown() -> None:

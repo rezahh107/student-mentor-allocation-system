@@ -12,7 +12,7 @@ from typing import List
 
 from tools import gha_rerun
 from tools import gha_workflow_patcher
-from src.core.clock import Clock
+from sma.core.clock import Clock
 
 
 class BootstrapError(RuntimeError):

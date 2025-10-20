@@ -1,7 +1,7 @@
 import json
 import logging
 
-from phase6_import_to_sabt.logging_utils import ExportLogger
+from sma.phase6_import_to_sabt.logging_utils import ExportLogger
 
 
 def test_no_plain_mobile_in_logs(caplog) -> None:

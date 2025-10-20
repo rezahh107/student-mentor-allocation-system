@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from prometheus_client import generate_latest
 
-from ops import metrics
+from sma.ops import metrics
 
 
 def test_expected_metrics_present():

@@ -16,13 +16,13 @@ from pathlib import Path
 from typing import Callable, Iterable, Protocol
 from uuid import uuid4
 
-from src.core.clock import Clock, tehran_clock
-from src.infrastructure.monitoring.logging_adapter import (
+from sma.core.clock import Clock, tehran_clock
+from sma.infrastructure.monitoring.logging_adapter import (
     configure_json_logging,
     correlation_id_var,
 )
-from src.ops.retry import RetryMetrics, build_retry_metrics, execute_with_retry
-from src.phase6_import_to_sabt.sanitization import deterministic_jitter, sanitize_text
+from sma.ops.retry import RetryMetrics, build_retry_metrics, execute_with_retry
+from sma.phase6_import_to_sabt.sanitization import deterministic_jitter, sanitize_text
 from windows_shared.config import (
     LauncherConfig,
     MAX_PORT,

@@ -4,7 +4,7 @@ from __future__ import annotations
 import importlib
 from typing import Any, Dict, List, Tuple
 
-TARGET_MODULE = "src.api.api"
+TARGET_MODULE = "sma.api.api"
 TARGET_FACTORY = "create_app"
 RATE_LIMIT_MIDDLEWARE = "RateLimitMiddleware"
 IDEMPOTENCY_MIDDLEWARE = "IdempotencyMiddleware"

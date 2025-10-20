@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.phase3_allocation.rules import GroupAllowedRule
+from sma.phase3_allocation.rules import GroupAllowedRule
 
 from tests.phase3.conftest import normalized_mentor, normalized_student
 

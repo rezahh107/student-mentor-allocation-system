@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from itertools import count
 from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence, Tuple
 
-from src.phase2_counter_service.types import BackfillObserver
+from sma.phase2_counter_service.types import BackfillObserver
 
 try:  # pragma: no cover - optional dependency resolution
     import tkinter as tk

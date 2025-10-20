@@ -7,7 +7,7 @@ import asyncio
 import httpx
 from zoneinfo import ZoneInfo
 
-from src.reliability import (
+from sma.reliability import (
     CleanupDaemon,
     Clock,
     DisasterRecoveryDrill,
@@ -16,7 +16,7 @@ from src.reliability import (
     RetentionEnforcer,
     create_reliability_app,
 )
-from src.reliability.logging_utils import JSONLogger
+from sma.reliability.logging_utils import JSONLogger
 
 
 def test_order_and_token_guard(tmp_path: Path) -> None:
@@ -118,7 +118,7 @@ def test_order_and_token_guard(tmp_path: Path) -> None:
 
 
 def test_order_enforced() -> None:
-    from ops.middleware import MIDDLEWARE_CHAIN
+    from sma.ops.middleware import MIDDLEWARE_CHAIN
 
     assert MIDDLEWARE_CHAIN == (
         "RateLimit",

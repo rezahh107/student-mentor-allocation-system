@@ -12,11 +12,11 @@ import anyio
 import httpx
 from fastapi import FastAPI
 
-from ops.config import OpsSettings, SLOThresholds
-from ops.metrics import reset_metrics_registry
-from ops.replica_adapter import ReplicaAdapter
-from ops.router import build_ops_router
-from ops.service import OpsService
+from sma.ops.config import OpsSettings, SLOThresholds
+from sma.ops.metrics import reset_metrics_registry
+from sma.ops.replica_adapter import ReplicaAdapter
+from sma.ops.router import build_ops_router
+from sma.ops.service import OpsService
 
 
 class StaticConnection:

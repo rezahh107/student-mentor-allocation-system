@@ -5,7 +5,7 @@ from typing import Iterator
 
 import pytest
 
-from src.tools.export_excel_safe import ExcelSafeExporter, iter_rows, normalize_cell
+from sma.tools.export_excel_safe import ExcelSafeExporter, iter_rows, normalize_cell
 
 
 def test_iter_rows_normalises_persian_digits_and_formulas() -> None:

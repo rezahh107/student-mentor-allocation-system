@@ -4,12 +4,12 @@ from time import perf_counter
 
 import psutil
 
-from phase6_import_to_sabt.xlsx.writer import ExportArtifact, XLSXStreamWriter
-from phase6_import_to_sabt.xlsx.utils import atomic_write, sha256_file
+from sma.phase6_import_to_sabt.xlsx.writer import ExportArtifact, XLSXStreamWriter
+from sma.phase6_import_to_sabt.xlsx.utils import atomic_write, sha256_file
 
-from phase6_import_to_sabt.app.clock import FixedClock
-from phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 
 
 def _bulk_rows(year: int, center: int | None):

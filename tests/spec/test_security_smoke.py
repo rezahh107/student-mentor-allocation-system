@@ -13,15 +13,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry
 
-from src.core.clock import DEFAULT_TIMEZONE
-from src.phase6_import_to_sabt.security.config import SigningKeyDefinition
-from src.phase6_import_to_sabt.security.signer import (
+from sma.core.clock import DEFAULT_TIMEZONE
+from sma.phase6_import_to_sabt.security.config import SigningKeyDefinition
+from sma.phase6_import_to_sabt.security.signer import (
     DualKeySigner,
     SignatureError,
     SigningKeySet,
 )
-from src.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from src.infrastructure.api.routes import create_app
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.infrastructure.api.routes import create_app
 
 
 class _DeterministicClock:

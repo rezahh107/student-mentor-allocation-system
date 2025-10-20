@@ -7,11 +7,11 @@ import types
 
 from fastapi import FastAPI
 
-from src.repo_doctor.healthcheck import HealthDoctor, MIDDLEWARE_EXPECTED_ORDER
-from src.repo_doctor.clock import tehran_clock
-from src.repo_doctor.logging_utils import JsonLogger
-from src.repo_doctor.metrics import DoctorMetrics
-from src.repo_doctor.retry import RetryPolicy
+from sma.repo_doctor.healthcheck import HealthDoctor, MIDDLEWARE_EXPECTED_ORDER
+from sma.repo_doctor.clock import tehran_clock
+from sma.repo_doctor.logging_utils import JsonLogger
+from sma.repo_doctor.metrics import DoctorMetrics
+from sma.repo_doctor.retry import RetryPolicy
 
 
 class RateLimit:
@@ -71,6 +71,6 @@ def test_health_creates_shim_and_validates(tmp_path: pathlib.Path, monkeypatch) 
     shim_path = tmp_path / "src" / "main.py"
     assert shim_path.exists()
 
-    sys.modules.pop("src.main", None)
-    module = importlib.import_module("src.main")
+    sys.modules.pop("sma.main", None)
+    module = importlib.import_module("sma.main")
     assert hasattr(module, "app")

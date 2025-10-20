@@ -10,9 +10,9 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from src.hardened_api.api import APISettings, create_app
-from src.hardened_api.auth_repository import APIKeyRecord, InMemoryAPIKeyRepository
-from src.hardened_api.middleware import (
+from sma.hardened_api.api import APISettings, create_app
+from sma.hardened_api.auth_repository import APIKeyRecord, InMemoryAPIKeyRepository
+from sma.hardened_api.middleware import (
     AuthConfig,
     RateLimitConfig,
     ensure_rate_limit_config_restored,
@@ -20,7 +20,7 @@ from src.hardened_api.middleware import (
     restore_rate_limit_config,
     snapshot_rate_limit_config,
 )
-from src.hardened_api.observability import hash_national_id, metrics_registry_guard
+from sma.hardened_api.observability import hash_national_id, metrics_registry_guard
 
 
 class FrozenClock:

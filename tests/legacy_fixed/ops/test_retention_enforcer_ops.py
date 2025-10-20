@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from src.reliability import Clock, ReliabilityMetrics, RetentionEnforcer
-from src.reliability.config import RetentionConfig
-from src.reliability.logging_utils import JSONLogger
+from sma.reliability import Clock, ReliabilityMetrics, RetentionEnforcer
+from sma.reliability.config import RetentionConfig
+from sma.reliability.logging_utils import JSONLogger
 
 
 class FakeNow:

@@ -7,15 +7,15 @@ from time import perf_counter
 
 import psutil
 
-from phase6_import_to_sabt.exporter import ImportToSabtExporter
-from phase6_import_to_sabt.models import (
+from sma.phase6_import_to_sabt.exporter import ImportToSabtExporter
+from sma.phase6_import_to_sabt.models import (
     ExportFilters,
     ExportOptions,
     ExportSnapshot,
     ExporterDataSource,
     NormalizedStudentRow,
 )
-from phase6_import_to_sabt.roster import InMemoryRoster
+from sma.phase6_import_to_sabt.roster import InMemoryRoster
 
 
 class SyntheticDataSource(ExporterDataSource):

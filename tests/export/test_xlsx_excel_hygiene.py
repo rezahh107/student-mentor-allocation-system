@@ -5,7 +5,7 @@ from typing import Iterable, Tuple
 import pytest
 from openpyxl import load_workbook
 
-from src.tools.export.xlsx_exporter import XLSXAllocationExporter
+from sma.tools.export.xlsx_exporter import XLSXAllocationExporter
 
 _GOLDEN_JSON = Path(__file__).resolve().parents[1] / "golden" / "export" / "xlsx_expected.json"
 

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import typer
 
-from src.reliability import DisasterRecoveryDrill, ReliabilityMetrics, ReliabilitySettings
-from src.reliability.logging_utils import JSONLogger, configure_logging
+from sma.reliability import DisasterRecoveryDrill, ReliabilityMetrics, ReliabilitySettings
+from sma.reliability.logging_utils import JSONLogger, configure_logging
 
 app = typer.Typer(help="Disaster recovery drill runner.")
 

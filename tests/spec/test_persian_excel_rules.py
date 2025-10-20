@@ -10,7 +10,7 @@ import openpyxl
 import pytest
 from sqlalchemy import text
 
-from phase6_import_to_sabt.export_writer import ExportWriter
+from sma.phase6_import_to_sabt.export_writer import ExportWriter
 
 from tests.conftest import retry
 

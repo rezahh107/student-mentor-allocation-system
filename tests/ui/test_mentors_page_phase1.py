@@ -19,10 +19,10 @@ from typing import Dict
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QMessageBox
 
-from src.ui.components.mentor_form import MentorFormDialog
-from src.ui.models.mentors_model import MentorsTableModel
-from src.ui.pages.mentors_page import MentorsPage
-from src.ui.services.mock_mentor_service import MockMentorService
+from sma.ui.components.mentor_form import MentorFormDialog
+from sma.ui.models.mentors_model import MentorsTableModel
+from sma.ui.pages.mentors_page import MentorsPage
+from sma.ui.services.mock_mentor_service import MockMentorService
 
 
 class TestMentorTableModel:
@@ -169,7 +169,7 @@ class TestMentorsPage:
             def get_mentor_data(self):
                 return sample
 
-        monkeypatch.setattr("src.ui.pages.mentors_page.MentorFormDialog", StubDialog)
+        monkeypatch.setattr("sma.ui.pages.mentors_page.MentorFormDialog", StubDialog)
         initial = mentors_page.model.rowCount()
         mentors_page.add_mentor()
         assert mentors_page.model.rowCount() == initial + 1

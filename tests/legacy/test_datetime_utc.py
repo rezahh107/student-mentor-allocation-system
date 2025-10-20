@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC
 
-from src.api.mock_data import MockBackend
-from src.core.datetime_utils import utc_now
+from sma.api.mock_data import MockBackend
+from sma.core.datetime_utils import utc_now
 from tests.fixtures.factories import make_student
 
 

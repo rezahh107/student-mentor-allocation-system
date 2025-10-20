@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.security.hardening import (
+from sma.security.hardening import (
     RateLimiter,
     SecurityMonitor,
     SecurityViolationError,

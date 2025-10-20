@@ -8,14 +8,14 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.infrastructure.persistence.models import (
+from sma.infrastructure.persistence.models import (
     AllocationRecord,
     Base,
     MentorModel,
     OutboxMessageModel,
     StudentModel,
 )
-from src.phase3_allocation.allocation_tx import (
+from sma.phase3_allocation.allocation_tx import (
     AllocationIdentifiers,
     AllocationRequest,
     AllocationSequenceProvider,
@@ -23,8 +23,8 @@ from src.phase3_allocation.allocation_tx import (
     PolicyEngine,
     PolicyVerdict,
 )
-from src.phase3_allocation.outbox import BackoffPolicy, OutboxDispatcher
-from src.phase3_allocation.uow import SQLAlchemyUnitOfWork
+from sma.phase3_allocation.outbox import BackoffPolicy, OutboxDispatcher
+from sma.phase3_allocation.uow import SQLAlchemyUnitOfWork
 
 
 class FakeClock:

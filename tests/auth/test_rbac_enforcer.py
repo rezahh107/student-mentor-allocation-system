@@ -1,4 +1,4 @@
-from src.phase6_import_to_sabt.security.rbac import (
+from sma.phase6_import_to_sabt.security.rbac import (
     AuthenticatedActor,
     AuthorizationError,
     enforce_center_scope,

@@ -3,8 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
-from phase7_release.deploy import ReadinessGate
+from sma.phase6_import_to_sabt.api import HMACSignedURLProvider, create_export_api
+from sma.phase7_release.deploy import ReadinessGate
 
 from tests.export.helpers import build_job_runner, make_row
 

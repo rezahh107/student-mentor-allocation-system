@@ -6,7 +6,7 @@ import uuid
 import psutil
 import pytest
 
-from phase2_uploads.logging_utils import get_debug_context
+from sma.phase2_uploads.logging_utils import get_debug_context
 
 TARGET_SIZE = 50 * 1024 * 1024
 _WARMED = False

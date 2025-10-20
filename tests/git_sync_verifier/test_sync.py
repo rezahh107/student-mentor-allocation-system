@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from git_sync_verifier.cli import app
-from git_sync_verifier import git_ops
-from git_sync_verifier.core import SyncOptions, run
-from git_sync_verifier.exceptions import GitCommandError
-from git_sync_verifier.metrics import SyncMetrics
+from sma.git_sync_verifier.cli import app
+from sma.git_sync_verifier import git_ops
+from sma.git_sync_verifier.core import SyncOptions, run
+from sma.git_sync_verifier.exceptions import GitCommandError
+from sma.git_sync_verifier.metrics import SyncMetrics
 
 
 runner = CliRunner()

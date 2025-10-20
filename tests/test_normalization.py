@@ -16,8 +16,8 @@ pytest.importorskip(
 from hypothesis import given, strategies as st
 from pydantic import ValidationError
 
-from src.core.models import StudentNormalized, to_student_normalized
-from src.core.normalize import (
+from sma.core.models import StudentNormalized, to_student_normalized
+from sma.core.normalize import (
     GENDER_ERROR,
     MOBILE_ERROR,
     NATIONAL_ID_ERROR,

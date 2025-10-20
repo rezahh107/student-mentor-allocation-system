@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from src.phase7_release.backup import BackupManager
+from sma.phase7_release.backup import BackupManager
 
 
 @pytest.fixture

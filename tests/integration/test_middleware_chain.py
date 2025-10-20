@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from phase6_import_to_sabt.app.app_factory import create_application
-from phase6_import_to_sabt.app.config import AppConfig, AuthConfig, DatabaseConfig, RedisConfig
+from sma.phase6_import_to_sabt.app.app_factory import create_application
+from sma.phase6_import_to_sabt.app.config import AppConfig, AuthConfig, DatabaseConfig, RedisConfig
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.middleware
+@pytest.mark.evidence("AGENTS.md::3 Absolute Guardrails")
 async def test_middleware_chain_enforces_ratelimit_priority(
     clean_redis_state,
     clean_db_state,

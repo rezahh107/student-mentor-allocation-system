@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import tracemalloc
 
-from src.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from src.phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
 
 
 def _build_row(index: int) -> dict[str, object]:

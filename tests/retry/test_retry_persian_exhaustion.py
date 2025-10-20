@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from core.clock import FrozenClock, tehran_clock
-from core.retry import (
+from sma.core.clock import FrozenClock, tehran_clock
+from sma.core.retry import (
     RetryExhaustedError,
     RetryPolicy,
     build_async_clock_sleeper,

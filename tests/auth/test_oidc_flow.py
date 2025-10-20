@@ -4,8 +4,8 @@ import asyncio
 
 import httpx
 
-from config.env_schema import SSOConfig
-from src.security.sso_app import create_sso_app
+from sma.config.env_schema import SSOConfig
+from sma.security.sso_app import create_sso_app
 
 
 def test_oidc_ok_maps_to_admin_all(

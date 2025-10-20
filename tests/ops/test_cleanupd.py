@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from src.reliability import CleanupDaemon, Clock, ReliabilityMetrics
-from src.reliability.config import CleanupConfig
-from src.reliability.logging_utils import JSONLogger
+from sma.reliability import CleanupDaemon, Clock, ReliabilityMetrics
+from sma.reliability.config import CleanupConfig
+from sma.reliability.logging_utils import JSONLogger
 
 
 def test_removes_stale_part_and_expired_links(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.tools.export_excel_safe import export_to_path, normalize_cell
+from sma.tools.export_excel_safe import export_to_path, normalize_cell
 
 
 def _read_lines(path: Path) -> list[str]:

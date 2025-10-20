@@ -6,8 +6,8 @@ from typing import Iterator
 
 import csv
 
-from phase6_import_to_sabt.exporter.csv_writer import write_csv_atomic
-from phase6_import_to_sabt.sanitization import sanitize_text
+from sma.phase6_import_to_sabt.exporter.csv_writer import write_csv_atomic
+from sma.phase6_import_to_sabt.sanitization import sanitize_text
 
 
 _DEFAULT_STRESS_ROWS = 12_000

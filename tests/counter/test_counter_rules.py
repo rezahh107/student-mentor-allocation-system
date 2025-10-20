@@ -1,7 +1,7 @@
-from src.domain.counter.value_objects import Counter
-from src.domain.shared.types import Gender
-from src.phase2_counter_service.validation import COUNTER_PATTERN, COUNTER_PREFIX
-from src.shared.counter_rules import COUNTER_PREFIX_MAP, COUNTER_REGEX, gender_prefix
+from sma.domain.counter.value_objects import Counter
+from sma.domain.shared.types import Gender
+from sma.phase2_counter_service.validation import COUNTER_PATTERN, COUNTER_PREFIX
+from sma.shared.counter_rules import COUNTER_PREFIX_MAP, COUNTER_REGEX, gender_prefix
 
 
 def test_gender_prefix_map() -> None:

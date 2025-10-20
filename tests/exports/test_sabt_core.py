@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
+from sma.phase6_import_to_sabt.models import ExportFilters, ExportOptions, ExportSnapshot
 
 from tests.export.helpers import build_exporter, make_row
 

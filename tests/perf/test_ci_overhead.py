@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import time
 
-from ci_orchestrator import orchestrator as orch_mod
-from ci_orchestrator.orchestrator import Orchestrator, OrchestratorConfig
+from sma.ci_orchestrator import orchestrator as orch_mod
+from sma.ci_orchestrator.orchestrator import Orchestrator, OrchestratorConfig
 
 from tests.ci.test_warnings_policy import FakeResult, _patch_artifacts
 

@@ -18,7 +18,7 @@ pytest.importorskip(
 )
 from hypothesis import given, strategies as st
 
-from src.core.normalize import (
+from sma.core.normalize import (
     MOBILE_ERROR,
     NATIONAL_ID_ERROR,
     normalize_digits,

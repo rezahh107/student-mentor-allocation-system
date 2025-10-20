@@ -5,9 +5,9 @@ from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.styles import numbers
 
-from src.phase6_import_to_sabt.xlsx.constants import SENSITIVE_COLUMNS
-from src.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
-from src.phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
+from sma.phase6_import_to_sabt.xlsx.constants import SENSITIVE_COLUMNS
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
 
 _ANCHOR = "AGENTS.md::Atomic I/O & Excel-Safety"
 

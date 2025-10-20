@@ -18,8 +18,8 @@ pytestmark = [
 if _headless.PYTEST_SKIP_MARK is not None:
     pytestmark.append(_headless.PYTEST_SKIP_MARK)
 
-from src.services.analytics_service import DashboardData
-from src.ui.pages.dashboard_presenter import DashboardPresenter
+from sma.services.analytics_service import DashboardData
+from sma.ui.pages.dashboard_presenter import DashboardPresenter
 
 
 class DummyAnalytics:
@@ -56,7 +56,7 @@ async def test_realtime_triggers_refresh(qtbot, monkeypatch):
         async def start_listening(self):
             return
 
-    monkeypatch.setattr("src.ui.pages.dashboard_presenter.RealtimeService", DummyRT)
+    monkeypatch.setattr("sma.ui.pages.dashboard_presenter.RealtimeService", DummyRT)
 
     # Connect to data_loaded signal
     loaded = asyncio.get_event_loop().create_future()

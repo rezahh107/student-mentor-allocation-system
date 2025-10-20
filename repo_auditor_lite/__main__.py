@@ -456,7 +456,7 @@ def build_run_application() -> str:
         "    exit /b 1",
         ")",
         "echo 🚀 اجرای برنامه با uvicorn...",
-        "\"%PYTHON_BIN%\" -m uvicorn src.main:app --host %HOST% --port %PORT% --workers %WORKERS%",
+        "\"%PYTHON_BIN%\" -m uvicorn sma.main:app --host %HOST% --port %PORT% --workers %WORKERS%",
         "if errorlevel 1 (",
         "    echo ❌ اجرای سرور با خطا مواجه شد؛ فایل لاگ‌ها و تنظیمات را بررسی کنید.",
         "    popd >nul",

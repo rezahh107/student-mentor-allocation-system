@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from io import StringIO
 
-from src.ui.trace_viewer import (
+from sma.ui.trace_viewer import (
     TraceViewerRow,
     TraceViewerStorageWriter,
     render_text_ui,

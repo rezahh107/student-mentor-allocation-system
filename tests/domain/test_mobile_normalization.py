@@ -1,6 +1,6 @@
 import pytest
 
-from src.domain.student.mobile import MobileValidationError, normalize_mobile
+from sma.domain.student.mobile import MobileValidationError, normalize_mobile
 
 
 @pytest.mark.parametrize(

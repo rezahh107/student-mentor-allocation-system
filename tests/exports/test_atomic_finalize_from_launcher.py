@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from src.reliability.atomic import atomic_write_json
+from sma.reliability.atomic import atomic_write_json
 
 
 def test_atomic_manifest(tmp_path):

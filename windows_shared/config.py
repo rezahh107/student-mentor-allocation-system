@@ -12,9 +12,9 @@ from typing import Any, Mapping
 
 from platformdirs import PlatformDirs
 
-from src.core.clock import Clock, tehran_clock
-from src.phase6_import_to_sabt.sanitization import sanitize_text, secure_digest
-from src.reliability.atomic import atomic_write_json
+from sma.core.clock import Clock, tehran_clock
+from sma.phase6_import_to_sabt.sanitization import sanitize_text, secure_digest
+from sma.reliability.atomic import atomic_write_json
 
 APP_NAME = "StudentMentorApp"
 APP_VENDOR = "ImportToSabt"

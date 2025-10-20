@@ -18,6 +18,6 @@ if load_dotenv is not None:
     if env_path.exists():
         load_dotenv(env_path)
 
-from phase6_import_to_sabt.app.app_factory import create_application
+from sma.phase6_import_to_sabt.app.app_factory import create_application
 
 app = create_application()

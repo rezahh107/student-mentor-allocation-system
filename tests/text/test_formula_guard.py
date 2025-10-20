@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.phase6_import_to_sabt.sanitization import guard_formula
+from sma.phase6_import_to_sabt.sanitization import guard_formula
 
 
 @pytest.mark.parametrize(

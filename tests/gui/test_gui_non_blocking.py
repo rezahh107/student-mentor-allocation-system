@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.tools.gui_operator import OperatorGUI
+from sma.tools.gui_operator import OperatorGUI
 
 
 def _dummy_dispatcher_factory(_publisher):

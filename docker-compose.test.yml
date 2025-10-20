@@ -13,7 +13,7 @@ services:
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
     command: >
-      sh -c "pytest -xvs --cov=src --cov-report=xml:/app/test-results/coverage.xml
+      sh -c "pytest -xvs --cov=sma --cov-report=xml:/app/test-results/coverage.xml
       --junitxml=/app/test-results/junit.xml"
 
   deep-test:

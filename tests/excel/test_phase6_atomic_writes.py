@@ -6,7 +6,7 @@ from typing import Callable
 
 import pytest
 
-from phase6_import_to_sabt.app.io_utils import write_atomic
+from sma.phase6_import_to_sabt.app.io_utils import write_atomic
 
 
 def _retry(action: Callable[[], None], *, attempts: int = 3, base_delay: float = 0.0005) -> None:

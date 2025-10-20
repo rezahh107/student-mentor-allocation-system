@@ -6,7 +6,7 @@ from typing import List
 
 import pytest
 
-from src.domain.allocation.engine import AllocationEngine
+from sma.domain.allocation.engine import AllocationEngine
 from tests.factories import make_mentor, make_student
 
 

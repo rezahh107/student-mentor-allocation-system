@@ -14,7 +14,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from zoneinfo import ZoneInfo
 
-from src.web.routes.exports_ui import (
+from sma.web.routes.exports_ui import (
     ExportManifestRepository,
     ExportManifestSummary,
     SignedURLProvider,

@@ -63,7 +63,7 @@ echo ""
 
 echo "📊 مرحله 6: گزارش پوشش کامل"
 echo "-----------------------------"
-pytest --cov=src \
+pytest --cov=sma \
     --cov-report=html:$LOG_DIR/coverage_$TIMESTAMP \
     --cov-report=term \
     --cov-report=xml:$LOG_DIR/coverage_$TIMESTAMP.xml \

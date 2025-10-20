@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from phase6_import_to_sabt.xlsx.reader import XLSXUploadReader
+from sma.phase6_import_to_sabt.xlsx.reader import XLSXUploadReader
 
 
 @pytest.fixture

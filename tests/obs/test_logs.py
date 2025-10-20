@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from src.phase6_import_to_sabt.logging_utils import ExportLogger
+from sma.phase6_import_to_sabt.logging_utils import ExportLogger
 
 
 @pytest.fixture

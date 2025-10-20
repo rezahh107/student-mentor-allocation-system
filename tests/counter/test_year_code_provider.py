@@ -1,6 +1,6 @@
 import pytest
 
-from src.phase2_counter_service.academic_year import AcademicYearProvider
+from sma.phase2_counter_service.academic_year import AcademicYearProvider
 
 
 def test_year_code_from_provider_no_wall_clock() -> None:

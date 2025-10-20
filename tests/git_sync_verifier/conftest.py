@@ -9,9 +9,9 @@ from typing import Callable
 
 import pytest
 
-from git_sync_verifier.clock import Clock, DEFAULT_TZ
-from git_sync_verifier.core import DEFAULT_REMOTE
-from git_sync_verifier.metrics import SyncMetrics
+from sma.git_sync_verifier.clock import Clock, DEFAULT_TZ
+from sma.git_sync_verifier.core import DEFAULT_REMOTE
+from sma.git_sync_verifier.metrics import SyncMetrics
 
 
 @dataclass

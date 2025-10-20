@@ -4,7 +4,7 @@ import io
 
 import pytest
 
-from src.ui.trace_viewer import (
+from sma.ui.trace_viewer import (
     PAGE_SIZE,
     TraceViewerApp,
     TraceViewerRow,

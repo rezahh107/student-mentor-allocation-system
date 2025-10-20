@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import List
 
-from src.services.excel_service import ExcelExportService
-from src.api.mock_data import MockBackend
+from sma.services.excel_service import ExcelExportService
+from sma.api.mock_data import MockBackend
 
 
 async def _collect_progress(done_list: List[int], d: int, t: int):

@@ -5,8 +5,8 @@ import random
 
 import pytest
 
-from src.api.mock_data import MockBackend
-from src.api.models import validate_iranian_phone, validate_national_code
+from sma.api.mock_data import MockBackend
+from sma.api.models import validate_iranian_phone, validate_national_code
 
 
 def test_counter_format():

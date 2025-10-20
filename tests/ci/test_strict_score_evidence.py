@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.phase9_readiness.report import DEFAULT_INTEGRATION_HINTS, ensure_evidence_quota
+from sma.phase9_readiness.report import DEFAULT_INTEGRATION_HINTS, ensure_evidence_quota
 
 
 def build_evidence_map() -> dict[str, list[str]]:

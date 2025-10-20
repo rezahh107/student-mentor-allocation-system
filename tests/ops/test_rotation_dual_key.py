@@ -7,11 +7,11 @@ from datetime import datetime
 from prometheus_client import CollectorRegistry
 from zoneinfo import ZoneInfo
 
-from src.phase6_import_to_sabt.app.clock import FixedClock
-from src.phase6_import_to_sabt.obs.metrics import build_metrics
-from src.phase6_import_to_sabt.security.config import AccessConfigGuard
-from src.phase6_import_to_sabt.security.rotation_cli import _cmd_generate, _cmd_promote
-from src.phase6_import_to_sabt.security.signer import DualKeySigner, SigningKeySet
+from sma.phase6_import_to_sabt.app.clock import FixedClock
+from sma.phase6_import_to_sabt.obs.metrics import build_metrics
+from sma.phase6_import_to_sabt.security.config import AccessConfigGuard
+from sma.phase6_import_to_sabt.security.rotation_cli import _cmd_generate, _cmd_promote
+from sma.phase6_import_to_sabt.security.signer import DualKeySigner, SigningKeySet
 
 
 TOKENS_ENV = "ROTATION_TOKENS"

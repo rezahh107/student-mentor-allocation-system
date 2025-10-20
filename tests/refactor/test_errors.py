@@ -10,7 +10,7 @@ def test_persian_error_envelopes(tmp_path, monkeypatch):
     project = tmp_path / "proj"
     project.mkdir()
     src = project / "src"
-    src.mkdir()
+    sma.mkdir()
     (project / "AGENTS.md").write_text("spec", encoding="utf-8")
     monkeypatch.chdir(project)
     result = runner.invoke(APP, ["apply", "--fix-entrypoint", "invalid"])  # invalid format

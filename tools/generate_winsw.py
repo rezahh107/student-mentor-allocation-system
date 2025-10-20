@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from textwrap import dedent
 
-from src.reliability.atomic import atomic_write_text
+from sma.reliability.atomic import atomic_write_text
 
 DEFAULT_VERSION = "3.0.2"
 DEFAULT_PORT = 18000

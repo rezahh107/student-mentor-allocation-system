@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.phase6_import_to_sabt.export_writer import ExportWriter
+from sma.phase6_import_to_sabt.export_writer import ExportWriter
 
 if TYPE_CHECKING:  # pragma: no cover - typing helper
     from .conftest import PerformanceMonitor

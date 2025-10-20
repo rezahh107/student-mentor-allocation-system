@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.phase7_release.deploy import ReadinessGate, ZeroDowntimeHandoff
+from sma.phase7_release.deploy import ReadinessGate, ZeroDowntimeHandoff
 
 
 @pytest.fixture

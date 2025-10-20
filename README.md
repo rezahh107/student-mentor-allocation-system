@@ -39,6 +39,10 @@ METRICS_TOKEN=dev-metrics scripts/smoke.sh
 
 <!--dev-quick-start:end-->
 
+### Windows (PowerShell 7)
+
+راهنمای کامل نصب و اجرای نسخهٔ توسعه را در مستند «[راهنمای PowerShell 7 ویندوز](docs/windows-powershell-setup.md)» دنبال کنید؛ این سند شامل TL;DR، چک‌های پیش‌نیاز، اعتبارسنجی محیط، اجرای `Start-App.ps1` و اسموک‌تست‌های ضروری است.
+
 ## Import Refactor (src-layout fixer)
 برای هماهنگی خودکار ایمپورت‌های مطلق با ساختار `src/` می‌توانید ابزار `tools/refactor_imports.py` را اجرا کنید. ابزار به صورت پیش‌فرض Dry-Run است و گزارش CSV/JSON تولید می‌کند.
 

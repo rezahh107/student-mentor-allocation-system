@@ -1,4 +1,5 @@
 #requires -Version 7.0
+# Requires editable dev deps (AGENTS.md::8 Testing & CI Gates)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -113,13 +114,21 @@ if (-not $scriptRoot) {
     }
 }
 
-$exitCode = 0
-Push-Location -Path $scriptRoot
-try {
-    $logs = Join-Path $scriptRoot 'logs'
-    if (-not (Test-Path -LiteralPath $logs)) {
-        [void](New-Item -Path $logs -ItemType Directory)
-    }
+    $exitCode = 0
+    Push-Location -Path $scriptRoot
+    try {
+        if (-not (pip show fastapi 2>$null)) {
+            python -m pip install -U pip setuptools wheel
+            pip install -e .[dev] || pip install -e .
+            if ($LASTEXITCODE -ne 0) {
+                throw "INSTALL_FAILED: «نصب وابستگی‌ها تکمیل نشد.»"
+            }
+        }
+
+        $logs = Join-Path $scriptRoot 'logs'
+        if (-not (Test-Path -LiteralPath $logs)) {
+            [void](New-Item -Path $logs -ItemType Directory)
+        }
 
     $envFile = Join-Path $scriptRoot '.env.dev'
     Import-DotEnv -Path $envFile
@@ -128,10 +137,8 @@ try {
     Ensure-RequiredEnv -Name 'REDIS_URL'
     Ensure-RequiredEnv -Name 'METRICS_TOKEN'
 
-    $pythonPath = Sanitize-EnvText (Join-Path $scriptRoot 'src')
-    Set-Item -Path Env:PYTHONPATH -Value $pythonPath
-    Set-Item -Path Env:PYTHONUTF8 -Value '1'
-    Set-Item -Path Env:PYTHONUNBUFFERED -Value '1'
+        Set-Item -Path Env:PYTHONUTF8 -Value '1'
+        Set-Item -Path Env:PYTHONUNBUFFERED -Value '1'
 
     $portRaw = Sanitize-EnvText $Env:SMASM_PORT
     if (-not $portRaw) { $portRaw = '25119' }

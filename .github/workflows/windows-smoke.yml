@@ -65,13 +65,9 @@ jobs:
         run: |
           & ".\.venv\Scripts\Activate.ps1"
           function Install-WithRetry([string]$Cmd,[int]$Max=3){ for($i=1;$i -le $Max;$i++){ try{ iex $Cmd; return } catch{ if($i -eq $Max){ throw } Start-Sleep -Seconds ([int][Math]::Pow(2,$i)) } } }
-          Install-WithRetry "python -m pip install -U pip setuptools wheel"
-          if ((Test-Path 'constraints-dev.txt') -and (Test-Path 'requirements-dev.in')) {
-            Install-WithRetry "python -m pip install -c constraints-dev.txt -r requirements-dev.in"
-          } elseif (Test-Path 'requirements.txt') {
-            Install-WithRetry "python -m pip install -r requirements.txt"
-          }
-          Install-WithRetry "try { python -m pip install -e .[dev] } catch { python -m pip install -e . }"
+          Install-WithRetry "python -m scripts.deps.ensure_lock --root . install --attempts 3"
+          Install-WithRetry "python -m pip install --no-deps -e ."
+          python -m scripts.deps.ensure_lock --root . verify
           python -m pip check
 
       - name: Verify AGENTS spec tokens

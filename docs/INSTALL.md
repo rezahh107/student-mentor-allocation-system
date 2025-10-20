@@ -12,7 +12,7 @@
 python -m venv .venv
 source .venv/bin/activate  # ویندوز: .venv\Scripts\activate
 pip install --upgrade pip
-pip install -r requirements.txt -c constraints-win.txt
+make init
 ```
 
 > توجه: استفاده از فایل `constraints-win.txt` برای نصب وابستگی‌ها در ویندوز اجباری و برای سایر سیستم‌ها نیز به‌منظور بازتولیدپذیری توصیه می‌شود.

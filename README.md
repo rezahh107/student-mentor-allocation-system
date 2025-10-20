@@ -15,7 +15,7 @@
 
 ### نصب
 ```bash
-pip install -r requirements.txt
+make init
 cp -n .env.example .env.dev
 export SIGNING_KEY_HEX=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
@@ -109,7 +109,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -c pytest.min.ini tests/refactor -q
 - خروجی گرفتن از تخصیص‌ها: `python -m src.tools.export_allocations_cli --output allocations.csv --format=csv --bom --crlf`; برای فایل XLSX فرمت را به `xlsx` تغییر دهید. در صورت نیاز به سازگاری کامل با Excel پیام هشدار `EXPORT_BOM_REQUIRED` چاپ می‌شود.
 
 ## نصب وابستگی‌های توسعه و pre-commit
-- برای فعال‌سازی هوک‌ها، یک‌بار `pip install -r requirements-dev.txt` و سپس `pre-commit install` را اجرا کنید؛ از این پس `pyupgrade` و `bandit` روی هر کامیت بررسی می‌شوند.
+- برای فعال‌سازی هوک‌ها، یک‌بار `make init` را اجرا کنید تا وابستگی‌ها از روی `constraints-dev.txt` نصب شوند و `pre-commit` به‌صورت خودکار فعال گردد؛ از این پس `pyupgrade` و `bandit` روی هر کامیت بررسی می‌شوند.
 
 ## PYTHONPATH Management
 - `setup.py` sets `PYTHONPATH` to the project root and updates `.env` for VS Code integrations.
@@ -143,7 +143,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -c pytest.min.ini tests/refactor -q
 - `make ci-checks` مجموعه کامل پوشش، Mypy(strict)، Bandit، اعتبارسنجی آرتیفکت‌ها و `post_migration_checks` را اجرا می‌کند و آستانه پوشش ۹۵٪ را enforced می‌نماید.
 - `make fault-tests` تنها تست‌های تزریق خطا را اجرا می‌کند تا شاخه‌های مربوط به تعارض پایگاه داده پوشش داده شوند.
 - `make static-checks` برای اجرای سریع Mypy و Bandit در جریان توسعه استفاده شود.
-- برای اجرای کامل گیت‌های استاتیک در محیط محلی، پیش از فراخوانی `make static-checks` دست‌کم یک‌بار `pip install -r requirements-dev.txt` را اجرا کنید تا Bandit و بسته‌های کمکی نصب شوند.
+- برای اجرای کامل گیت‌های استاتیک در محیط محلی، پیش از فراخوانی `make static-checks` دست‌کم یک‌بار `make init` را اجرا کنید تا Bandit و بسته‌های کمکی نصب شوند.
 - برای اجرای تست‌های UI در محیط محلی، در صورت نبود PySide6 یا کتابخانه‌های گرافیکی (libGL/mesa) می‌توانید آن‌ها را نصب کنید یا به پیام اسکیپ «محیط هدلس» اعتماد کنید؛ در حالت نصب‌شده، متغیر `QT_QPA_PLATFORM=offscreen` نیز مسیر اجرای بدون نمایشگر را فراهم می‌کند.
 - در محیط‌های بدون نیاز به رابط گرافیکی می‌توانید متغیر `UI_MINIMAL=1` را تنظیم کنید تا صفحات Qt به صورت خودکار غیرفعال شوند و تنها سرویس FastAPI + Swagger در دسترس بماند.
 - پس از هر مهاجرت دیتابیس، `make post-migration-checks` روی پایگاه داده موقت اجرا و در صورت هرگونه تغییر در قید UNIQUE یا الگوی شمارنده خطا می‌دهد.

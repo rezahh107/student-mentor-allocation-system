@@ -2,6 +2,7 @@
             ci-checks fault-tests static-checks post-migration-checks validate-artifacts gui-smoke \
             security-fix security-scan security test test-coverage test-coverage-summary test-legacy \
             automation-audit pii-scan pytest-json
+.PHONY: lock init verify
 
 PYTHON ?= python3
 PROJECT_ROOT := $(CURDIR)
@@ -134,3 +135,15 @@ fi'
 pytest-json:
         PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=$(PROJECT_ROOT) $(PYTHON) -m scripts.pytest_json_gate $(PYTEST_ARGS)
 
+# Deterministic dependency workflow
+lock:
+        PYTHONWARNINGS=error $(PYTHON) -m scripts.deps.ensure_lock --root $(PROJECT_ROOT) lock
+
+init:
+        PYTHONWARNINGS=error $(PYTHON) -m scripts.deps.ensure_lock --root $(PROJECT_ROOT) install
+        PYTHONWARNINGS=error $(PYTHON) -m pip install -e .
+        PYTHONWARNINGS=error $(PYTHON) -m pre_commit install
+
+verify:
+        PYTHONWARNINGS=error $(PYTHON) -m scripts.deps.ensure_lock --root $(PROJECT_ROOT) verify
+        PYTHONWARNINGS=error $(PYTHON) -m scripts.verify_env

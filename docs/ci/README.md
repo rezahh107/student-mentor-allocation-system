@@ -6,8 +6,7 @@
 
 1. وابستگی‌ها را نصب کنید:
    ```bash
-   python -m pip install --upgrade pip
-   pip install -r requirements.txt -r requirements-dev.txt
+   make init
    ```
 2. اجرای محلی ارکستریتور با گزارش Strict Scoring v2:
    ```bash

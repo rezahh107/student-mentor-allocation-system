@@ -5,10 +5,10 @@ from tools import reqs_doctor
 def test_missing_agents_md_fails_persian(doctor_env):
     repo = doctor_env.make_namespace("missing_agents")
     for name in (
-        "requirements.txt",
-        "requirements-dev.txt",
-        "requirements-test.txt",
-        "requirements-security.txt",
+        "requirements.in",
+        "requirements-dev.in",
+        "requirements-test.in",
+        "requirements-security.in",
         "requirements-ml.txt",
         "requirements-advanced.txt",
     ):

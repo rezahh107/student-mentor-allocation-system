@@ -34,7 +34,7 @@
 برای اجرا در محیط محلی:
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt bandit pytest-cov
+make init
 make static-checks
 make ci-checks
 COV_MIN=95 PYTEST_ARGS="-q --maxfail=1 -p pytest_cov --cov=sma --cov-report=term --cov-report=xml --cov-report=html" make test-coverage

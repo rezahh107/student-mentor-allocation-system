@@ -93,21 +93,29 @@ class EnvironmentDoctor:
                 print("✅ Added project root to PYTHONPATH")
 
         if any("Missing dependency" in issue for issue in self.issues):
-            requirements_file = Path("requirements.txt")
-            if requirements_file.exists():
-                print("📦 Installing missing dependencies...")
-                try:
-                    subprocess.run(
-                        [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
-                        check=True,
-                        capture_output=True,
-                    )  # فرمان pip ثابت و بدون shell است. # nosec B603
-                    print("✅ Installed base dependencies")
-                except subprocess.CalledProcessError as exc:
-                    print(f"❌ Failed to install dependencies: {exc}")
-                    return False
-            else:
-                print("⚠️ requirements.txt not found; cannot install missing dependencies automatically.")
+            print("📦 Installing dependencies via hashed constraints...")
+            ensure_lock_cmd = [
+                sys.executable,
+                "-m",
+                "scripts.deps.ensure_lock",
+                "--root",
+                project_root,
+                "install",
+            ]
+            try:
+                subprocess.run(ensure_lock_cmd, check=True, capture_output=True)
+                print("✅ constraints-dev.txt applied deterministically")
+            except subprocess.CalledProcessError as exc:
+                print("❌ نصب وابستگی‌ها بر اساس constraints-dev.txt با خطا روبه‌رو شد.")
+                print(exc.stderr or exc.stdout)
+                return False
+            editable_cmd = [sys.executable, "-m", "pip", "install", "--no-deps", "-e", project_root]
+            try:
+                subprocess.run(editable_cmd, check=True, capture_output=True)
+                print("✅ پروژه به صورت editable نصب شد")
+            except subprocess.CalledProcessError as exc:
+                print("❌ نصب editable با خطا روبه‌رو شد.")
+                print(exc.stderr or exc.stdout)
                 return False
 
         vscode_dir = Path(".vscode")

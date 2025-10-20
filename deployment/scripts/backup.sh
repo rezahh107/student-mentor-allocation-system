@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# REQUIRES: pip install -e .[dev] (AGENTS.md::8 Testing & CI Gates)
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
@@ -8,7 +9,6 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 
 DESTINATION="$1"
 shift

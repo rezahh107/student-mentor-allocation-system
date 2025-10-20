@@ -151,3 +151,62 @@ Examples (do not vary wording without approval):
 - [ ] Budgets met (export p95/mem); Pytest summary shows **Warnings=0**; evidence added.
 
 ---
+
+## 13) Debugging & RCA Framework
+
+When analyzing errors or performance issues, follow the **5D+ methodology**:
+
+### Diagnostic Layers (با شواهد دقیق)
+- **L1 Symptoms:** Exception type, message, stacktrace, frequency pattern
+- **L2 State:** Redis keys/TTLs, DB transactions, middleware execution order  
+- **L3 Timing:** Per-stage breakdown, bottlenecks, network/compute split
+- **L4 Environment:** CI vs local diffs, resources, dependency versions
+- **L5 Concurrency:** Race windows, thread conflicts, resource contention
+
+### Debug Helpers (اجباری در کد)
+
+```python
+def capture_debug_snapshot(label: str) -> dict:
+    """Comprehensive state for post-mortem analysis"""
+    return {
+        "meta": {"label": label, "timestamp": time.time()},
+        "redis": {k.decode(): redis_client.get(k) for k in redis_client.keys("*")[:50]},
+        "db": {"active": db.session.is_active, "dirty": list(db.session.dirty)},
+        "system": {"memory_mb": psutil.Process().memory_info().rss/1024/1024},
+        "middleware": get_middleware_execution_order()  # Custom function
+    }
+
+@pytest.fixture
+def debug_context():
+    before = capture_debug_snapshot("before")
+    yield before
+    if pytest.current_test.failed:
+        after = capture_debug_snapshot("after")
+        print(f"DEBUG STATE:\nBEFORE: {json.dumps(before, indent=2)}")
+        print(f"AFTER: {json.dumps(after, indent=2)}")
+
+```
+
+Reproduction Requirements
+Minimal case: Remove unnecessary complexity, focus on core issue
+Deterministic: No random failures, controlled timing with mocks
+Environment setup: Exact versions, configs, resource limits documented
+Concurrent safety: Test with threading.Barrier for simultaneous start
+Prevention Checklist
+[ ] Add monitoring/alerts for similar failure patterns
+[ ] Update documentation with known pitfalls and solutions
+[ ] Create regression test with comprehensive debug context
+[ ] Review related code for same anti-pattern
+Common Debug Scenarios
+Redis Timeouts:
+
+Capture: connection pool status, active connections, network latency
+Check: CI vs local Redis config, timeout values, concurrent load
+Middleware Order Issues:
+
+Verify: actual execution order via logging/tracing
+Test: each middleware in isolation and combined chain
+Persian/Excel Edge Cases:
+
+Capture: raw input bytes, normalization steps, validation results
+Test: with zero-width chars, mixed scripts, formula injection attempts

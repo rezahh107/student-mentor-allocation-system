@@ -18,17 +18,22 @@ pytest:
     - name: redis:7-alpine
       alias: redis
   script:
+    - export PIP_REQUIRE_HASHES=''
     - export PYTHONWARNINGS=default
-    - python -m pip install --upgrade pip
-    - pip install -r requirements.txt -r requirements-dev.txt
+    - python -m pip install -U pip wheel
+    - python -m scripts.ci.bootstrap_guard --root . --constraints constraints-dev.txt
+    - python -m scripts.deps.ensure_lock --root . install --attempts 3
+    - python -m scripts.deps.ensure_lock --root . verify
+    - python -m pip check
     - PYTHONPATH="$CI_PROJECT_DIR" make pii-scan
+    - export PYTHONWARNINGS=error
+    - export PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
+    - export PYTHONUTF8='1'
+    - export MPLBACKEND='Agg'
+    - export QT_QPA_PLATFORM='offscreen'
+    - export PYTHONDONTWRITEBYTECODE='1'
+    - python -m scripts.ci.ensure_ci_ready --root . --require pytest --require pytest_asyncio --persian
     - |
-      export PYTHONWARNINGS=error
-      export PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
-      export PYTHONUTF8='1'
-      export MPLBACKEND='Agg'
-      export QT_QPA_PLATFORM='offscreen'
-      export PYTHONDONTWRITEBYTECODE='1'
       # Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx
       # Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran
       # Evidence: tests/hygiene/test_prom_registry_reset.py::test_registry_reset_once

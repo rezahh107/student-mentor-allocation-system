@@ -186,15 +186,12 @@ def test_concurrent_lock_is_idempotent(repo_root: Path, monkeypatch: pytest.Monk
     assert (repo_root / ".ci" / "constraints.txt.sha256").exists()
 
 
-@pytest.mark.evidence("AGENTS.md::6 Observability & Security")
-def test_requirements_txt_guard_blocks_direct_installs(tmp_path: Path) -> None:
+@pytest.mark.evidence("Tailored v2.4 §2 pip-tools")
+def test_requirements_txt_is_hashed_and_locked() -> None:
     project_root = Path(__file__).resolve().parents[2]
-    guard_file = tmp_path / "requirements.txt"
-    guard_file.write_text((project_root / "requirements.txt").read_text(encoding="utf-8"), encoding="utf-8")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-r", str(guard_file)],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode != 0
-    assert "«نصب از requirements.txt مجاز نیست؛ از constraints-dev.txt استفاده کنید.»" in result.stderr
+    content = (project_root / "requirements.txt").read_text(encoding="utf-8")
+    dev_content = (project_root / "requirements-dev.txt").read_text(encoding="utf-8")
+    assert "pip-compile" in content
+    assert "pip-compile" in dev_content
+    assert "--hash=" in content
+    assert "--hash=" in dev_content

@@ -141,9 +141,13 @@ lock:
 
 init:
         PYTHONWARNINGS=error $(PYTHON) -m scripts.deps.ensure_lock --root $(PROJECT_ROOT) install
-        PYTHONWARNINGS=error $(PYTHON) -m pip install -e .
+        PYTHONWARNINGS=error $(PYTHON) -m scripts.ci.ensure_ci_ready --root $(PROJECT_ROOT) --require pytest --require pytest_asyncio --persian
         PYTHONWARNINGS=error $(PYTHON) -m pre_commit install
 
 verify:
         PYTHONWARNINGS=error $(PYTHON) -m scripts.deps.ensure_lock --root $(PROJECT_ROOT) verify
         PYTHONWARNINGS=error $(PYTHON) -m scripts.verify_env
+
+ci-install-dev:
+        PYTHONWARNINGS=error $(PYTHON) -m scripts.deps.ensure_lock --root $(PROJECT_ROOT) install
+        PYTHONWARNINGS=error $(PYTHON) -m scripts.ci.ensure_ci_ready --root $(PROJECT_ROOT) --require pytest --require pytest_asyncio --persian

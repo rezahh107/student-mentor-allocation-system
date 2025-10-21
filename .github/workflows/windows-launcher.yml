@@ -48,21 +48,28 @@ jobs:
             **/pyproject.toml
 
       - name: Install (constraints-aware, retry)
+        env:
+          CI_CORRELATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-          function Install-WithRetry([string]$Cmd,[int]$Max=3){ for($i=1;$i -le $Max;$i++){ try{ iex $Cmd; return } catch{ if($i -eq $Max){ throw } Start-Sleep -Seconds ([int][Math]::Pow(2,$i)) } } }
-          Install-WithRetry "python -m scripts.deps.ensure_lock --root . install --attempts 3"
-          Install-WithRetry "python -m pip install --no-deps -e ."
-          Install-WithRetry "python -m pip install pyinstaller==6.11.0"
-          python -m pip check
+          python -m scripts.deps.ensure_lock --root . install --attempts 3
+          python -m scripts.deps.ensure_lock --root . verify
+          python -m pip install -c constraints-dev.txt pyinstaller==6.11.0
           python -m pip list --format=json > artifacts-pip-list.json
+
+      - name: Preflight (pytest ready)
+        run: |
+          python -m scripts.ci.ensure_ci_ready --root . --require pytest --require pytest_asyncio --persian
 
       - name: Verify AGENTS spec tokens
         run: python scripts/verify_agents.py
 
       - name: Guard PYTHONPATH front-loading
         run: python scripts/guard_pythonpath.py
+
+      - name: Middleware order guard
+        run: python -m pytest tests/api/test_middleware_order.py -q -p pytest_asyncio
 
       - name: Shadowing guard tests
         run: python -m pytest tests/imports -q -p pytest_asyncio

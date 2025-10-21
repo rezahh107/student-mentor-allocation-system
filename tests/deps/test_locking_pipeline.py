@@ -78,22 +78,28 @@ def test_lock_generates_metadata(repo_root: Path, monkeypatch: pytest.MonkeyPatc
 def test_install_enforces_freeze(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write_requirements(repo_root)
     (repo_root / "constraints-dev.txt").write_text("pytest==8.4.2\n", encoding="utf-8")
+    (repo_root / "constraints.txt").write_text("fastapi==0.110.3\n", encoding="utf-8")
+    manager = DependencyManager(repo_root)
+    manager._write_metadata()
 
     executed: list[list[str]] = []
 
     def fake_run(cmd: list[str], **kwargs: Any) -> StubProcess:
         executed.append(cmd)
+        if cmd[1:3] == ["-m", "pip"] and cmd[-2:] == ["pip", "wheel"]:
+            return StubProcess(stdout="upgrade")
         if cmd[1:3] == ["-m", "pip"] and "freeze" in cmd:
             return StubProcess(stdout="pytest==8.4.2\n")
         if cmd[1:3] == ["-m", "pip"] and "check" in cmd:
             return StubProcess(stdout="")
         if cmd[1:3] == ["-m", "pip"] and "install" in cmd:
-            assert "--require-hashes" in cmd
+            assert "-c" in cmd
             assert str(repo_root / "constraints-dev.txt") in cmd
+            assert str(repo_root / "requirements-dev.in") in cmd
+            assert "-e" in cmd
             return StubProcess(stdout="install")
-        if cmd[1:3] == ["-m", "piptools"] and "sync" in cmd:
-            assert str(repo_root / "constraints-dev.txt") in cmd
-            return StubProcess(stdout="sync")
+        if cmd[1:3] == ["-m", "pip"] and "upgrade" not in cmd and "install" not in cmd:
+            return StubProcess(stdout="")
         return StubProcess(stdout="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)  # type: ignore[arg-type]
@@ -101,7 +107,14 @@ def test_install_enforces_freeze(repo_root: Path, monkeypatch: pytest.MonkeyPatc
     manager = DependencyManager(repo_root)
     manager.install()
 
-    assert any("pip" in " ".join(cmd) for cmd in executed)
+    commands = [" ".join(cmd) for cmd in executed]
+    assert any("pip install -c" in cmd for cmd in commands)
+    assert any("pip install -U pip wheel" in cmd for cmd in commands)
+    marker = repo_root / "reports" / "ci-install.json"
+    assert marker.exists()
+    payload = json.loads(marker.read_text(encoding="utf-8"))
+    assert payload["constraints"] == "constraints-dev.txt"
+    assert payload["manifest"] == "requirements-dev.in"
 
 
 @pytest.mark.evidence("AGENTS.md::3 Absolute Guardrails")
@@ -110,7 +123,14 @@ def test_verify_rejects_extras_conflict(repo_root: Path) -> None:
     manager = DependencyManager(repo_root)
     with pytest.raises(SystemExit) as exc:
         manager.verify()
-    assert PERSIAN_EXTRAS_CONFLICT.format(package="fastapi") in str(exc.value)
+    expected = PERSIAN_EXTRAS_CONFLICT.format(
+        package="fastapi",
+        base_source="requirements.in",
+        extras_source="requirements-dev.in",
+        base_spec="==0.110.3",
+        extras_spec=">=0.111",
+    )
+    assert expected in str(exc.value)
 
 
 @pytest.mark.evidence("AGENTS.md::3 Absolute Guardrails")
@@ -119,7 +139,14 @@ def test_verify_rejects_extras_shadowing_version(repo_root: Path) -> None:
     manager = DependencyManager(repo_root)
     with pytest.raises(SystemExit) as exc:
         manager.verify()
-    assert PERSIAN_EXTRAS_CONFLICT.format(package="fastapi") in str(exc.value)
+    expected = PERSIAN_EXTRAS_CONFLICT.format(
+        package="fastapi",
+        base_source="requirements.in",
+        extras_source="requirements-dev.in",
+        base_spec="==0.110.3",
+        extras_spec="==0.110.3",
+    )
+    assert expected in str(exc.value)
 
 
 def test_verify_allows_versionless_extras(repo_root: Path) -> None:

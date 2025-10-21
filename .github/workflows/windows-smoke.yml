@@ -62,13 +62,17 @@ jobs:
           if (-not (Test-Path ".venv\Scripts\python.exe")) { throw "venv failed" }
 
       - name: Install (constraints-aware, retry)
+        env:
+          CI_CORRELATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           & ".\.venv\Scripts\Activate.ps1"
-          function Install-WithRetry([string]$Cmd,[int]$Max=3){ for($i=1;$i -le $Max;$i++){ try{ iex $Cmd; return } catch{ if($i -eq $Max){ throw } Start-Sleep -Seconds ([int][Math]::Pow(2,$i)) } } }
-          Install-WithRetry "python -m scripts.deps.ensure_lock --root . install --attempts 3"
-          Install-WithRetry "python -m pip install --no-deps -e ."
+          python -m scripts.deps.ensure_lock --root . install --attempts 3
           python -m scripts.deps.ensure_lock --root . verify
-          python -m pip check
+
+      - name: Preflight (pytest ready)
+        run: |
+          & ".\.venv\Scripts\Activate.ps1"
+          python -m scripts.ci.ensure_ci_ready --root . --require pytest --require pytest_asyncio --persian
 
       - name: Verify AGENTS spec tokens
         run: |
@@ -79,6 +83,11 @@ jobs:
         run: |
           & ".\.venv\Scripts\Activate.ps1"
           python scripts/guard_pythonpath.py
+
+      - name: Middleware order guard
+        run: |
+          & ".\.venv\Scripts\Activate.ps1"
+          python -m pytest tests/api/test_middleware_order.py -q -p pytest_asyncio
 
       - name: Shadowing guard tests
         run: |

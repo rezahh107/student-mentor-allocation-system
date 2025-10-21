@@ -32,7 +32,7 @@ from windows_shared.config import (
     persist_launcher_config,
 )
 
-AGENTS_MISSING_MSG = "پروندهٔ AGENTS.md در ریشهٔ مخزن یافت نشد؛ لطفاً مطابق استاندارد agents.md اضافه کنید."
+AGENTS_MISSING_MSG = "«پروندهٔ AGENTS.md یافت نشد؛ لطفاً اضافه کنید.»"
 SERVICE_UNAVAILABLE_MSG = "راه‌اندازی سرویس ممکن نشد؛ لطفاً وضعیت سرویس پس‌زمینه را بررسی کنید."
 ALREADY_RUNNING_MSG = "برنامهٔ StudentMentorApp هم‌اکنون در حال اجراست."
 BACKEND_OPERATION = "backend_readiness"

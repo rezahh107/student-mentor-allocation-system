@@ -6,7 +6,15 @@ import re
 
 import importlib
 
-import pytest
+repo_root = pathlib.Path(__file__).resolve().parents[2]
+
+try:
+    import pytest
+except ModuleNotFoundError:
+    from scripts.ci.ensure_ci_ready import CiReadyGuard
+
+    CiReadyGuard(repo_root, ["pytest", "pytest_asyncio"], persian=True).run()
+    raise
 
 AGENTS_EVIDENCE = "AGENTS.md::3 Absolute Guardrails"
 

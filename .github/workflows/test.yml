@@ -75,11 +75,15 @@ jobs:
       - name: Install (constraints-aware, retry)
         env:
           CI_CORRELATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}
+          PIP_REQUIRE_HASHES: ''
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference='Stop'
+          python -m pip install -U pip wheel
+          python -m scripts.ci.bootstrap_guard --root . --constraints constraints-dev.txt
           python -m scripts.deps.ensure_lock --root . install --attempts 3
           python -m scripts.deps.ensure_lock --root . verify
+          python -m pip check
           python -m pip list --format=json > artifacts/pip-list-${{ matrix.python-version }}.json
 
       - name: Preflight (pytest ready)

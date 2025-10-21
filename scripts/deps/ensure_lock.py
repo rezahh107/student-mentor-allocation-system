@@ -12,12 +12,39 @@ from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Callable, Iterable, Optional, Sequence, Tuple, TYPE_CHECKING
 
-from packaging.requirements import Requirement
-from packaging.utils import canonicalize_name
-from packaging.version import InvalidVersion, Version
-from prometheus_client import CollectorRegistry, Counter, Gauge, write_to_textfile
+if TYPE_CHECKING:  # pragma: no cover - typing helper
+    from packaging.requirements import Requirement as _RequirementType
+    from packaging.specifiers import SpecifierSet as _SpecifierSet
+    from packaging.version import InvalidVersion as _InvalidVersionType
+    from packaging.version import Version as _VersionType
+
+try:  # pragma: no cover - optional dependency bootstrap
+    from prometheus_client import CollectorRegistry, Counter, Gauge, write_to_textfile
+except ModuleNotFoundError:  # pragma: no cover - fallback for bare environments
+    class _NullMetric:
+        def labels(self, *args: object, **kwargs: object) -> "_NullMetric":
+            return self
+
+        def inc(self, *args: object, **kwargs: object) -> None:
+            return None
+
+        def set(self, *args: object, **kwargs: object) -> None:
+            return None
+
+    class CollectorRegistry:  # type: ignore[override]
+        def __init__(self) -> None:
+            self._metrics: list[str] = []
+
+    def Counter(*args: object, **kwargs: object) -> _NullMetric:  # type: ignore[misc]
+        return _NullMetric()
+
+    def Gauge(*args: object, **kwargs: object) -> _NullMetric:  # type: ignore[misc]
+        return _NullMetric()
+
+    def write_to_textfile(path: str, registry: CollectorRegistry) -> None:  # type: ignore[override]
+        Path(path).write_text("# prometheus-client not installed\n", encoding="utf-8")
 
 
 def _bootstrap_sys_path() -> None:
@@ -53,8 +80,26 @@ PERSIAN_EXTRAS_CONFLICT = (
     "[requirements.in → {base_spec} از {base_source} | requirements-dev.in → {extras_spec} از {extras_source}] "
     "(Conflict: extras spec for {package} in {extras_source} vs base spec in {base_source})"
 )
+PERSIAN_GUARD_PACKAGING_MISSING = (
+    "«پیش‌نیازهای نگهبان (packaging) نصب نیست؛ ابتدا مرحلهٔ Install (constraints-only) را اجرا کنید.»"
+)
+PERSIAN_REQUIRE_HASHES_CONFLICT = (
+    "«حالت require-hashes با مسیر constraints-only ناسازگار است؛ یا متغیر PIP_REQUIRE_HASHES را خالی کنید، یا از فایل‌های requirements*.txt دارای هش استفاده کنید.»"
+)
+PERSIAN_GUARD_BOOTSTRAP_FAILED = "«نصب پیش‌نیازهای نگهبان ناموفق بود؛ گزارش CI را بررسی کنید.»"
 DEFAULT_RETRIES = 3
 MAX_INSTALL_SECONDS = 480
+
+
+@dataclass(frozen=True)
+class _PackagingBundle:
+    requirement_cls: type
+    canonicalize_name: Callable[[str], str]
+    version_cls: type
+    invalid_version_cls: type
+
+
+_PACKAGING_RESOURCES: Optional[_PackagingBundle] = None
 
 
 @dataclass(frozen=True)
@@ -62,11 +107,7 @@ class RequirementRecord:
     name: str
     raw: str
     source: Path
-    requirement: Requirement
-
-
-def _normalized(name: str) -> str:
-    return canonicalize_name(name)
+    requirement: Any
 
 
 def _iter_requirement_lines(path: Path) -> Iterable[str]:
@@ -78,23 +119,6 @@ def _iter_requirement_lines(path: Path) -> Iterable[str]:
             # Support -r includes and pip compile options; treat as metadata.
             continue
         yield stripped
-
-
-def _load_requirements(path: Path) -> list[RequirementRecord]:
-    records: list[RequirementRecord] = []
-    for raw in _iter_requirement_lines(path):
-        requirement = Requirement(raw)
-        records.append(
-            RequirementRecord(
-                name=_normalized(requirement.name),
-                raw=raw,
-                source=path,
-                requirement=requirement,
-            )
-        )
-    return records
-
-
 @contextmanager
 def _file_lock(lock_path: Path) -> Iterable[None]:
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -169,6 +193,7 @@ class DependencyManager:
         self.clock = tehran_clock()
         self.correlation_id = correlation_id or self._derive_correlation_id()
         self.registry = CollectorRegistry()
+        self._packaging_bundle: Optional[_PackagingBundle] = None
         self.install_attempts = Counter(
             "deps_install_attempts_total",
             "Total install attempts",
@@ -187,6 +212,11 @@ class DependencyManager:
             ["phase"],
             registry=self.registry,
         )
+        self.packaging_missing = Counter(
+            "guard_packaging_missing_total",
+            "Total guard packaging bootstrap failures",
+            registry=self.registry,
+        )
         self.log("init", stage="bootstrap")
 
     def log(self, event: str, **fields: object) -> None:
@@ -197,6 +227,58 @@ class DependencyManager:
             **fields,
         }
         print(json.dumps(payload, ensure_ascii=False))
+
+    def _get_packaging_bundle(self) -> _PackagingBundle:
+        if self._packaging_bundle is not None:
+            return self._packaging_bundle
+        global _PACKAGING_RESOURCES
+        if _PACKAGING_RESOURCES is None:
+            try:
+                from packaging.requirements import Requirement
+                from packaging.utils import canonicalize_name
+                from packaging.version import InvalidVersion, Version
+            except ModuleNotFoundError:
+                self._handle_packaging_missing()
+            else:
+                _PACKAGING_RESOURCES = _PackagingBundle(
+                    requirement_cls=Requirement,
+                    canonicalize_name=canonicalize_name,
+                    version_cls=Version,
+                    invalid_version_cls=InvalidVersion,
+                )
+        self._packaging_bundle = _PACKAGING_RESOURCES
+        return self._packaging_bundle
+
+    def _handle_packaging_missing(self) -> None:
+        self.packaging_missing.inc()
+        self.log("packaging_missing", outcome="fatal")
+        print(PERSIAN_GUARD_PACKAGING_MISSING, file=sys.stderr)
+        raise SystemExit(2)
+
+    def normalize_name(self, name: str) -> str:
+        bundle = self._get_packaging_bundle()
+        return bundle.canonicalize_name(name)
+
+    def _requirement_from_raw(self, raw: str) -> Any:
+        bundle = self._get_packaging_bundle()
+        return bundle.requirement_cls(raw)
+
+    @staticmethod
+    def _env_truthy(value: Optional[str]) -> bool:
+        if value is None:
+            return False
+        normalized = value.strip().lower()
+        return normalized not in {"", "0", "false", "no", "off"}
+
+    def _hash_enforced(self) -> bool:
+        return self._env_truthy(os.getenv("HASH_ENFORCED"))
+
+    def _assert_require_hashes_mode(self, *, hashed: bool) -> None:
+        env_value = os.getenv("PIP_REQUIRE_HASHES")
+        if self._env_truthy(env_value) and not hashed:
+            self.log("require_hashes_conflict", hashed=hashed, env=env_value)
+            print(PERSIAN_REQUIRE_HASHES_CONFLICT, file=sys.stderr)
+            raise SystemExit(2)
 
     def _derive_correlation_id(self) -> str:
         seed = (self.root / "requirements.in").read_bytes() + (
@@ -212,9 +294,23 @@ class DependencyManager:
             raise SystemExit(PERSIAN_AGENTS_MISSING)
 
     def collect_requirements(self) -> list[RequirementRecord]:
-        prod = _load_requirements(self.root / "requirements.in")
-        dev = _load_requirements(self.root / "requirements-dev.in")
+        prod = self._load_requirements(self.root / "requirements.in")
+        dev = self._load_requirements(self.root / "requirements-dev.in")
         return prod + dev
+
+    def _load_requirements(self, path: Path) -> list[RequirementRecord]:
+        records: list[RequirementRecord] = []
+        for raw in _iter_requirement_lines(path):
+            requirement = self._requirement_from_raw(raw)
+            records.append(
+                RequirementRecord(
+                    name=self.normalize_name(requirement.name),
+                    raw=raw,
+                    source=path,
+                    requirement=requirement,
+                )
+            )
+        return records
 
     def validate_duplicates(self, records: Sequence[RequirementRecord]) -> None:
         groups: defaultdict[str, list[RequirementRecord]] = defaultdict(list)
@@ -292,6 +388,10 @@ class DependencyManager:
                 raise SystemExit(PERSIAN_LOCK_MISSING)
 
             if not base_records or not extras_records:
+                # Allow identical specifications across manifests (e.g., runtime vs dev).
+                specs = {str(record.requirement.specifier) for record in package_records}
+                if len(specs) == 1:
+                    continue
                 # Two independent specifications for the same package are not allowed.
                 first, second = package_records[0], package_records[1]
                 self.log(
@@ -304,15 +404,19 @@ class DependencyManager:
                 )
                 raise SystemExit(PERSIAN_LOCK_MISSING)
 
-    @staticmethod
-    def _extract_major(req: Requirement) -> int | None:
-        if req.specifier:
-            for spec in req.specifier:
-                if spec.operator == "==":
-                    try:
-                        return Version(spec.version).major
-                    except InvalidVersion:
-                        return None
+    def _extract_major(self, req: Any) -> int | None:
+        bundle = self._get_packaging_bundle()
+        specifier = getattr(req, "specifier", None)
+        if not specifier:
+            return None
+        for spec in specifier:
+            operator = getattr(spec, "operator", None)
+            version = getattr(spec, "version", None)
+            if operator == "==" and version is not None:
+                try:
+                    return bundle.version_cls(version).major
+                except bundle.invalid_version_cls:
+                    return None
         return None
 
     def ensure_constraints_fresh(self) -> None:
@@ -468,10 +572,52 @@ class DependencyManager:
         return False
 
     # == install ==
+    def bootstrap_guard_packages(self, *, constraints: Path, packages: Sequence[str]) -> None:
+        self.assert_agents_present()
+        if not constraints.exists():
+            self.log("bootstrap_constraints_missing", constraint=str(constraints))
+            raise SystemExit(PERSIAN_LOCK_MISSING)
+        self.log(
+            "bootstrap_guard_start",
+            constraints=str(constraints),
+            packages=list(packages),
+        )
+        self._assert_require_hashes_mode(hashed=False)
+        cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-c",
+            str(constraints),
+            "--no-deps",
+            *packages,
+        ]
+        try:
+            self._run_pip_command(
+                cmd,
+                event="pip_guard_bootstrap",
+                attempt=1,
+                wait_seconds=0.0,
+            )
+        except subprocess.CalledProcessError as error:
+            self.log(
+                "bootstrap_guard_failed",
+                returncode=error.returncode,
+                stderr=error.stderr,
+            )
+            print(PERSIAN_GUARD_BOOTSTRAP_FAILED, file=sys.stderr)
+            raise SystemExit(2)
+        else:
+            self.log("bootstrap_guard_success", packages=list(packages))
+
     def install(self, *, dev: bool = True, attempts: int = DEFAULT_RETRIES) -> None:
         self.assert_agents_present()
         constraints = self.root / ("constraints-dev.txt" if dev else "constraints.txt")
-        manifest = self.root / ("requirements-dev.in" if dev else "requirements.in")
+        hashed_mode = self._hash_enforced()
+        manifest_name = "requirements-dev.txt" if dev else "requirements.txt"
+        fallback_manifest_name = "requirements-dev.in" if dev else "requirements.in"
+        manifest = self.root / (manifest_name if hashed_mode else fallback_manifest_name)
         if not constraints.exists():
             self.log("install_missing_constraints", constraint=str(constraints))
             raise SystemExit(PERSIAN_LOCK_MISSING)
@@ -479,6 +625,7 @@ class DependencyManager:
             self.log("install_missing_manifest", manifest=str(manifest))
             raise SystemExit(PERSIAN_LOCK_MISSING)
         self.ensure_constraints_fresh()
+        self._assert_require_hashes_mode(hashed=hashed_mode)
 
         upgrade_cmd = [
             sys.executable,
@@ -496,11 +643,23 @@ class DependencyManager:
             "install",
             "-c",
             str(constraints),
-            "-r",
-            str(manifest),
-            "-e",
-            ".[dev]" if dev else ".",
         ]
+        if hashed_mode:
+            install_cmd.extend(["--require-hashes", "-r", str(manifest)])
+        else:
+            install_cmd.extend(["-r", str(manifest), "-e", ".[dev]" if dev else "."])
+        editable_target = ".[dev]" if dev else "."
+        editable_cmd: Optional[list[str]] = None
+        if hashed_mode:
+            editable_cmd = [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--no-deps",
+                "-e",
+                editable_target,
+            ]
         attempts = max(1, attempts)
         success_attempt = None
         for attempt in range(1, attempts + 1):
@@ -522,6 +681,13 @@ class DependencyManager:
                     attempt=attempt,
                     wait_seconds=planned_wait,
                 )
+                if editable_cmd is not None:
+                    self._run_pip_command(
+                        editable_cmd,
+                        event="pip_editable",
+                        attempt=attempt,
+                        wait_seconds=planned_wait,
+                    )
                 status = "success"
                 if attempt > 1:
                     self.install_retries.labels(status="success").inc()
@@ -570,7 +736,7 @@ class DependencyManager:
         attempt: int,
         wait_seconds: float,
     ) -> None:
-        env = {**os.environ, "PYTHONWARNINGS": "default"}
+        env = {**os.environ, "PYTHONWARNINGS": "default", "PIP_REQUIRE_HASHES": ""}
         self.log(event, command=" ".join(cmd), attempt=attempt, wait_seconds=wait_seconds)
         result = subprocess.run(cmd, text=True, capture_output=True, env=env)
         if result.returncode != 0:
@@ -605,7 +771,7 @@ class DependencyManager:
         for line in freeze.stdout.splitlines():
             if not line or line.startswith("#"):
                 continue
-            name = canonicalize_name(line.split("==", 1)[0])
+            name = self.normalize_name(line.split("==", 1)[0])
             if name not in allowed:
                 self.log("freeze_drift", package=name)
                 raise SystemExit(PERSIAN_LOCK_MISSING)
@@ -617,7 +783,7 @@ class DependencyManager:
             if not stripped or stripped.startswith("#"):
                 continue
             if "==" in stripped and not stripped.startswith("--"):
-                name = canonicalize_name(stripped.split("==", 1)[0].strip())
+                name = self.normalize_name(stripped.split("==", 1)[0].strip())
                 allowed.add(name)
         return allowed
 

@@ -29,14 +29,19 @@ def test_install_and_preflight_precede_pytest() -> None:
             install_index = None
             preflight_index = None
             middleware_guard_seen = False
+            install_env_verified = False
+            pytest_indices: List[int] = []
             for idx, step in enumerate(steps):
                 run_command = step.get("run", "")
                 name = step.get("name", f"step-{idx}")
+                step_env = step.get("env", {})
                 if "Install (constraints-aware, retry)" in name:
                     install_index = idx
+                    install_env_verified = step_env.get("PIP_REQUIRE_HASHES") == ""
                 if "scripts.ci.ensure_ci_ready" in run_command:
                     preflight_index = idx
                 if "python -m pytest" in run_command:
+                    pytest_indices.append(idx)
                     assert install_index is not None, (
                         f"Install step missing before pytest in {workflow_path}:{job_name}:{name}"
                     )
@@ -48,9 +53,18 @@ def test_install_and_preflight_precede_pytest() -> None:
                     )
                     if "tests/api/test_middleware_order.py" in run_command:
                         middleware_guard_seen = True
+            debug_context = {
+                "workflow": str(workflow_path),
+                "job": job_name,
+                "pytest_indices": pytest_indices,
+                "install_index": install_index,
+                "preflight_index": preflight_index,
+                "install_env_verified": install_env_verified,
+            }
+            assert install_env_verified, f"PIP_REQUIRE_HASHES unset check failed: {debug_context}"
             assert middleware_guard_seen, (
-                f"Middleware guard missing in {workflow_path}:{job_name};"
-                " expected python -m pytest tests/api/test_middleware_order.py"
+                "Middleware guard missing; expected python -m pytest tests/api/test_middleware_order.py "
+                f"before suite → context={debug_context}"
             )
 
 

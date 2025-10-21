@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from packaging.utils import canonicalize_name
 from prometheus_client import CollectorRegistry, Counter, Gauge, write_to_textfile
 
 from scripts.deps.ensure_lock import (
@@ -60,7 +59,7 @@ class CiReadyGuard:
         self.manager.assert_agents_present()
         self._ensure_marker_present()
         self._ensure_constraints_fresh()
-        missing = tuple(sorted(self._missing_modules(), key=canonicalize_name))
+        missing = tuple(sorted(self._missing_modules(), key=self.manager.normalize_name))
         if missing:
             self.outcomes.labels(outcome="failure").inc()
             self._fail_modules(missing)

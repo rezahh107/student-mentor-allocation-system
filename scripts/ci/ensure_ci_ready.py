@@ -7,12 +7,11 @@ import sys
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, write_to_textfile
-
 from scripts.deps.ensure_lock import (
     DependencyManager,
     PERSIAN_AGENTS_MISSING,
     PERSIAN_LOCK_MISSING,
+    _load_prometheus_bundle,
     _atomic_write,
 )
 
@@ -38,14 +37,15 @@ class CiReadyGuard:
         self.metrics_path = metrics_path or root / "reports" / "ci-ready.prom"
         self.persian = persian
         self.manager = DependencyManager(root)
-        self.registry = CollectorRegistry()
-        self.outcomes = Counter(
+        self._prometheus_bundle = _load_prometheus_bundle()
+        self.registry = self._prometheus_bundle.registry_cls()
+        self.outcomes = self._prometheus_bundle.counter(
             "ci_ready_attempts_total",
             "Total CI readiness checks",
             ["outcome"],
             registry=self.registry,
         )
-        self.latency = Gauge(
+        self.latency = self._prometheus_bundle.gauge(
             "ci_ready_manifest_age_seconds",
             "Age delta between manifests and constraints",
             registry=self.registry,
@@ -146,7 +146,7 @@ class CiReadyGuard:
         self.manager.log("ci_ready_write_metrics", path=str(self.metrics_path))
         self.metrics_path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.metrics_path.with_suffix(self.metrics_path.suffix + ".part")
-        write_to_textfile(str(temp), self.registry)
+        self._prometheus_bundle.writer(str(temp), self.registry)
         _atomic_write(self.metrics_path, temp.read_bytes())
         temp.unlink(missing_ok=True)
 

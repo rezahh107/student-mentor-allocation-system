@@ -20,31 +20,52 @@ if TYPE_CHECKING:  # pragma: no cover - typing helper
     from packaging.version import InvalidVersion as _InvalidVersionType
     from packaging.version import Version as _VersionType
 
-try:  # pragma: no cover - optional dependency bootstrap
-    from prometheus_client import CollectorRegistry, Counter, Gauge, write_to_textfile
-except ModuleNotFoundError:  # pragma: no cover - fallback for bare environments
-    class _NullMetric:
-        def labels(self, *args: object, **kwargs: object) -> "_NullMetric":
-            return self
+    from prometheus_client import (  # type: ignore[unused-ignore]
+        CollectorRegistry as _CollectorRegistryType,
+        Counter as _CounterType,
+        Gauge as _GaugeType,
+        write_to_textfile as _write_to_textfile_type,
+    )
 
-        def inc(self, *args: object, **kwargs: object) -> None:
-            return None
 
-        def set(self, *args: object, **kwargs: object) -> None:
-            return None
+class _NullMetric:
+    def labels(self, *args: object, **kwargs: object) -> "_NullMetric":
+        return self
 
-    class CollectorRegistry:  # type: ignore[override]
-        def __init__(self) -> None:
-            self._metrics: list[str] = []
+    def inc(self, *args: object, **kwargs: object) -> None:
+        return None
 
-    def Counter(*args: object, **kwargs: object) -> _NullMetric:  # type: ignore[misc]
-        return _NullMetric()
+    def set(self, *args: object, **kwargs: object) -> None:
+        return None
 
-    def Gauge(*args: object, **kwargs: object) -> _NullMetric:  # type: ignore[misc]
-        return _NullMetric()
 
-    def write_to_textfile(path: str, registry: CollectorRegistry) -> None:  # type: ignore[override]
-        Path(path).write_text("# prometheus-client not installed\n", encoding="utf-8")
+class _NullCollectorRegistry:
+    def __init__(self) -> None:
+        self._metrics: list[str] = []
+
+
+def _null_counter(*args: object, **kwargs: object) -> _NullMetric:
+    return _NullMetric()
+
+
+def _null_gauge(*args: object, **kwargs: object) -> _NullMetric:
+    return _NullMetric()
+
+
+def _null_write_to_textfile(path: str, registry: object) -> None:
+    Path(path).write_text("# prometheus-client not installed\n", encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class _PrometheusBundle:
+    registry_cls: type
+    counter: Callable[..., Any]
+    gauge: Callable[..., Any]
+    writer: Callable[[str, object], None]
+
+
+_PROMETHEUS_BUNDLE: Optional[_PrometheusBundle] = None
+_OPTIONAL_WARNED: set[str] = set()
 
 
 def _bootstrap_sys_path() -> None:
@@ -66,10 +87,22 @@ def _bootstrap_sys_path() -> None:
 
 _bootstrap_sys_path()
 
-try:
-    from sma.repo_doctor.clock import tehran_clock
-except ModuleNotFoundError:  # pragma: no cover - fallback for minimal envs
-    from sma.core.clock import tehran_clock  # type: ignore
+try:  # pragma: no cover - minimal import fallback for clean environments
+    from sma.core.clock import (
+        DEFAULT_TIMEZONE,
+        DeterministicClock,
+        PERSIAN_TZDATA_MISSING,
+        try_zoneinfo,
+    )
+except ModuleNotFoundError:  # pragma: no cover
+    from sma.core.clock import (  # type: ignore
+        DEFAULT_TIMEZONE,
+        DeterministicClock,
+        PERSIAN_TZDATA_MISSING,
+        try_zoneinfo,
+    )
+
+from sma.core.system_clock import system_now as _system_now
 
 
 AGENTS_SENTINEL = "AGENTS.md"
@@ -80,8 +113,8 @@ PERSIAN_EXTRAS_CONFLICT = (
     "[requirements.in → {base_spec} از {base_source} | requirements-dev.in → {extras_spec} از {extras_source}] "
     "(Conflict: extras spec for {package} in {extras_source} vs base spec in {base_source})"
 )
-PERSIAN_GUARD_PACKAGING_MISSING = (
-    "«پیش‌نیازهای نگهبان (packaging) نصب نیست؛ ابتدا مرحلهٔ Install (constraints-only) را اجرا کنید.»"
+PERSIAN_GUARD_DEP_MISSING = (
+    "«پیش‌نیاز guard نصب نیست ({module}); ابتدا مرحلهٔ Install (constraints-only) را اجرا کنید.»"
 )
 PERSIAN_REQUIRE_HASHES_CONFLICT = (
     "«حالت require-hashes با مسیر constraints-only ناسازگار است؛ یا متغیر PIP_REQUIRE_HASHES را خالی کنید، یا از فایل‌های requirements*.txt دارای هش استفاده کنید.»"
@@ -108,6 +141,47 @@ class RequirementRecord:
     raw: str
     source: Path
     requirement: Any
+
+
+def _format_guard_dependency(module: str) -> str:
+    return PERSIAN_GUARD_DEP_MISSING.format(module=module)
+
+
+def _warn_optional_dependency(module: str) -> None:
+    if module in _OPTIONAL_WARNED:
+        return
+    _OPTIONAL_WARNED.add(module)
+    print(_format_guard_dependency(module), file=sys.stderr)
+
+
+def _fatal_dependency_missing(module: str) -> None:
+    print(_format_guard_dependency(module), file=sys.stderr)
+    raise SystemExit(2)
+
+
+def _load_prometheus_bundle() -> _PrometheusBundle:
+    global _PROMETHEUS_BUNDLE
+    if _PROMETHEUS_BUNDLE is not None:
+        return _PROMETHEUS_BUNDLE
+    try:  # pragma: no cover - import guard
+        from prometheus_client import CollectorRegistry, Counter, Gauge, write_to_textfile
+    except ModuleNotFoundError:  # pragma: no cover - clean runner fallback
+        _warn_optional_dependency("prometheus_client")
+        bundle = _PrometheusBundle(
+            registry_cls=_NullCollectorRegistry,
+            counter=_null_counter,
+            gauge=_null_gauge,
+            writer=_null_write_to_textfile,
+        )
+    else:
+        bundle = _PrometheusBundle(
+            registry_cls=CollectorRegistry,
+            counter=Counter,
+            gauge=Gauge,
+            writer=write_to_textfile,
+        )
+    _PROMETHEUS_BUNDLE = bundle
+    return bundle
 
 
 def _iter_requirement_lines(path: Path) -> Iterable[str]:
@@ -190,29 +264,34 @@ class DependencyManager:
     ) -> None:
         self.root = root
         self.metrics_path = metrics_path or root / "reports" / "deps.prom"
-        self.clock = tehran_clock()
+        resolution = try_zoneinfo(DEFAULT_TIMEZONE)
+        self.clock = DeterministicClock(timezone=resolution.tzinfo, now_factory=_system_now)
         self.correlation_id = correlation_id or self._derive_correlation_id()
-        self.registry = CollectorRegistry()
+        self._prometheus_bundle = _load_prometheus_bundle()
+        self.registry = self._prometheus_bundle.registry_cls()
         self._packaging_bundle: Optional[_PackagingBundle] = None
-        self.install_attempts = Counter(
+        self.tzdata_missing = resolution.tzdata_missing
+        if self.tzdata_missing:
+            self.log("tzdata_missing", detail=PERSIAN_TZDATA_MISSING)
+        self.install_attempts = self._prometheus_bundle.counter(
             "deps_install_attempts_total",
             "Total install attempts",
             ["status"],
             registry=self.registry,
         )
-        self.install_retries = Counter(
+        self.install_retries = self._prometheus_bundle.counter(
             "deps_install_retries_total",
             "Total install retries",
             ["status"],
             registry=self.registry,
         )
-        self.install_duration = Gauge(
+        self.install_duration = self._prometheus_bundle.gauge(
             "deps_install_runtime_seconds",
             "Duration of dependency installation phases",
             ["phase"],
             registry=self.registry,
         )
-        self.packaging_missing = Counter(
+        self.packaging_missing = self._prometheus_bundle.counter(
             "guard_packaging_missing_total",
             "Total guard packaging bootstrap failures",
             registry=self.registry,
@@ -252,8 +331,7 @@ class DependencyManager:
     def _handle_packaging_missing(self) -> None:
         self.packaging_missing.inc()
         self.log("packaging_missing", outcome="fatal")
-        print(PERSIAN_GUARD_PACKAGING_MISSING, file=sys.stderr)
-        raise SystemExit(2)
+        _fatal_dependency_missing("packaging")
 
     def normalize_name(self, name: str) -> str:
         bundle = self._get_packaging_bundle()
@@ -477,22 +555,49 @@ class DependencyManager:
                 self._run_compile(
                     input_path=self.root / "requirements.in",
                     output_path=self.root / "constraints.txt",
+                    generate_hashes=False,
                 )
                 self._run_compile(
                     input_path=self.root / "requirements-dev.in",
                     output_path=self.root / "constraints-dev.txt",
+                    generate_hashes=False,
                 )
                 self._write_metadata()
         self.write_metrics()
 
-    def _run_compile(self, *, input_path: Path, output_path: Path) -> None:
+    def lock_hashed(self) -> None:
+        """Regenerate hashed requirement manifests in addition to constraints."""
+
+        self.lock()
+        targets = (
+            (self.root / "requirements.in", self.root / "requirements.txt"),
+            (self.root / "requirements-dev.in", self.root / "requirements-dev.txt"),
+        )
+        for input_path, output_path in targets:
+            self._run_compile(
+                input_path=input_path,
+                output_path=output_path,
+                generate_hashes=True,
+            )
+        self.log(
+            "lock_hashed_complete",
+            targets=[str(target[1].relative_to(self.root)) for target in targets],
+        )
+        self.write_metrics()
+
+    def _run_compile(
+        self,
+        *,
+        input_path: Path,
+        output_path: Path,
+        generate_hashes: bool,
+    ) -> None:
         part_path = output_path.with_suffix(output_path.suffix + ".part")
         cmd = [
             sys.executable,
             "-m",
             "piptools",
             "compile",
-            "--generate-hashes",
             "--allow-unsafe",
             "--strip-extras",
             "--quiet",
@@ -500,6 +605,8 @@ class DependencyManager:
             str(part_path),
             str(input_path),
         ]
+        if generate_hashes:
+            cmd.insert(5, "--generate-hashes")
         self.log("pip_compile", command=" ".join(cmd))
         completed = subprocess.run(cmd, capture_output=True, text=True)
         if completed.returncode != 0:
@@ -800,7 +907,7 @@ class DependencyManager:
         metrics_lock = self.root / ".cache" / "deps.metrics.lock"
         with _file_lock(metrics_lock):
             temp = self.metrics_path.parent / f"{self.metrics_path.name}.part"
-            write_to_textfile(str(temp), self.registry)
+            self._prometheus_bundle.writer(str(temp), self.registry)
             _atomic_write(self.metrics_path, temp.read_bytes())
             temp.unlink(missing_ok=True)
 
@@ -815,6 +922,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("verify", help="Validate lockfiles without mutating state")
     sub.add_parser("lock", help="Regenerate constraints atomically")
+    sub.add_parser("lock-hashed", help="Regenerate hashed requirements manifests")
     install = sub.add_parser("install", help="Install dependencies using constraints")
     install.add_argument("--prod", action="store_true", help="Install only production dependencies")
     install.add_argument("--attempts", type=int, default=DEFAULT_RETRIES)
@@ -833,6 +941,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         manager.verify()
     elif args.command == "lock":
         manager.lock()
+    elif args.command == "lock-hashed":
+        manager.lock_hashed()
     elif args.command == "install":
         manager.install(dev=not args.prod, attempts=args.attempts)
     else:  # pragma: no cover - safeguard

@@ -10,15 +10,18 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone as _timezone, tzinfo
 import unicodedata
 from typing import Callable, Protocol, TypeVar
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from typing import NamedTuple
 
 from sma.core.system_clock import system_now as _system_now
 
 DEFAULT_TIMEZONE = "Asia/Tehran"
 _MAX_TZ_LENGTH = 255
+_TEHRAN_OFFSET = timedelta(hours=3, minutes=30)
 T = TypeVar("T")
 
 _PERSIAN_DIGIT_MAP = {ord(ch): str(idx) for idx, ch in enumerate("۰۱۲۳۴۵۶۷۸۹")}
@@ -58,8 +61,18 @@ def _normalise_timezone_name(tz_name: str | None) -> str:
     return canonical or candidate
 
 
-def validate_timezone(tz_name: str) -> ZoneInfo:
-    """Validate *tz_name* and return an instantiated :class:`ZoneInfo`."""
+class _TimezoneResolution(NamedTuple):
+    tzinfo: tzinfo
+    tzdata_missing: bool
+
+
+PERSIAN_TZDATA_MISSING = (
+    "CONFIG_TZ_INVALID: «بستهٔ tzdata نصب نیست؛ در ویندوز باید tzdata را در dev/runtime نصب کنید یا از fallback ثابت +03:30 استفاده می‌شود.»"
+)
+
+
+def try_zoneinfo(tz_name: str = DEFAULT_TIMEZONE) -> _TimezoneResolution:
+    """Attempt to resolve *tz_name* returning a fallback when tzdata is missing."""
 
     canonical = _normalise_timezone_name(tz_name)
     if canonical != DEFAULT_TIMEZONE:
@@ -67,11 +80,20 @@ def validate_timezone(tz_name: str) -> ZoneInfo:
             f"CONFIG_TZ_INVALID: «منطقهٔ زمانی مجاز فقط Asia/Tehran است؛ مقدار یافت‌شده: {canonical}»"
         )
     try:
-        return ZoneInfo(canonical)
-    except ZoneInfoNotFoundError as exc:  # pragma: no cover - defensive
-        raise ValueError(
-            f"CONFIG_TZ_INVALID: «منطقهٔ زمانی مجاز فقط Asia/Tehran است؛ مقدار یافت‌شده: {canonical}»"
-        ) from exc
+        tz = ZoneInfo(canonical)
+        return _TimezoneResolution(tzinfo=tz, tzdata_missing=False)
+    except ZoneInfoNotFoundError:  # pragma: no cover - fallback path
+        fallback = _timezone(_TEHRAN_OFFSET, name=canonical)
+        return _TimezoneResolution(tzinfo=fallback, tzdata_missing=True)
+
+
+def validate_timezone(tz_name: str, *, require_iana: bool = False) -> tzinfo:
+    """Validate *tz_name* and return tzinfo, guarding against missing tzdata."""
+
+    resolved = try_zoneinfo(tz_name)
+    if resolved.tzdata_missing and require_iana:
+        raise ValueError(PERSIAN_TZDATA_MISSING)
+    return resolved.tzinfo
 
 
 class Clock(ABC):
@@ -99,7 +121,8 @@ class Clock(ABC):
     ) -> "SystemClock":
         """Instantiate a :class:`SystemClock` for *tz_name*."""
 
-        return SystemClock(timezone=validate_timezone(tz_name), now_factory=now_factory or _system_now)
+        timezone = validate_timezone(tz_name)
+        return SystemClock(timezone=timezone, now_factory=now_factory or _system_now)
 
     @classmethod
     def for_tehran(cls, *, now_factory: Callable[[], datetime] | None = None) -> "SystemClock":
@@ -109,14 +132,27 @@ class Clock(ABC):
 
 
 @dataclass(slots=True)
-class SystemClock(Clock):
-    """Clock backed by the process wall clock."""
+class DeterministicClock(Clock):
+    """Clock that delegates to a supplied ``now_factory`` without wall clock coupling."""
 
-    timezone: ZoneInfo
-    now_factory: Callable[[], datetime] = field(default=_system_now, repr=False)
+    timezone: tzinfo
+    now_factory: Callable[[], datetime] = field(repr=False)
 
     def now(self) -> datetime:  # pragma: no branch - simple call
         return _coerce_aware(self.now_factory(), timezone=self.timezone)
+
+
+@dataclass(slots=True)
+class SystemClock(DeterministicClock):
+    """Clock backed by the process wall clock."""
+
+    def __init__(
+        self,
+        *,
+        timezone: tzinfo,
+        now_factory: Callable[[], datetime] | None = None,
+    ) -> None:
+        super().__init__(timezone=timezone, now_factory=now_factory or _system_now)
 
 
 @dataclass(slots=True)
@@ -175,7 +211,7 @@ class CallableClock(Clock):
     """Adapter turning a call-able into a deterministic :class:`Clock`."""
 
     func: Callable[[], datetime]
-    timezone: ZoneInfo = field(default_factory=lambda: validate_timezone(DEFAULT_TIMEZONE))
+    timezone: tzinfo = field(default_factory=lambda: validate_timezone(DEFAULT_TIMEZONE))
 
     def __init__(self, func: Callable[[], datetime], *, timezone: str = DEFAULT_TIMEZONE) -> None:
         object.__setattr__(self, "func", func)
@@ -195,9 +231,12 @@ __all__ = [
     "CallableClock",
     "Clock",
     "DEFAULT_TIMEZONE",
+    "DeterministicClock",
     "FrozenClock",
+    "PERSIAN_TZDATA_MISSING",
     "SupportsNow",
     "SystemClock",
+    "try_zoneinfo",
     "ensure_clock",
     "tehran_clock",
     "validate_timezone",

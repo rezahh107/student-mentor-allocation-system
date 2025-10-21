@@ -259,7 +259,7 @@ def load_agents_policy() -> str:
         if candidate.is_file():
             _agents_cache = candidate.read_text(encoding="utf-8")
             return _agents_cache
-    fail("پروندهٔ AGENTS.md در ریشهٔ مخزن یافت نشد؛ لطفاً مطابق استاندارد agents.md اضافه کنید.")
+    fail("«پروندهٔ AGENTS.md یافت نشد؛ لطفاً اضافه کنید.»")
     raise AssertionError("unreachable")
 
 

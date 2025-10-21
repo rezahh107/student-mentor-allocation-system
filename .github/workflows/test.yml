@@ -72,16 +72,19 @@ jobs:
             **/requirements*.txt
             **/pyproject.toml
 
-      - name: Install deps (constraints-aware, retry)
+      - name: Install (constraints-aware, retry)
+        env:
+          CI_CORRELATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference='Stop'
-          function Invoke-Retry([scriptblock]$Cmd,[int]$Max=3){ for($i=1;$i -le $Max;$i++){ try{ & $Cmd; return } catch{ if($i -eq $Max){ throw } Start-Sleep -Seconds ([int][Math]::Pow(2,$i)) } } }
-          Invoke-Retry { python -m scripts.deps.ensure_lock --root . install --attempts 3 }
-          Invoke-Retry { python -m pip install --no-deps -e . }
+          python -m scripts.deps.ensure_lock --root . install --attempts 3
           python -m scripts.deps.ensure_lock --root . verify
-          python -m pip check
           python -m pip list --format=json > artifacts/pip-list-${{ matrix.python-version }}.json
+
+      - name: Preflight (pytest ready)
+        run: |
+          python -m scripts.ci.ensure_ci_ready --root . --require pytest --require pytest_asyncio --persian
 
       - name: Verify AGENTS spec tokens
         run: python scripts/verify_agents.py
@@ -89,20 +92,23 @@ jobs:
       - name: Guard PYTHONPATH front-loading
         run: python scripts/guard_pythonpath.py
 
+      - name: Middleware order guard
+        run: python -m pytest tests/api/test_middleware_order.py -q -p pytest_asyncio
+
       - name: Shadowing guard tests
         run: python -m pytest tests/imports -q -p pytest_asyncio
 
       - name: Pre-flight info
         run: |
           python - <<'PY'
-import json, platform, sys, pathlib
-pathlib.Path('artifacts').mkdir(exist_ok=True)
-json.dump({
-  "python": sys.version,
-  "platform": platform.platform(),
-  "executable": sys.executable,
-}, open(f"artifacts/python-info-${{ env.MatrixPython || '${{ matrix.python-version }}' }}.json","w"), indent=2)
-PY
+          import json, platform, sys, pathlib
+          pathlib.Path('artifacts').mkdir(exist_ok=True)
+          json.dump({
+            "python": sys.version,
+            "platform": platform.platform(),
+            "executable": sys.executable,
+          }, open(f"artifacts/python-info-${{ env.MatrixPython || '${{ matrix.python-version }}' }}.json","w"), indent=2)
+          PY
 
       - name: Run tests (scoped, deterministic)
         env:

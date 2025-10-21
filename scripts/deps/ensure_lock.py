@@ -48,7 +48,11 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for minimal envs
 AGENTS_SENTINEL = "AGENTS.md"
 PERSIAN_LOCK_MISSING = "«قفل وابستگی‌ها منقضی/مفقود است؛ ابتدا دستور make lock را اجرا کنید.»"
 PERSIAN_AGENTS_MISSING = "«پروندهٔ AGENTS.md یافت نشد؛ لطفاً اضافه کنید.»"
-PERSIAN_EXTRAS_CONFLICT = "«نسخهٔ {package} در extras با پایه ناسازگار است؛ بازهٔ واحد تعیین کنید.»"
+PERSIAN_EXTRAS_CONFLICT = (
+    "«نسخهٔ {package} در extras با پایه ناسازگار است؛ بازهٔ واحد تعیین کنید.» "
+    "[requirements.in → {base_spec} از {base_source} | requirements-dev.in → {extras_spec} از {extras_source}] "
+    "(Conflict: extras spec for {package} in {extras_source} vs base spec in {base_source})"
+)
 DEFAULT_RETRIES = 3
 MAX_INSTALL_SECONDS = 480
 
@@ -248,7 +252,13 @@ class DependencyManager:
                             extras_spec=extras_spec_str,
                         )
                         raise SystemExit(
-                            PERSIAN_EXTRAS_CONFLICT.format(package=base_records[0].requirement.name)
+                            PERSIAN_EXTRAS_CONFLICT.format(
+                                package=base_records[0].requirement.name,
+                                base_source=str(base_records[0].source.relative_to(self.root)),
+                                extras_source=str(extra_record.source.relative_to(self.root)),
+                                base_spec=base_spec_str or "(unspecified)",
+                                extras_spec=extras_spec_str or "(unspecified)",
+                            )
                         )
                     if extras_spec and extras_spec_str == base_spec_str:
                         self.log(
@@ -260,7 +270,13 @@ class DependencyManager:
                             extras_spec=extras_spec_str,
                         )
                         raise SystemExit(
-                            PERSIAN_EXTRAS_CONFLICT.format(package=base_records[0].requirement.name)
+                            PERSIAN_EXTRAS_CONFLICT.format(
+                                package=base_records[0].requirement.name,
+                                base_source=str(base_records[0].source.relative_to(self.root)),
+                                extras_source=str(extra_record.source.relative_to(self.root)),
+                                base_spec=base_spec_str or "(unspecified)",
+                                extras_spec=extras_spec_str or "(unspecified)",
+                            )
                         )
 
             # Detect identical entries or conflicting duplicates without extras context
@@ -455,60 +471,115 @@ class DependencyManager:
     def install(self, *, dev: bool = True, attempts: int = DEFAULT_RETRIES) -> None:
         self.assert_agents_present()
         constraints = self.root / ("constraints-dev.txt" if dev else "constraints.txt")
+        manifest = self.root / ("requirements-dev.in" if dev else "requirements.in")
         if not constraints.exists():
             self.log("install_missing_constraints", constraint=str(constraints))
             raise SystemExit(PERSIAN_LOCK_MISSING)
-        cmd = [
+        if not manifest.exists():
+            self.log("install_missing_manifest", manifest=str(manifest))
+            raise SystemExit(PERSIAN_LOCK_MISSING)
+        self.ensure_constraints_fresh()
+
+        upgrade_cmd = [
             sys.executable,
             "-m",
             "pip",
             "install",
-            "--require-hashes",
-            "-r",
+            "-U",
+            "pip",
+            "wheel",
+        ]
+        install_cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-c",
             str(constraints),
+            "-r",
+            str(manifest),
+            "-e",
+            ".[dev]" if dev else ".",
         ]
         attempts = max(1, attempts)
+        success_attempt = None
         for attempt in range(1, attempts + 1):
             phase = f"install-{attempt}"
             planned_wait = self._deterministic_backoff(attempt)
-            self.log("pip_install", command=" ".join(cmd), attempt=attempt, wait_seconds=planned_wait)
+            self.install_duration.labels(phase).set(0)
             start = time.perf_counter()
-            env = {**os.environ, "PYTHONWARNINGS": "default"}
-            result = subprocess.run(cmd, text=True, capture_output=True, env=env)
-            elapsed = time.perf_counter() - start
-            status = "success" if result.returncode == 0 else "failure"
-            self.install_attempts.labels(status=status).inc()
-            self.install_duration.labels(phase).set(elapsed)
-            if result.returncode == 0:
+            status = "failure"
+            try:
+                self._run_pip_command(
+                    upgrade_cmd,
+                    event="pip_upgrade",
+                    attempt=attempt,
+                    wait_seconds=planned_wait,
+                )
+                self._run_pip_command(
+                    install_cmd,
+                    event="pip_install",
+                    attempt=attempt,
+                    wait_seconds=planned_wait,
+                )
+                status = "success"
                 if attempt > 1:
                     self.install_retries.labels(status="success").inc()
+                success_attempt = attempt
                 break
-            self.log(
-                "pip_install_failed",
-                attempt=attempt,
-                returncode=result.returncode,
-                stderr=result.stderr,
-            )
-            self.install_retries.labels(status="failure").inc()
-            if attempt == attempts:
-                raise SystemExit(PERSIAN_LOCK_MISSING)
-        self._sync_environment(constraints)
+            except subprocess.CalledProcessError as error:
+                status = "failure"
+                self.log(
+                    "pip_install_failed",
+                    attempt=attempt,
+                    returncode=error.returncode,
+                    stderr=error.stderr,
+                )
+                self.install_retries.labels(status="failure").inc()
+                if attempt == attempts:
+                    raise SystemExit(PERSIAN_LOCK_MISSING)
+            finally:
+                elapsed = time.perf_counter() - start
+                self.install_duration.labels(phase).set(elapsed)
+                self.install_attempts.labels(status=status).inc()
         self._post_install_validation(constraints)
+        self._write_install_marker(
+            constraints=constraints,
+            manifest=manifest,
+            attempts=success_attempt or 1,
+        )
         self.write_metrics()
 
-    def _sync_environment(self, constraints: Path) -> None:
-        sync_cmd = [
-            sys.executable,
-            "-m",
-            "piptools",
-            "sync",
-            str(constraints),
-        ]
-        self.log("pip_sync", command=" ".join(sync_cmd))
-        result = subprocess.run(sync_cmd, text=True, capture_output=True)
+    def _write_install_marker(self, *, constraints: Path, manifest: Path, attempts: int) -> None:
+        payload = {
+            "status": "success",
+            "constraints": constraints.name,
+            "manifest": manifest.name,
+            "attempts": attempts,
+            "generated_at": self.clock.now().isoformat(),
+            "correlation_id": self.correlation_id,
+        }
+        marker_path = self.root / "reports" / "ci-install.json"
+        _atomic_write(marker_path, json.dumps(payload, ensure_ascii=False))
+
+    def _run_pip_command(
+        self,
+        cmd: list[str],
+        *,
+        event: str,
+        attempt: int,
+        wait_seconds: float,
+    ) -> None:
+        env = {**os.environ, "PYTHONWARNINGS": "default"}
+        self.log(event, command=" ".join(cmd), attempt=attempt, wait_seconds=wait_seconds)
+        result = subprocess.run(cmd, text=True, capture_output=True, env=env)
         if result.returncode != 0:
-            self.log("pip_sync_failed", stderr=result.stderr)
-            raise SystemExit(PERSIAN_LOCK_MISSING)
+            raise subprocess.CalledProcessError(
+                result.returncode,
+                cmd,
+                output=result.stdout,
+                stderr=result.stderr,
+            )
 
     def _deterministic_backoff(self, attempt: int) -> float:
         seed = f"{self.correlation_id}:{attempt}".encode("utf-8")
@@ -518,11 +589,9 @@ class DependencyManager:
         return round(base + jitter, 6)
 
     def _post_install_validation(self, constraints: Path) -> None:
-        check = subprocess.run(
-            [sys.executable, "-m", "pip", "check"],
-            text=True,
-            capture_output=True,
-        )
+        check_cmd = [sys.executable, "-m", "pip", "check"]
+        self.log("pip_check", command=" ".join(check_cmd))
+        check = subprocess.run(check_cmd, text=True, capture_output=True)
         if check.returncode != 0:
             self.log("pip_check_failed", stderr=check.stderr)
             raise SystemExit(PERSIAN_LOCK_MISSING)

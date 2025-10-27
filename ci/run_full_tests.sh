@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 rm -rf test-results htmlcov
 mkdir -p test-results
 
-export PYTEST_DISABLE_PLUGIN_AUTOLOAD=0
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
 export PYTHONWARNINGS=default
 export PYTHONHASHSEED=0
 

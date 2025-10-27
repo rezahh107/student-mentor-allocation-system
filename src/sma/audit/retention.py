@@ -187,7 +187,7 @@ class AuditArchiver:
         window = self._window(month_key)
         csv_path = self._artifact_path(window, suffix=".csv")
         json_path = self._artifact_path(window, suffix=".json")
-        manifest_path = self._artifact_path(window, name="audit_archive_manifest.json")
+        manifest_path = self._artifact_path(window, name="archive_manifest.json")
         rid = f"audit-archive-{month_key}"
         self._cleanup_parts(window)
 
@@ -708,7 +708,7 @@ class AuditRetentionEnforcer:
 
     def _verify_archive(self, entry: RetentionPlanEntry) -> bool:
         window = self._archiver._window(entry.month_key)
-        manifest_path = self._archiver._artifact_path(window, name="audit_archive_manifest.json")
+        manifest_path = self._archiver._artifact_path(window, name="archive_manifest.json")
         if not manifest_path.exists():
             return False
         payload = json.loads(manifest_path.read_text("utf-8"))

@@ -1,10 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
+<section class="summary">
+    <p>
+        نقش کاربر: <strong>{{ actor.role }}</strong>
+        {% if center_scope %}
+        | مرکز مجاز: <strong>{{ center_scope }}</strong>
+        {% endif %}
+    </p>
+</section>
 <div class="placeholder" hx-get="/api/exports" hx-trigger="load" hx-swap="innerHTML">
     لیست خروجی‌ها به زودی نمایش داده می‌شود.
+    {% if is_admin %}
     <button id="exporter-trigger" hx-get="/api/exports/csv" hx-target="#export-status" hx-swap="innerHTML">
         دانلود خروجی CSV امن برای اکسل
     </button>
+    {% else %}
+    <p class="notice">دسترسی فقط برای مرکز تعیین‌شده فعال است.</p>
+    {% endif %}
     <div id="export-status" aria-live="polite"></div>
 </div>
 {% endblock %}

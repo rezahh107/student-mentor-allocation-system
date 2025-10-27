@@ -13,6 +13,15 @@ else:  # pragma: no cover
 
 
 STUB_ENABLED = xdist is None
+STUB_ACTIVE = STUB_ENABLED
+
+
+__all__ = [
+    "pytest_addoption",
+    "pytest_configure",
+    "STUB_ENABLED",
+    "STUB_ACTIVE",
+]
 
 
 def pytest_addoption(parser):  # pragma: no cover - exercised via integration

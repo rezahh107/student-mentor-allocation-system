@@ -7,15 +7,18 @@ from fastapi.responses import JSONResponse
 def install_error_handlers(app) -> None:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
+        detail = exc.detail
+        if isinstance(detail, dict) and "fa_error_envelope" in detail:
+            payload = detail
+        else:
+            message = detail if isinstance(detail, str) and detail else "درخواست با خطای مشخص روبرو شد."
+            payload = {
                 "fa_error_envelope": {
                     "code": getattr(exc, "code", "HTTP_ERROR"),
-                    "message": "درخواست با خطای مشخص روبرو شد.",
+                    "message": message,
                 }
-            },
-        )
+            }
+        return JSONResponse(status_code=exc.status_code, content=payload)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):

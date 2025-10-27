@@ -25,9 +25,25 @@ EVIDENCE_REGISTRY: Mapping[str, Sequence[str]] = {
         "tests/obs/test_upload_export_metrics_behavior.py::test_export_metrics_track_phases_and_counts",
         "tests/exports/test_atomic_finalize.py::test_atomic_rename",
     ),
+    "AGENTS.md::6) Observability & Security — Auth & Metrics": (
+        "tests/obs/test_auth_and_audit_metrics.py::test_auth_and_audit_metrics",
+        "tests/security/test_metrics_token_guard.py::test_metrics_requires_bearer_token",
+    ),
     "AGENTS.md::4 Domain Rules": (
         "tests/domain/test_validate_registration.py::test_validation_rules_raise",
         "tests/domain/test_phase6_counters_rules.py::test_validate_counter_accepts_valid_samples",
+    ),
+    "AGENTS.md::9) RBAC, Audit & Retention — RBAC Enforcement": (
+        "tests/rbac/test_admin_vs_manager.py::test_manager_limited_to_scope",
+        "tests/rbac/test_ssr_enforcement.py::test_manager_ui_hides_admin_controls",
+    ),
+    "AGENTS.md::9) RBAC, Audit & Retention — Signed URLs": (
+        "tests/security/test_signed_url_downloads.py::test_signed_download_rejects_tampered_signature",
+        "tests/security/test_kid_rotation.py::test_rotated_key_allows_new_signature",
+    ),
+    "AGENTS.md::9) RBAC, Audit & Retention — Audit Archives": (
+        "tests/audit/test_append_only_events.py::test_updates_are_rejected",
+        "tests/audit/test_monthly_archives.py::test_archive_manifest_contains_monthly_summary",
     ),
     "Metrics: uploads_total/upload_errors labels": (
         "tests/obs/test_upload_export_metrics_behavior.py::test_upload_metrics_increment_and_errors_label_cardinality",
@@ -70,7 +86,18 @@ EVIDENCE_REGISTRY: Mapping[str, Sequence[str]] = {
         "tests/state/test_state_hygiene_autouse.py::test_prometheus_registry_starts_clean",
     ),
 }
-EVIDENCE_DIGEST = "0f71269dd5ce32276ff1bf21a4a9d1ec"
+EVIDENCE_DIGEST = "2ff731e7f30299ba48d80622773d5421"
+
+REQUIRED_AGENTS_PREFIXES: tuple[str, ...] = (
+    "AGENTS.md::6) Observability & Security",
+    "AGENTS.md::9) RBAC, Audit & Retention — RBAC Enforcement",
+    "AGENTS.md::9) RBAC, Audit & Retention — Signed URLs",
+    "AGENTS.md::9) RBAC, Audit & Retention — Audit Archives",
+)
+
+PERSIAN_EVIDENCE_SECTION_MISSING = (
+    "«نگاشت شواهد ناقص است؛ برای بخش‌های RBAC، پیوند امضاشده، بایگانی حسابرسی و مشاهده‌پذیری حداقل یک مدخل AGENTS.md:: ثبت کنید.»"
+)
 
 _gui_in_scope = False
 _agents_cache: Optional[str] = None
@@ -289,6 +316,17 @@ def validate_evidence_registry() -> None:
         fail("نقشهٔ شواهد با نسخهٔ منجمد هم‌خوانی ندارد.")
     if not any(key.startswith("AGENTS.md::") for key in EVIDENCE_REGISTRY):
         fail("حداقل یک مورد AGENTS.md:: در نقشهٔ شواهد لازم است.")
+
+    ensure_required_agents_sections(EVIDENCE_REGISTRY)
+
+
+def ensure_required_agents_sections(evidence: Mapping[str, Sequence[str]]) -> None:
+    missing: list[str] = []
+    for prefix in REQUIRED_AGENTS_PREFIXES:
+        if not any(key.startswith(prefix) for key in evidence):
+            missing.append(prefix)
+    if missing:
+        fail(PERSIAN_EVIDENCE_SECTION_MISSING)
 
 
 def build_axes(gui_in_scope: bool) -> MutableMapping[str, AxisState]:

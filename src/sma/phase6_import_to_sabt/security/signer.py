@@ -28,13 +28,13 @@ class SignatureError(Exception):
 @dataclass(frozen=True)
 class SignedURLComponents:
     path: str
-    signed: str
+    token_id: str
     kid: str
-    exp: int
-    sig: str
+    expires: int
+    signature: str
 
     def as_query(self) -> Mapping[str, str]:
-        return {"signed": self.signed, "kid": self.kid, "exp": str(self.exp), "sig": self.sig}
+        return {"signature": self.signature, "expires": str(self.expires), "kid": self.kid}
 
 
 class SigningKeySet:
@@ -95,31 +95,37 @@ class DualKeySigner(SignedURLProvider):
         signature = self._sign(active.secret, canonical)
         encoded_path = base64.urlsafe_b64encode(normalized_path.encode("utf-8")).decode("utf-8").rstrip("=")
         self._metrics.download_signed_total.labels(outcome="issued").inc()
-        return SignedURLComponents(path=normalized_path, signed=encoded_path, kid=active.kid, exp=expires_at, sig=signature)
+        return SignedURLComponents(
+            path=normalized_path,
+            token_id=encoded_path,
+            kid=active.kid,
+            expires=expires_at,
+            signature=signature,
+        )
 
     def sign(self, file_path: str, expires_in: int = 3600) -> str:
         components = self.issue(file_path, ttl_seconds=expires_in)
         return (
-            f"{self._base_path}?signed={components.signed}&kid={components.kid}"
-            f"&exp={components.exp}&sig={components.sig}"
+            f"{self._base_path}/{components.token_id}?signature={components.signature}"
+            f"&expires={components.expires}&kid={components.kid}"
         )
 
     def verify_components(
         self,
         *,
-        signed: str,
+        token_id: str,
         kid: str,
-        exp: int,
-        sig: str,
+        expires: int,
+        signature: str,
         now: datetime | None = None,
     ) -> str:
         try:
-            path = self._decode_path(signed)
+            path = self._decode_path(token_id)
         except SignatureError as exc:
             self._metrics.download_signed_total.labels(outcome=exc.reason).inc()
             raise
         now_ts = int((now or self._clock.now()).timestamp())
-        if exp <= now_ts:
+        if expires <= now_ts:
             self._metrics.download_signed_total.labels(outcome="expired").inc()
             raise SignatureError("لینک دانلود منقضی شده است.", reason="expired")
         if kid not in self._keys.allowed_for_verification():
@@ -129,9 +135,9 @@ class DualKeySigner(SignedURLProvider):
         if key is None:
             self._metrics.download_signed_total.labels(outcome="unknown_kid").inc()
             raise SignatureError("کلید امضا ناشناخته است.", reason="unknown_kid")
-        canonical = self._canonical("GET", path, {}, exp)
+        canonical = self._canonical("GET", path, {}, expires)
         expected = self._sign(key.secret, canonical)
-        if not hmac.compare_digest(expected, sig):
+        if not hmac.compare_digest(expected, signature):
             self._metrics.download_signed_total.labels(outcome="forged").inc()
             raise SignatureError("توکن نامعتبر است.", reason="signature")
         self._metrics.download_signed_total.labels(outcome="ok").inc()
@@ -140,20 +146,20 @@ class DualKeySigner(SignedURLProvider):
     def verify(self, url: str, *, now: datetime | None = None) -> bool:
         parsed = urlparse(url)
         query = parse_qs(parsed.query)
-        signed = query.get("signed", [None])[0]
+        token_id = query.get("signed", [None])[0] or query.get("token", [None])[0]
         kid = query.get("kid", [None])[0]
-        exp_text = query.get("exp", [None])[0]
-        sig = query.get("sig", [None])[0]
-        if not signed or not kid or not exp_text or not sig:
+        expires_text = query.get("expires", [None])[0] or query.get("exp", [None])[0]
+        sig = query.get("signature", [None])[0] or query.get("sig", [None])[0]
+        if not token_id or not kid or not expires_text or not sig:
             self._metrics.download_signed_total.labels(outcome="malformed").inc()
             return False
         try:
-            exp = int(exp_text)
+            expires = int(expires_text)
         except ValueError:
             self._metrics.download_signed_total.labels(outcome="malformed").inc()
             return False
         try:
-            self.verify_components(signed=signed, kid=kid, exp=exp, sig=sig, now=now)
+            self.verify_components(token_id=token_id, kid=kid, expires=expires, signature=sig, now=now)
         except SignatureError:
             return False
         return True

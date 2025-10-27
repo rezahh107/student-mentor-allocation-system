@@ -4,13 +4,17 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import os
 import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Protocol, TypeVar
 
 from sma.core.clock import Clock, ensure_clock
 
-from redis.asyncio import Redis
+try:  # pragma: no cover - optional dependency
+    from redis.asyncio import Redis as _AsyncRedis  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - optional path
+    _AsyncRedis = None  # type: ignore
 
 from .observability import emit_redis_retry_exhausted, get_metric
 
@@ -62,10 +66,28 @@ class RedisLike(Protocol):
     async def flushdb(self) -> None: ...
 
 
-def create_redis_client(url: str) -> Redis:
-    """Instantiate an asyncio Redis client from URL."""
+def _fake_redis_namespace() -> str:
+    explicit = os.getenv("SMA_FAKE_REDIS_NAMESPACE")
+    if explicit:
+        return explicit
+    try:  # pragma: no cover - imported lazily for test environments
+        from sma.testing.state import get_test_namespace
+    except Exception:
+        return "sma:test:fakeredis"
+    return get_test_namespace()
 
-    return Redis.from_url(url, encoding="utf-8", decode_responses=False)
+
+def create_redis_client(url: str) -> RedisLike:
+    """Instantiate an asyncio Redis client or a deterministic fake."""
+
+    use_fake = os.getenv("SMA_TEST_FAKE_REDIS") == "1"
+    if not use_fake and _AsyncRedis is not None:
+        return _AsyncRedis.from_url(url, encoding="utf-8", decode_responses=False)
+
+    from sma.testing.fake_redis import AsyncFakeRedis
+
+    namespace = _fake_redis_namespace()
+    return AsyncFakeRedis(namespace=namespace)
 
 
 @dataclass(slots=True)

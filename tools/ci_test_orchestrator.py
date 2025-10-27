@@ -325,6 +325,19 @@ class PytestRunner:
         summary, found = parse_pytest_summary_extended(captured)
         if not found:
             raise RuntimeError("Pytest summary not found in output. Use -vv for diagnostics.")
+        summary_path = Path(os.environ.get("PYTEST_SUMMARY_PATH", "reports/pytest-summary.txt"))
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_line = (
+            "= "
+            f"{summary.get('passed', 0)} passed, "
+            f"{summary.get('failed', 0)} failed, "
+            f"{summary.get('skipped', 0)} skipped, "
+            f"{summary.get('xfailed', 0)} xfailed, "
+            f"{summary.get('xpassed', 0)} xpassed, "
+            f"{summary.get('errors', 0)} errors, "
+            f"{summary.get('warnings', 0)} warnings ="
+        )
+        summary_path.write_text(summary_line + "\n", encoding="utf-8")
         self.logger.info("pytest.finish", returncode=process.returncode, summary=summary)
         return PytestResult(returncode=process.returncode, summary=summary, tail=list(tail))
 

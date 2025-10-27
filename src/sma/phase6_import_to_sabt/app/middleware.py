@@ -427,24 +427,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         request.state.middleware_chain = getattr(request.state, "middleware_chain", []) + ["Auth"]
         handle = self._timer.start()
-        if request.url.path in {"/healthz", "/readyz", "/download"}:
+        path = request.url.path
+        if path in {"/healthz", "/readyz", "/download", "/metrics"} or path.startswith("/downloads/"):
             duration = handle.elapsed()
             self._metrics.observe_auth(duration)
             return await call_next(request)
 
         raw_auth = request.headers.get("Authorization")
-        header = normalize_token(raw_auth)
-        metrics_header = normalize_token(request.headers.get("X-Metrics-Token"))
-        ensure_no_control_chars([header or "", metrics_header or ""])
+        ensure_no_control_chars([raw_auth or ""])
         token_value = ""
-        allow_metrics = request.url.path == "/metrics"
-        if allow_metrics and metrics_header:
-            token_value = metrics_header
-        elif header.startswith("Bearer "):
-            token_value = header.split(" ", 1)[1].strip()
+        if raw_auth:
+            prefix, _, candidate = raw_auth.strip().partition(" ")
+            if prefix.lower() == "bearer" and candidate:
+                token_value = normalize_token(candidate)
 
         try:
-            actor = self._tokens.authenticate(token_value, allow_metrics=allow_metrics)
+            actor = self._tokens.authenticate(token_value, allow_metrics=False)
         except AuthorizationError as exc:
             duration = handle.elapsed()
             self._metrics.observe_auth(duration)
@@ -459,7 +457,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "reason": exc.reason,
                 },
             )
-            status = 401 if exc.reason != "scope_denied" else 403
+            status = 401 if exc.reason not in {"scope_denied", "metrics_only"} else 403
             return JSONResponse(
                 status_code=status,
                 content={

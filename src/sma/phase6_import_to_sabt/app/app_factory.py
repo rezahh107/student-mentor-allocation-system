@@ -10,7 +10,7 @@ from typing import Mapping
 
 ZERO_WIDTH = {"\u200c", "\u200d", "\ufeff", "\u2060"}
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
@@ -37,8 +37,13 @@ from sma.phase6_import_to_sabt.download_api import (
 )
 from sma.phase6_import_to_sabt.obs.metrics import ServiceMetrics, build_metrics, render_metrics
 from sma.phase6_import_to_sabt.observability import MetricsCollector, profile_endpoint, trace_span
+from sma.phase6_import_to_sabt.security import AuthenticatedActor
 from sma.phase6_import_to_sabt.security.config import AccessConfigGuard, ConfigGuardError, SigningKeyDefinition, TokenDefinition
-from sma.phase6_import_to_sabt.security.rbac import TokenRegistry
+from sma.phase6_import_to_sabt.security.rbac import (
+    AuthorizationError,
+    TokenRegistry,
+    enforce_center_scope,
+)
 from sma.phase6_import_to_sabt.security.signer import DualKeySigner, SignatureError, SigningKeySet
 from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 from sma.phase6_import_to_sabt.app.probes import AsyncProbe, ProbeResult
@@ -77,7 +82,7 @@ async def _run_probe(name: str, probe: AsyncProbe, timeout: float) -> ProbeResul
 
 
 def _build_templates() -> Jinja2Templates:
-    templates_dir = resources.files("phase6_import_to_sabt").joinpath("templates")
+    templates_dir = resources.files("sma.phase6_import_to_sabt").joinpath("templates")
     return Jinja2Templates(directory=str(templates_dir))
 
 
@@ -163,6 +168,27 @@ def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
         app.add_middleware(middleware_cls, **kwargs)
     app.add_middleware(MetricsMiddleware, metrics=container.metrics, timer=container.timer)
     app.add_middleware(RequestLoggingMiddleware, diagnostics=lambda: getattr(app.state, "diagnostics", None))
+
+
+def _require_actor(request: Request, *, roles: set[str] | None = None) -> AuthenticatedActor:
+    actor = getattr(request.state, "actor", None)
+    if actor is None:
+        raise HTTPException(status_code=401, detail="درخواست نامعتبر است؛ احراز هویت انجام نشد.")
+    if roles is not None and actor.role not in roles:
+        raise HTTPException(
+            status_code=403,
+            detail="دسترسی مجاز نیست؛ نقش/حوزهٔ شما این عملیات را پشتیبانی نمی‌کند.",
+        )
+    return actor
+
+
+def _base_ui_context(title: str, actor: AuthenticatedActor) -> dict[str, object]:
+    return {
+        "title": title,
+        "actor": actor,
+        "is_admin": actor.role == "ADMIN",
+        "center_scope": actor.center_scope,
+    }
 
 
 def create_application(
@@ -252,7 +278,8 @@ def create_application(
         fallback_token = service_token or "local-service-token"
         tokens.append(TokenDefinition(fallback_token, "ADMIN", None, False))
 
-    token_registry = TokenRegistry(tokens)
+    jwt_secret = normalize_token(config.auth.service_token) or None
+    token_registry = TokenRegistry(tokens, jwt_secret=jwt_secret, clock=clock)
 
     signing_keys = list(access.signing_keys) if access else []
     if not signing_keys:
@@ -320,6 +347,8 @@ def create_application(
     app.state.download_metrics = download_metrics
     app.state.metrics_collector = metrics_collector
     app.state.signature_security = signature_security
+    app.state.download_signer = signer
+    app.state.service_metrics = metrics
 
     def _legacy_forbidden(
         message: str,
@@ -380,20 +409,20 @@ def create_application(
     )
     app.include_router(download_router)
 
-    @app.get("/download")
+    @app.get("/downloads/{token_id}")
     async def download_endpoint(
-        signed: str,
+        token_id: str,
+        signature: str,
+        expires: int,
         kid: str,
-        exp: int,
-        sig: str,
         request: Request,
     ) -> Response:
         try:
             relative_path = container.download_signer.verify_components(
-                signed=signed,
+                token_id=token_id,
                 kid=kid,
-                exp=exp,
-                sig=sig,
+                expires=expires,
+                signature=signature,
                 now=container.clock.now(),
             )
         except SignatureError as exc:
@@ -402,7 +431,7 @@ def create_application(
                 content={
                     "fa_error_envelope": {
                         "code": "DOWNLOAD_FORBIDDEN",
-                        "message": exc.message_fa,
+                        "message": "پیوند دانلود نامعتبر/منقضی است.",
                     }
                 },
             )
@@ -500,8 +529,8 @@ def create_application(
 
     @app.get("/metrics")
     async def metrics_endpoint(request: Request):
-        actor = getattr(request.state, "actor", None)
-        provided_token = normalize_token(request.headers.get("X-Metrics-Token"))
+        raw_header = request.headers.get("Authorization")
+        header = normalize_token(raw_header)
         expected_token = container.metrics_token
         if not expected_token:
             container.metrics.auth_fail_total.labels(reason="metrics_missing").inc()
@@ -515,55 +544,108 @@ def create_application(
                     }
                 },
             )
-        if actor is None or not actor.metrics_only or provided_token != expected_token:
+
+        provided_token = ""
+        if header.lower().startswith("bearer "):
+            provided_token = header.split(" ", 1)[1].strip()
+
+        if provided_token != expected_token:
             container.metrics.auth_fail_total.labels(reason="metrics_forbidden").inc()
             return JSONResponse(
                 status_code=403,
                 content={
                     "fa_error_envelope": {
                         "code": "METRICS_TOKEN_INVALID",
-                        "message": "توکن دسترسی به متریک معتبر نیست.",
+                        "message": "دسترسی به /metrics نیازمند توکن فقط‌خواندنی است.",
                     }
                 },
             )
+
+        container.metrics.auth_ok_total.labels(role="METRICS_RO").inc()
         return PlainTextResponse(render_metrics(container.metrics).decode("utf-8"))
 
     @app.get("/ui/health", response_class=HTMLResponse)
     async def ui_health(request: Request):
-        return container.templates.TemplateResponse(request, "health.html", {"title": "سلامت سامانه"})
+        actor = _require_actor(request, roles={"ADMIN", "MANAGER"})
+        context = _base_ui_context("سلامت سامانه", actor)
+        return container.templates.TemplateResponse(request, "health.html", context)
 
     @app.get("/ui/exports", response_class=HTMLResponse)
     async def ui_exports(request: Request):
-        return container.templates.TemplateResponse(request, "exports.html", {"title": "خروجی‌ها"})
+        actor = _require_actor(request, roles={"ADMIN", "MANAGER"})
+        context = _base_ui_context("خروجی‌ها", actor)
+        return container.templates.TemplateResponse(request, "exports.html", context)
 
     @app.get("/ui/exports/new", response_class=HTMLResponse)
     async def ui_exports_new(request: Request):
-        return container.templates.TemplateResponse(request, "exports_new.html", {"title": "خروجی XLSX"})
+        actor = _require_actor(request, roles={"ADMIN", "MANAGER"})
+        context = _base_ui_context("خروجی XLSX", actor)
+        return container.templates.TemplateResponse(request, "exports_new.html", context)
 
     @app.get("/ui/jobs/{job_id}", response_class=HTMLResponse)
     async def ui_job(request: Request, job_id: str):
-        return container.templates.TemplateResponse(request, "job_detail.html", {"title": "جزئیات کار", "job_id": job_id})
+        actor = _require_actor(request, roles={"ADMIN", "MANAGER"})
+        context = _base_ui_context("جزئیات کار", actor)
+        context["job_id"] = job_id
+        return container.templates.TemplateResponse(request, "job_detail.html", context)
 
     @app.get("/ui/uploads", response_class=HTMLResponse)
     async def ui_uploads(request: Request):
-        return container.templates.TemplateResponse(request, "uploads.html", {"title": "بارگذاری فایل"})
+        actor = _require_actor(request, roles={"ADMIN", "MANAGER"})
+        context = _base_ui_context("بارگذاری فایل", actor)
+        return container.templates.TemplateResponse(request, "uploads.html", context)
 
     @app.get("/api/jobs")
     async def list_jobs(request: Request):
-        return {"jobs": []}
+        actor = _require_actor(request, roles={"ADMIN", "MANAGER"})
+        center_param = request.query_params.get("center")
+        center: int | None = None
+        if center_param:
+            try:
+                center = int(center_param)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="شناسه مرکز نامعتبر است.") from exc
+        if actor.role == "MANAGER":
+            try:
+                enforce_center_scope(actor, center=center or actor.center_scope)
+            except AuthorizationError as exc:
+                raise HTTPException(status_code=403, detail=exc.message_fa) from exc
+            center = actor.center_scope
+        payload: dict[str, object] = {"jobs": [], "role": actor.role}
+        if center is not None:
+            payload["center"] = center
+        return payload
 
     @app.post("/api/jobs")
     async def create_job(request: Request):
+        actor = _require_actor(request, roles={"ADMIN", "MANAGER"})
+        body = await request.json()
+        requested_center = body.get("center") if isinstance(body, dict) else None
+        center_value: int | None = None
+        if requested_center is not None:
+            try:
+                center_value = int(requested_center)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail="شناسه مرکز نامعتبر است.") from exc
+        if actor.role == "MANAGER":
+            try:
+                enforce_center_scope(actor, center=actor.center_scope)
+            except AuthorizationError as exc:
+                raise HTTPException(status_code=403, detail=exc.message_fa) from exc
+            center_value = actor.center_scope
         chain = getattr(request.state, "middleware_chain", [])
         return {
             "processed": True,
             "correlation_id": getattr(request.state, "correlation_id", ""),
             "middleware_chain": chain,
+            "role": actor.role,
+            "center": center_value,
         }
 
     @app.get("/api/exports/csv")
-    async def exporter_stub() -> dict[str, str]:
-        return {"status": "queued"}
+    async def exporter_stub(request: Request) -> dict[str, str]:
+        actor = _require_actor(request, roles={"ADMIN", "MANAGER"})
+        return {"status": "queued", "role": actor.role}
 
     if workflow is not None:
         try:

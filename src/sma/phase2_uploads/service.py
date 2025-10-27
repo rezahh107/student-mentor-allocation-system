@@ -115,6 +115,10 @@ class UploadService:
         sha_hex: str,
         size_bytes: int,
         validation,
+        *,
+        context: UploadContext,
+        source_format: str,
+        content_type: str,
     ) -> Path:
         generated_at = self.clock.now().isoformat()
         manifest = {
@@ -122,11 +126,19 @@ class UploadService:
             "record_count": validation.record_count,
             "size_bytes": size_bytes,
             "generated_at": generated_at,
+            "format": source_format,
+            "content_type": content_type,
             "meta": {
                 "profile": record.profile,
                 "year": record.year,
                 "source_filename": record.source_filename,
             },
+            "actor": {
+                "rid": context.rid,
+                "namespace": context.namespace,
+            },
+            "schema": validation.schema,
+            "excel_safety": validation.excel_safety,
             "preview": validation.preview_rows,
         }
         manifest_path = (
@@ -191,6 +203,7 @@ class UploadService:
                 self.config.retry_attempts,
                 base_delay=self.config.retry_base_delay,
                 max_delay=self.config.retry_max_delay,
+                seed=f"{context.namespace}:{context.rid}:{context.idempotency_key}",
                 fatal_exceptions=(UploadError,),
             )
 
@@ -202,7 +215,15 @@ class UploadService:
                 source_filename=filename,
             )
             validation = self.validator.validate(path)
-            manifest_path = self._create_manifest(record, sha_hex, size_bytes, validation)
+            manifest_path = self._create_manifest(
+                record,
+                sha_hex,
+                size_bytes,
+                validation,
+                context=context,
+                source_format=fmt,
+                content_type="text/csv",
+            )
             updated = self.repository.update_manifest(
                 record.id,
                 sha256=sha_hex,

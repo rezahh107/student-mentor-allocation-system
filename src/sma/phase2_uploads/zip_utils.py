@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Iterator, Tuple
 
 from .errors import UploadError, envelope
@@ -46,8 +46,19 @@ def _select_csv_info(
         raise UploadError(
             envelope("UPLOAD_VALIDATION_ERROR", details={"reason": "ZIP_CHANGED"})
         )
-    path = Path(info.filename)
-    if path.is_absolute() or any(part == ".." for part in path.parts):
+    normalized = info.filename.replace("\\", "/")
+    path = Path(normalized)
+    windows_path = PureWindowsPath(info.filename)
+    posix_path = PurePosixPath(info.filename)
+    if (
+        path.is_absolute()
+        or windows_path.is_absolute()
+        or windows_path.drive
+        or posix_path.is_absolute()
+        or normalized.startswith("/")
+        or normalized.startswith("\\")
+        or any(part == ".." for part in normalized.split("/") if part)
+    ):
         raise UploadError(
             envelope("UPLOAD_VALIDATION_ERROR", details={"reason": "ZIP_TRAVERSAL"})
         )

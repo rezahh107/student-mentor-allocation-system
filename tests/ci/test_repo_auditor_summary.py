@@ -38,9 +38,9 @@ def test_render_summary_includes_evidence(tmp_path: Path) -> None:
     )
     summary = PytestSummary(passed=10, failed=0, xfailed=0, skipped=0, warnings=0)
     report = render_strict_summary(summary, total_issues=1, plans=[plan])
-    assert "AGENTS.md::1 Project TL;DR" in report
-    assert "tests/integration/test_middleware_order.py::test_middleware_order_success" in report
-    assert "tests/metrics/test_metrics_reset.py::test_registry_resets_between_tests" in report
+    assert "AGENTS.md::5 Uploads & Exports — SABT_V1" in report
+    assert "tests/obs/test_upload_export_metrics_behavior.py::test_export_metrics_track_phases_and_counts" in report
+    assert "tests/middleware/test_order_post.py::test_middleware_order" in report
     assert "TOTAL: 100/100" in report
     assert "Strict Scoring v2 (full):" in report
     assert "Reason for Cap (if any):" in report

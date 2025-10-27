@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import random
+from hashlib import blake2b
 from typing import Callable, TypeVar
 
 T = TypeVar("T")
@@ -16,6 +16,7 @@ def retry(
     *,
     base_delay: float,
     max_delay: float,
+    seed: str,
     sleep: Callable[[float], None] | None = None,
     fatal_exceptions: tuple[type[BaseException], ...] = (),
 ) -> T:
@@ -33,6 +34,8 @@ def retry(
             if attempt == attempts:
                 break
             delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
-            jitter = random.uniform(0, delay)
+            digest = blake2b(f"{seed}:{attempt}".encode("utf-8"), digest_size=8)
+            fraction = int.from_bytes(digest.digest(), "big") / float(2**64)
+            jitter = delay * fraction
             sleep(jitter)
     raise RetryError("operation failed after retries") from last_exc

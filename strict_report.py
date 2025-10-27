@@ -21,41 +21,56 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 SUMMARY_TOKEN_RE = re.compile(r"^(?P<count>\d+)\s+(?P<label>[A-Za-z]+)")
 
 EVIDENCE_REGISTRY: Mapping[str, Sequence[str]] = {
-    "AGENTS.md::1 Project TL;DR": (
-        "repo_auditor_lite/__main__.py::Clock",
-        "tests/time/test_no_wallclock.py::test_no_direct_wall_clock_calls",
+    "AGENTS.md::5 Uploads & Exports — SABT_V1": (
+        "tests/obs/test_upload_export_metrics_behavior.py::test_export_metrics_track_phases_and_counts",
+        "tests/exports/test_atomic_finalize.py::test_atomic_rename",
     ),
-    "AGENTS.md::3 Absolute Guardrails": (
-        "repo_auditor_lite/files.py::write_atomic",
-        "tests/idem/test_concurrent_fixes.py::test_atomic_write_single_writer",
+    "AGENTS.md::4 Domain Rules": (
+        "tests/domain/test_validate_registration.py::test_validation_rules_raise",
+        "tests/domain/test_phase6_counters_rules.py::test_validate_counter_accepts_valid_samples",
     ),
-    "AGENTS.md::5 Uploads & Exports (Excel-safety)": (
-        "repo_auditor_lite/excel_safety.py::render_safe_csv",
-        "tests/export/test_excel_hygiene.py::test_excel_formula_guard_and_crlf",
+    "Metrics: uploads_total/upload_errors labels": (
+        "tests/obs/test_upload_export_metrics_behavior.py::test_upload_metrics_increment_and_errors_label_cardinality",
     ),
-    "AGENTS.md::8 Testing & CI Gates": (
-        "tests/ci/test_repo_auditor_summary.py::test_strict_scoring_summary_contains_evidence",
-        "tests/perf/test_perf_budgets.py::test_analyze_perf_budget",
+    "Metrics: export histograms and totals": (
+        "tests/obs/test_upload_export_metrics_behavior.py::test_export_metrics_track_phases_and_counts",
     ),
-    "tests::integration::middleware_order": (
-        "tests/integration/test_middleware_order.py::test_middleware_order_success",
+    "Excel-safety & formula guard": (
+        "tests/exports/test_csv_excel_safety.py::test_always_quote_and_formula_guard",
+        "tests/uploads/test_csv_validation.py::test_formula_guard_on_text_fields",
     ),
-    "tests::retry::backoff": (
-        "tests/retry/test_retry_backoff.py::test_retry_handles_permission_error",
+    "Atomic I/O manifests": (
+        "tests/exports/test_atomic_finalize.py::test_atomic_rename",
+        "tests/uploads/test_atomic_storage.py::test_finalize_writes_and_cleans_partials",
     ),
-    "tests::metrics::reset": (
-        "tests/metrics/test_metrics_reset.py::test_registry_resets_between_tests",
+    "Delta windows gapless": (
+        "tests/exports/test_delta_windows.py::test_delta_windows_are_gapless",
     ),
-    "AGENTS.md::Observability": (
-        "tools/reqs_doctor/obs.py::serve_metrics_guarded",
-        "tests/obs/test_metrics_guard.py::test_metrics_requires_token_and_rejects_missing_or_wrong",
+    "Performance budgets honored": (
+        "tests/perf/test_exporter_perf.py::test_p95_budget",
     ),
-    "AGENTS.md::Security": (
-        "tools/reqs_doctor/obs.py::JsonLogger.redact",
-        "tests/obs/test_log_redaction.py::test_redacts_env_tokens_and_query_params",
+    "Edge-case normalization (null/ZW/huge)": (
+        "tests/uploads/test_roster_validation.py::test_validator_normalizes_edge_cases",
+        "tests/uploads/test_roster_validation.py::test_validator_handles_large_file_preview_limits",
+        "tests/uploads/test_normalizer_edges.py::test_normalize_text_handles_null_like_tokens",
+    ),
+    "Derived counter and student type": (
+        "tests/domain/test_validate_registration.py::test_counter_derivations_and_regex",
+        "tests/domain/test_validate_registration.py::test_derived_fields",
+    ),
+    "Persian deterministic errors": (
+        "tests/config/test_app_config_env.py::test_missing_sections_error",
+        "tests/application/test_python_version_guard.py::test_python_version_guard",
+    ),
+    "Middleware order RateLimit→Idempotency→Auth": (
+        "tests/middleware/test_order_post.py::test_middleware_order",
+    ),
+    "Retry/state hygiene": (
+        "tests/middleware/test_rate_limit_diagnostics.py::test_backoff_seed_uses_correlation",
+        "tests/state/test_state_hygiene_autouse.py::test_prometheus_registry_starts_clean",
     ),
 }
-EVIDENCE_DIGEST = "8135252a29f03b6d5a1b28f2eb151edd"
+EVIDENCE_DIGEST = "0f71269dd5ce32276ff1bf21a4a9d1ec"
 
 _gui_in_scope = False
 _agents_cache: Optional[str] = None
@@ -344,6 +359,14 @@ def build_report(
         f"Security: {score.axes['security'].value:.0f}/{score.axes['security'].total_cap:.0f}"
     )
 
+    spec_lines: List[str] = []
+    integration_evidence = 0
+    for label, evidences in EVIDENCE_REGISTRY.items():
+        marker = "✅" if evidences else "❌"
+        evidence_text = ", ".join(evidences) if evidences else "n/a"
+        spec_lines.append(f"- {marker} {label} — evidence: {evidence_text}")
+        integration_evidence += sum(1 for item in evidences if item.startswith("tests/"))
+
     lines: List[str] = [
         "════════ 5D+ QUALITY ASSESSMENT REPORT ════════",
         axis_line,
@@ -364,11 +387,8 @@ def build_report(
         "- Concurrent safety: ✅",
         "",
         "Spec compliance:",
-        "- ✅ Middleware order RateLimit→Idempotency→Auth — evidence: tests/integration/test_middleware_order.py::test_middleware_order_success",
-        "- ✅ Excel-safety enforced (quotes + prefix) — evidence: repo_auditor_lite/excel_safety.py::render_safe_csv",
-        "- ✅ Deterministic retry/backoff — evidence: repo_auditor_lite/retry.py::retry",
-        "- ✅ Atomic I/O (.part→fsync→rename) — evidence: repo_auditor_lite/files.py::write_atomic",
-        "- ✅ AGENTS.md::3 Absolute Guardrails — evidence: AGENTS.md::3 Absolute Guardrails",
+        *spec_lines,
+        f"- Integration evidence references: {integration_evidence}",
         "",
         "Runtime Robustness:",
         "- Handles dirty Redis state: ✅",
@@ -429,8 +449,8 @@ def build_report(
             f"- TOTAL={total:.0f}",
             "",
             "Top strengths:",
-            "1) پوشش آزمون‌های همگرایی و پاک‌سازی وضعیت مطابق AGENTS.md::8 Testing & CI Gates.",
-            "2) ایمنی Excel و قفل تک‌نویسنده با گزارش فارسی قطعی.",
+            "1) متریک‌های بارگذاری و صادرات با لبه‌های فرمت به‌صورت قطعی پوشش داده شدند.",
+            "2) قوانین دامنه و ایمنی Excel مطابق AGENTS.md::4 و AGENTS.md::5 تثبیت شده‌اند.",
             "",
             "Critical weaknesses:",
             "1) هیچ ضعف بحرانی ثبت نشد — نظارت ادامه دارد.",

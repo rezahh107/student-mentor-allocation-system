@@ -152,7 +152,7 @@ class SystemClock(DeterministicClock):
         timezone: tzinfo,
         now_factory: Callable[[], datetime] | None = None,
     ) -> None:
-        super().__init__(timezone=timezone, now_factory=now_factory or _system_now)
+        DeterministicClock.__init__(self, timezone=timezone, now_factory=now_factory or _system_now)
 
 
 @dataclass(slots=True)

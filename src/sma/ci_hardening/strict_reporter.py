@@ -28,6 +28,12 @@ class PytestSummary:
 
     @property
     def has_failures(self) -> bool:
+        """Return ``True`` when failures are present.
+
+        Returns:
+            ``True`` when the summary reports failing tests.
+        """
+
         return any(value > 0 for value in (self.failed,))
 
 
@@ -56,7 +62,17 @@ def parse_summary(text: str) -> PytestSummary:
 
 
 def load_summary(path: Path) -> PytestSummary:
-    """Load and parse a summary file."""
+    """Load and parse a summary file.
+
+    Args:
+        path: Path pointing to the summary file.
+
+    Returns:
+        Parsed ``PytestSummary`` structure.
+
+    Raises:
+        StrictScoringError: If the file does not exist or cannot be parsed.
+    """
 
     if not path.is_file():
         raise StrictScoringError("فایل خلاصهٔ pytest یافت نشد.")
@@ -64,7 +80,14 @@ def load_summary(path: Path) -> PytestSummary:
 
 
 def enforce_caps(summary: PytestSummary) -> Mapping[str, int]:
-    """Return cap reasons based on the summary counts."""
+    """Return cap reasons based on the summary counts.
+
+    Args:
+        summary: Parsed pytest summary metrics.
+
+    Returns:
+        Mapping of cap identifiers to their maximum allowed scores.
+    """
 
     caps: dict[str, int] = {}
     if summary.warnings:

@@ -4,7 +4,7 @@ import csv
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List
+from typing import Any, Iterable, List
 
 from .errors import UploadError, envelope
 from .normalizer import fold_digits, normalize_text_fields
@@ -25,6 +25,8 @@ PHONE_REGEX = re.compile(r"^09\d{9}$")
 class ValidationResult:
     record_count: int
     preview_rows: List[dict[str, str]]
+    excel_safety: dict[str, Any]
+    schema: List[str]
 
 
 class CSVValidator:
@@ -53,8 +55,21 @@ class CSVValidator:
                         envelope("UPLOAD_VALIDATION_ERROR", details={"reason": "HEADER_REQUIRED"})
                     )
                 self._ensure_header(reader.fieldnames)
+                schema = list(reader.fieldnames)
                 count = 0
                 preview: List[dict[str, str]] = []
+                excel_safety = {
+                    "encoding": "utf-8",
+                    "newline": "\r\n",
+                    "normalized": True,
+                    "digit_folding": True,
+                    "formula_guard": True,
+                    "always_quote_columns": [
+                        "national_id",
+                        "mobile",
+                        "school_code",
+                    ],
+                }
                 for row in reader:
                     if not any(row.values()):
                         continue
@@ -67,7 +82,7 @@ class CSVValidator:
                                 details={"reason": "FORMULA_GUARD", "row": count + 2},
                             )
                         ) from exc
-                    school_code_raw = fold_digits(normalized.get("school_code")) or ""
+                    school_code_raw = (fold_digits(normalized.get("school_code")) or "").strip()
                     if not school_code_raw:
                         raise UploadError(
                             envelope(
@@ -106,7 +121,12 @@ class CSVValidator:
                     count += 1
                     if len(preview) < self.preview_rows:
                         preview.append({key: normalized.get(key, "") or "" for key in REQUIRED_COLUMNS})
-                return ValidationResult(record_count=count, preview_rows=preview)
+                return ValidationResult(
+                    record_count=count,
+                    preview_rows=preview,
+                    excel_safety=excel_safety,
+                    schema=schema,
+                )
         except UnicodeDecodeError as exc:
             raise UploadError(
                 envelope("UPLOAD_VALIDATION_ERROR", details={"reason": "UTF8_REQUIRED"})

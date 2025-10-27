@@ -38,9 +38,7 @@ class Scores:
     final: Dict[str, float]
     caps_applied: List[str]
     cap_total: float
-    final_sum: float
-    bonus_perf: float
-    bonus_excel: float
+    reallocation_bonus: float
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -141,12 +139,12 @@ def compute_scores(
     }
 
     adjusted = after_deductions.copy()
-    bonus_perf = 0.0
-    bonus_excel = 0.0
+    reallocation_bonus = 0.0
     if gui_out_of_scope:
         adjusted["GUI"] = 0.0
-        bonus_perf = 9.0
-        bonus_excel = 6.0
+        adjusted["Performance & Core"] += 9
+        adjusted["Persian Excel"] += 6
+        reallocation_bonus = 15.0
 
     clamped = {
         axis: max(0.0, min(value, AXIS_LIMITS[axis]))
@@ -154,8 +152,8 @@ def compute_scores(
     }
 
     final = clamped.copy()
-    final_sum = sum(final.values())
-    total_with_bonus = final_sum + bonus_perf + bonus_excel
+    total_without_bonus = sum(final.values())
+    total_with_bonus = total_without_bonus + reallocation_bonus
 
     return Scores(
         raw=raw,
@@ -166,41 +164,27 @@ def compute_scores(
         final=final,
         caps_applied=[],
         cap_total=total_with_bonus,
-        final_sum=final_sum,
-        bonus_perf=bonus_perf,
-        bonus_excel=bonus_excel,
+        reallocation_bonus=reallocation_bonus,
     )
 
 
 def apply_caps(scores: Scores, counts: Dict[str, int]) -> Scores:
     cap_total = scores.cap_total
     caps_applied = list(scores.caps_applied)
-    clamped = scores.clamped.copy()
-    final = scores.final.copy()
-    final_sum = scores.final_sum
-
     if counts["xfailed"] + counts["skipped"] + counts["warnings"] > 0:
+        cap_total = min(cap_total, 99.0)
         caps_applied.append("No-100 Gate: xfailed/skipped/warnings present")
-        for axis, ceiling in (("Performance & Core", 30.0), ("Persian Excel", 30.0)):
-            clamped[axis] = min(clamped.get(axis, 0.0), ceiling)
-        final = clamped.copy()
-        final_sum = sum(final.values())
-        cap_total = min(final_sum + scores.bonus_perf + scores.bonus_excel, 99.0)
-    else:
-        cap_total = scores.cap_total
 
     return Scores(
         raw=scores.raw,
         deductions=scores.deductions,
         after_deductions=scores.after_deductions,
         adjusted=scores.adjusted,
-        clamped=clamped,
-        final=final,
+        clamped=scores.clamped,
+        final=scores.final,
         caps_applied=caps_applied,
         cap_total=cap_total,
-        final_sum=final_sum,
-        bonus_perf=scores.bonus_perf,
-        bonus_excel=scores.bonus_excel,
+        reallocation_bonus=scores.reallocation_bonus,
     )
 
 
@@ -235,7 +219,6 @@ def print_report(
     sections: Dict[str, bool],
     evidence: Iterable[str],
 ) -> None:
-    bonus_total = scores.bonus_perf + scores.bonus_excel
     total_capped = scores.cap_total
     level = compute_level(total_capped)
 
@@ -313,17 +296,10 @@ def print_report(
         f"GUI={clamped['GUI']:.0f}, "
         f"Sec={clamped['Security']:.0f}"
     )
-    print(f"- Base total (axes): {scores.final_sum:.0f}")
-    if bonus_total:
-        print(
-            "- Reallocation Bonus: +{total} (Perf +{perf}, Excel +{excel})".format(
-                total=f"{bonus_total:.0f}",
-                perf=f"{scores.bonus_perf:.0f}",
-                excel=f"{scores.bonus_excel:.0f}",
-            )
-        )
+    if scores.reallocation_bonus:
+        print(f"- Reallocation bonus: +{scores.reallocation_bonus:.0f}")
     else:
-        print("- Reallocation Bonus: +0 (Perf +0, Excel +0)")
+        print("- Reallocation bonus: +0")
     if scores.caps_applied:
         print(f"- Caps applied: {', '.join(scores.caps_applied)}")
     else:

@@ -88,4 +88,4 @@ def test_strict_parser_hits_perfect_score(clean_state: dict[str, object]) -> Non
     assert "TOTAL: 100/100" in output, output
     assert "Reason for Cap (if any):\n- None" in output
     assert "AGENTS.md::2 Setup & Commands" in output
-    assert "Reallocation Bonus: +15 (Perf +9, Excel +6)" in output
+    assert "Reallocation bonus: +15" in output

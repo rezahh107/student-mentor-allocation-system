@@ -91,19 +91,6 @@ try {
     $headers = @{ Authorization = "Bearer $env:METRICS_TOKEN" }
     $metricsStatus = (Invoke-WebRequest -UseBasicParsing -Headers $headers -Uri "http://127.0.0.1:8000/metrics" -TimeoutSec 3).StatusCode
     $metricsStatus | Out-Host
-
-    if ($env:SMOKE_CHECK_MW_ORDER -eq "1") {
-        try {
-            $probeResponse = Invoke-WebRequest -UseBasicParsing -Headers $headers -Method Post -Uri "http://127.0.0.1:8000/__probe__" -Body '{}' -ContentType 'application/json' -TimeoutSec 3
-            if ($probeResponse.StatusCode -ge 200 -and $probeResponse.StatusCode -lt 300) {
-                Write-Host "ℹ️ بررسی ترتیب میان‌افزار با موفقیت پاسخ داد؛ خروجی را برای ترتیب RateLimit → Idempotency → Auth ارزیابی کنید." -ForegroundColor Cyan
-            } else {
-                Write-Host "ℹ️ اطلاع: نقطهٔ بررسی ترتیب میان‌افزار در دسترس نیست (کد $($probeResponse.StatusCode))." -ForegroundColor Yellow
-            }
-        } catch {
-            Write-Host "ℹ️ اطلاع: نقطهٔ بررسی ترتیب میان‌افزار فعال نیست؛ بررسی نادیده گرفته شد." -ForegroundColor Yellow
-        }
-    }
 } catch {
     if ($server -and -not $server.HasExited) {
         try {

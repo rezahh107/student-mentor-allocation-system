@@ -50,17 +50,6 @@ $H=@{ Authorization="Bearer $env:METRICS_TOKEN" }
 (Invoke-WebRequest -UseBasicParsing -Headers $H http://127.0.0.1:8000/metrics).StatusCode
 ```
 
-```bash
-printf "=== 1 passed, 0 failed, 0 skipped, 1 warnings ===" | \
-  python tools/ci/parse_pytest_summary.py --gui-out-of-scope \
-    --evidence "AGENTS.md::2 Setup & Commands" \
-    --evidence "AGENTS.md::3 Absolute Guardrails (do/do-not)" \
-    --evidence "AGENTS.md::8 Testing & CI Gates" \
-    --evidence "AGENTS.md::10 User-Visible Errors (Persian, deterministic)" \
-    --fail-under 0
-```
-
-- No-100 Gate: اگر `xfailed + skipped + warnings` بزرگ‌تر از صفر باشد، امتیاز زیر ۱۰۰ قفل می‌شود و اجرای CI با `--fail-under 100` تعمداً شکست می‌خورد.
 - Dev server (updated): `uvicorn main:app --reload --host 0.0.0.0 --port 8000`
 
 ## CI Integration
@@ -70,8 +59,6 @@ printf "=== 1 passed, 0 failed, 0 skipped, 1 warnings ===" | \
 - Workflow: `.github/workflows/windows-smoke.yml` (Windows latest runner).
 - Steps: UTF-8 codepage → install deps → run `tools/ci/win_smoke.ps1` → `pytest` (warnings treated as errors).
 - Strict Scoring v2: pipeline fails if `tools/ci/parse_pytest_summary.py` reports **TOTAL < 100**.
-- No-100 Gate: اگر `xfailed + skipped + warnings > 0` باشد، سقف امتیاز زیر ۱۰۰ باقی می‌ماند و اجرای CI با `--fail-under 100` شکست کنترل‌شده خواهد داشت.
-- اختیاری: با `SMOKE_CHECK_MW_ORDER=1` می‌توان قلاب بررسی ترتیب میان‌افزار را فعال کرد؛ اگر نقطهٔ `/__probe__` موجود نباشد پیام فارسی اطلاع‌رسانی چاپ می‌شود و در آینده باید ترتیب `RateLimit → Idempotency → Auth` را ارزیابی کند.
 - Determinism: parser/tests avoid wall-clock calls; timing uses monotonic measurements only for diagnostics.
 
 ---

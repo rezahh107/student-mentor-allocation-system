@@ -30,11 +30,36 @@ References: Phase-1 (SSR+HTMX/determinism), Phase-2 (ROSTER_V1 upload), Phase-3 
 - **Install:** `python -m venv .venv && source .venv/bin/activate && pip install -e .`
 - **Run tests (no plugins, async ready):**  
   `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q -p pytest_asyncio`
-- **Dev server (adjust entrypoint if different):**  
-  `uvicorn src.main:app --reload`
+- **Dev server (adjust entrypoint if different):**
+  `uvicorn main:app --reload`
 - **Lint/Sec (typical):** `ruff check . && bandit -q -r src`
 
 If tests rely on Redis/PostgreSQL, use local services or docker-compose. Clean **Redis/DB/tmp** **before & after** tests; use **unique namespaces** per test; **reset Prometheus CollectorRegistry**.
+
+## Windows Smoke & Acceptance
+
+```cmd
+findstr /s /n /i "src.main:app" * && echo "❌ Stale" || echo "✅ Clean"
+findstr /s /n /i "src\\main.py" * && echo "❌ Stale" || echo "✅ Clean"
+```
+
+```powershell
+$env:METRICS_TOKEN="test-token"
+$H=@{ Authorization="Bearer $env:METRICS_TOKEN" }
+(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/healthz).StatusCode
+(Invoke-WebRequest -UseBasicParsing -Headers $H http://127.0.0.1:8000/metrics).StatusCode
+```
+
+- Dev server (updated): `uvicorn main:app --reload --host 0.0.0.0 --port 8000`
+
+## CI Integration
+
+[![Windows Smoke](https://github.com/OWNER/student-mentor-allocation-system/actions/workflows/windows-smoke.yml/badge.svg)](https://github.com/OWNER/student-mentor-allocation-system/actions/workflows/windows-smoke.yml)
+
+- Workflow: `.github/workflows/windows-smoke.yml` (Windows latest runner).
+- Steps: UTF-8 codepage → install deps → run `tools/ci/win_smoke.ps1` → `pytest` (warnings treated as errors).
+- Strict Scoring v2: pipeline fails if `tools/ci/parse_pytest_summary.py` reports **TOTAL < 100**.
+- Determinism: parser/tests avoid wall-clock calls; timing uses monotonic measurements only for diagnostics.
 
 ---
 

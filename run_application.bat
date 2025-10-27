@@ -10,13 +10,24 @@ set "WORKERS=1"
 if not "%APP_HOST%"=="" set "HOST=%APP_HOST%"
 if not "%APP_PORT%"=="" set "PORT=%APP_PORT%"
 if not "%APP_WORKERS%"=="" set "WORKERS=%APP_WORKERS%"
-set "VENV_PY=%SCRIPT_DIR%.venv\Scripts\python.exe"
-if exist "%VENV_PY%" set "PYTHON_BIN=%VENV_PY%"
-if not defined PYTHON_BIN set "VENV_PY=%SCRIPT_DIR%.venv/bin/python"
-if not defined PYTHON_BIN if exist "%VENV_PY%" set "PYTHON_BIN=%VENV_PY%"
-if not defined PYTHON_BIN set "PYTHON_BIN=py"
-"%PYTHON_BIN%" -V >nul 2>&1
-if errorlevel 1 set "PYTHON_BIN=python"
+
+REM Prefer venv Python with fallback
+if exist "%SCRIPT_DIR%.venv\Scripts\python.exe" (
+    set "PYTHON_BIN=%SCRIPT_DIR%.venv\Scripts\python.exe"
+) else (
+    if exist "%SCRIPT_DIR%.venv/bin/python" (
+        set "PYTHON_BIN=%SCRIPT_DIR%.venv/bin/python"
+    )
+)
+if not defined PYTHON_BIN (
+    set "PYTHON_BIN=py"
+)
+if /I "%PYTHON_BIN%"=="py" (
+    py --version >nul 2>&1
+    if errorlevel 1 (
+        set "PYTHON_BIN=python"
+    )
+)
 "%PYTHON_BIN%" -V >nul 2>&1
 if errorlevel 1 (
     echo ❌ پایتون در دسترس نیست.
@@ -35,13 +46,13 @@ if errorlevel 1 (
     popd >nul
     exit /b 1
 )
-if not exist "%SCRIPT_DIR%src\main.py" (
-    echo ❌ فایل src\main.py یافت نشد.
+if not exist "%SCRIPT_DIR%main.py" (
+    echo ❌ خطا: فایل main.py در ریشهٔ مخزن پیدا نشد.
     popd >nul
     exit /b 1
 )
 echo 🚀 اجرای برنامه با uvicorn...
-"%PYTHON_BIN%" -m uvicorn src.main:app --host %HOST% --port %PORT% --workers %WORKERS%
+"%PYTHON_BIN%" -m uvicorn main:app --host %HOST% --port %PORT% --workers %WORKERS%
 if errorlevel 1 (
     echo ❌ اجرای سرور با خطا مواجه شد؛ فایل لاگ‌ها و تنظیمات را بررسی کنید.
     popd >nul

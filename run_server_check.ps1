@@ -18,13 +18,33 @@ if (-not $env:IMPORT_TO_SABT_AUTH__METRICS_TOKEN) {
     $env:IMPORT_TO_SABT_AUTH__METRICS_TOKEN = "metrics-token-smoke"
 }
 
+function Test-ServerReadiness {
+    param(
+        [int]$MaxRetries = 5,
+        [int]$InitialDelay = 1
+    )
+
+    for ($i = 0; $i -lt $MaxRetries; $i++) {
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8000/healthz" -TimeoutSec 2 -ErrorAction Stop | Out-Null
+            return $true
+        } catch {
+            $delay = $InitialDelay * [math]::Pow(2, $i) + (Get-Random -Minimum 100 -Maximum 300) / 1000.0
+            $formattedDelay = [string]::Format("{0:N2}", $delay)
+            Write-Host "⏳ Waiting server… retry $($i + 1)/$MaxRetries in $formattedDelay s" -ForegroundColor Yellow
+            Start-Sleep -Seconds $delay
+        }
+    }
+
+    return $false
+}
+
 python tests/validate_structure.py
 python tests/test_imports.py
 
 $uvicornArgs = @(
     "-m", "uvicorn",
-    "phase6_import_to_sabt.app.app_factory:create_application",
-    "--factory",
+    "main:app",
     "--host", "127.0.0.1",
     "--port", "8000",
     "--log-level", "warning"
@@ -42,22 +62,11 @@ try {
     $server = Start-Process -FilePath "python" -ArgumentList $uvicornArgs -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
     $baseUrl = "http://127.0.0.1:8000"
 
-    $maxAttempts = 15
-    $serverReady = $false
-    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-        Start-Sleep -Milliseconds (200 * $attempt)
-        try {
-            $health = Invoke-WebRequest -Uri "$baseUrl/healthz" -UseBasicParsing -Method Get -TimeoutSec 5
-            if ($health.StatusCode -eq 200) {
-                $serverReady = $true
-                break
-            }
-        } catch {
-            Start-Sleep -Milliseconds 200
+    if (-not (Test-ServerReadiness -MaxRetries 5 -InitialDelay 1)) {
+        if ($null -ne $server -and -not $server.HasExited) {
+            Stop-Process -Id $server.Id -Force
+            $server.WaitForExit()
         }
-    }
-
-    if (-not $serverReady) {
         throw "Uvicorn failed to respond on $baseUrl/healthz; check $stdoutLog and $stderrLog"
     }
 
@@ -103,7 +112,7 @@ try {
     if (-not $metricsToken) {
         throw "IMPORT_TO_SABT_AUTH__METRICS_TOKEN must be set for authorised metrics smoke test"
     }
-    $authHeaders = @{ "X-Metrics-Token" = $metricsToken }
+    $authHeaders = @{ Authorization = "Bearer $metricsToken" }
     $authMetrics = Invoke-SmokeCheck -Name "GET /metrics (token)" -Uri "$baseUrl/metrics" -Headers $authHeaders -ExpectedStatus @(200)
     if (-not ($authMetrics.Body.StartsWith("# HELP") -or $authMetrics.Body.Contains("_total"))) {
         Write-Host "❌ /metrics response body missing Prometheus markers"

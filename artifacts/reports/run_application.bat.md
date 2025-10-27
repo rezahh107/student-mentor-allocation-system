@@ -51,13 +51,13 @@ if errorlevel 1 (
     popd >nul
     exit /b 1
 )
-if not exist "%SCRIPT_DIR%src\main.py" (
-    echo ❌ فایل src\main.py یافت نشد.
+if not exist "%SCRIPT_DIR%main.py" (
+    echo ❌ خطا: فایل main.py در ریشهٔ مخزن پیدا نشد.
     popd >nul
     exit /b 1
 )
 echo 🚀 اجرای برنامه با uvicorn...
-"%PYTHON_BIN%" -m uvicorn src.main:app --host %HOST% --port %PORT% --workers %WORKERS%
+"%PYTHON_BIN%" -m uvicorn main:app --host %HOST% --port %PORT% --workers %WORKERS%
 if errorlevel 1 (
     echo ❌ اجرای سرور با خطا مواجه شد؛ فایل لاگ‌ها و تنظیمات را بررسی کنید.
     popd >nul

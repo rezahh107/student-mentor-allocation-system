@@ -43,6 +43,43 @@ METRICS_TOKEN=dev-metrics scripts/smoke.sh
 
 راهنمای کامل نصب و اجرای نسخهٔ توسعه را در مستند «[راهنمای PowerShell 7 ویندوز](docs/windows-powershell-setup.md)» دنبال کنید؛ این سند شامل TL;DR، چک‌های پیش‌نیاز، اعتبارسنجی محیط، اجرای `Start-App.ps1` و اسموک‌تست‌های ضروری است.
 
+### 🧪 Windows Acceptance Checks
+
+```cmd
+findstr /s /n /i "src.main:app" * && echo "❌ Stale" || echo "✅ Clean"
+findstr /s /n /i "src\\main.py" * && echo "❌ Stale" || echo "✅ Clean"
+```
+
+```powershell
+$env:METRICS_TOKEN="test-token"
+$H=@{ Authorization="Bearer $env:METRICS_TOKEN" }
+(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/healthz).StatusCode
+(Invoke-WebRequest -UseBasicParsing -Headers $H http://127.0.0.1:8000/metrics).StatusCode
+```
+
+```bash
+printf "=== 1 passed, 0 failed, 0 skipped, 1 warnings ===" | \
+  python tools/ci/parse_pytest_summary.py --gui-out-of-scope \
+    --evidence "AGENTS.md::2 Setup & Commands" \
+    --evidence "AGENTS.md::3 Absolute Guardrails" \
+    --evidence "AGENTS.md::8 Testing & CI Gates" \
+    --evidence "AGENTS.md::10 User-Visible Errors" \
+    --fail-under 0
+```
+
+- No-100 Gate: در صورتی که `xfailed + skipped + warnings > 0` باشد، امتیاز نهایی زیر ۱۰۰ قفل می‌شود و اگر CI با `--fail-under 100` اجرا شود عمداً شکست می‌خورد.
+- Dev server (updated): `uvicorn main:app --reload --host 0.0.0.0 --port 8000`
+
+### 🔁 CI Integration (Windows Smoke)
+
+[![Windows Smoke](https://github.com/OWNER/student-mentor-allocation-system/actions/workflows/windows-smoke.yml/badge.svg)](https://github.com/OWNER/student-mentor-allocation-system/actions/workflows/windows-smoke.yml)
+
+- Workflow `.github/workflows/windows-smoke.yml` enforces UTF-8 PowerShell, launches `tools/ci/win_smoke.ps1`, then runs `pytest` with warnings-as-errors.
+- Strict Scoring v2 parser (`tools/ci/parse_pytest_summary.py`) must report **TOTAL 100/100**; CI fails otherwise.
+- No-100 Gate: اگر جمع `xfailed + skipped + warnings` بزرگ‌تر از صفر باشد، امتیاز نهایی کمتر از ۱۰۰ قفل می‌شود و اجرای CI با `--fail-under 100` عمداً خطا می‌دهد.
+- اختیاری: با تنظیم `SMOKE_CHECK_MW_ORDER=1`، اسکریپت اسموک درخواست POST به مسیر `/**__probe__**` ارسال می‌کند؛ در صورت عدم وجود نقطهٔ بررسی پیام فارسی اطلاع‌رسانی می‌شود و در نسخه‌های آینده باید زنجیرهٔ `RateLimit → Idempotency → Auth` را اعتبارسنجی کند.
+- Determinism: parser/tests avoid wall-clock sources; timings rely on monotonic perf counters strictly for diagnostics.
+
 ## Import Refactor (src-layout fixer)
 برای هماهنگی خودکار ایمپورت‌های مطلق با ساختار `src/` می‌توانید ابزار `tools/refactor_imports.py` را اجرا کنید. ابزار به صورت پیش‌فرض Dry-Run است و گزارش CSV/JSON تولید می‌کند.
 
@@ -51,7 +88,7 @@ METRICS_TOKEN=dev-metrics scripts/smoke.sh
 ```powershell
 $env:PYTHONPATH="$PWD;$PWD\src"
 \.\.venv\Scripts\python.exe tools\refactor_imports.py scan --report-csv out\refactor.csv --report-json out\refactor.json
-\.\.venv\Scripts\python.exe tools\refactor_imports.py apply --fix-entrypoint src.main:app
+\.\.venv\Scripts\python.exe tools\refactor_imports.py apply --fix-entrypoint main:app
 \.\.venv\Scripts\python.exe tools\refactor_imports.py scan --serve-metrics --metrics-token token --metrics-port 9130
 ```
 
@@ -60,7 +97,7 @@ $env:PYTHONPATH="$PWD;$PWD\src"
 ```bash
 export PYTHONPATH="$PWD:$PWD/src"
 .venv/bin/python tools/refactor_imports.py scan --report-csv out/refactor.csv --report-json out/refactor.json
-.venv/bin/python tools/refactor_imports.py apply --fix-entrypoint src.main:app
+.venv/bin/python tools/refactor_imports.py apply --fix-entrypoint main:app
 .venv/bin/python tools/refactor_imports.py scan --serve-metrics --metrics-token token --metrics-port 9130
 ```
 

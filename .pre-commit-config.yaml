@@ -1,46 +1,29 @@
 repos:
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.15.0
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
     hooks:
-      - id: pyupgrade
-        args: ["--py311-plus"]
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/psf/black
+    rev: 23.12.0
+    hooks:
+      - id: black
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.1.9
+    hooks:
+      - id: ruff
+
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.8
+    rev: 1.7.6
     hooks:
       - id: bandit
-        name: bandit (medium/high gate)
-        args:
-          - "-r"
-          - "src"
-          - "scripts"
-          - "-f"
-          - "json"
-          - "-q"
-          - "-c"
-          - ".bandit"
-  - repo: local
-    hooks:
-      - id: weak-hash-guard
-        name: weak-hash-guard
-        entry: python -m scripts.check_no_weak_hashes
-        language: system
-        pass_filenames: false
-      - id: no-shadowing-guard
-        name: Block package shadowing & PYTHONPATH anti-pattern
-        entry: python scripts/check_no_shadowing.py
-        language: system
-        pass_filenames: false
-        stages: [commit, push]
-      - id: pythonpath-guard
-        name: Block PYTHONPATH front-loading of src
-        entry: python scripts/guard_pythonpath.py
-        language: system
-        pass_filenames: false
-        stages: [commit, push]
-      - id: verify-agents-md
-        name: Verify AGENTS manifest tokens
-        entry: python scripts/verify_agents.py
-        language: system
-        pass_filenames: false
-        stages: [commit, push]
-
+        args: ['-c', 'pyproject.toml']

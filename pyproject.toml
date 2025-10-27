@@ -7,7 +7,7 @@ name = "student-mentor-allocation-system"
 version = "0.1.0"  # ✅ تغییر از 0.0.0
 description = "Student Mentor Allocation System"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }
 authors = [{ name = "Reza", email = "ops@example.invalid" }]
 keywords = ["education", "mentoring", "allocation"]
@@ -26,33 +26,16 @@ classifiers = [
 # ═══════════════════════════════════════════════════════════════
 
 dependencies = [
-    "fastapi==0.110.3",
-    "starlette==0.37.2",
-    "pydantic==2.7.4",
-    "pydantic-settings==2.3.0",
-    "SQLAlchemy==2.0.30",
-    "psycopg[binary]==3.2.1",
-    "redis==5.0.4",
-    "prometheus-client==0.20.0",
-    "tenacity==8.2.3",
-    "openpyxl==3.1.5",
-    "XlsxWriter==3.1.9",
-    "python-dateutil==2.9.0.post0",
-    "tzdata==2024.1",
-    "alembic==1.13.1",
-    "click==8.1.7",
-    "typer==0.12.3",
-    "libcst==1.4.0",
-    "pathspec==0.12.1",
-    "Jinja2==3.1.4",
-    "PyYAML==6.0.2",
-    "packaging==24.1",
-    "platformdirs==4.3.6",
-    "jsonschema==4.23.0",
-    "orjson==3.10.3",
-    "jdatetime==4.1.1",
-    "pywebview==4.4.1",
-    "uvicorn[standard]==0.27.1",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "redis>=5.0.0",
+    "prometheus-client>=0.19.0",
+    "python-dateutil>=2.8.2",
+    "freezegun>=1.4.0",
+    "tzdata>=2024.1 ; platform_system != \"Linux\"",
+    "uvloop>=0.19.0 ; platform_system != \"Windows\"",
 ]
 
 [project.scripts]
@@ -140,35 +123,37 @@ include = ["sma*"]
 # Ruff Configuration
 # ═══════════════════════════════════════════════════════════════
 
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
 [tool.ruff]
-line-length = 100
 target-version = "py311"
-src = ["src", "tests"]
-
-[tool.ruff.lint]
+line-length = 88
 select = [
-    "E",   # pycodestyle errors
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "C90", # mccabe
-    "PL",  # pylint
-    "RUF", # ruff-specific
+    "F",
+    "E",
+    "W",
+    "I",
+    "N",
+    "UP",
+    "PL",
+    "PERF",
+    "SIM",
+    "TRY",
+    "ERA",
+    "ANN",
+    "B",
+    "DTZ",
+    "BLE",
 ]
-ignore = ["E203", "E501"]
 
-[tool.ruff.lint.mccabe]
-max-complexity = 12
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D100", "D103", "PLR2004"]
-"__init__.py" = ["F401"]
-
-[tool.ruff.lint.pylint]
-max-statements = 120
-
-[tool.ruff.lint.isort]
-known-first-party = ["sma"]
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
 
 # ═══════════════════════════════════════════════════════════════
 # MyPy Configuration

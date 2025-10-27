@@ -29,6 +29,13 @@ from .state import InMemoryStore
 
 
 def _maybe_install_uvloop() -> bool:
+    """Attempt to install ``uvloop`` when supported.
+
+    Returns:
+        ``True`` when ``uvloop`` was successfully installed; ``False`` when the
+        platform does not support it or the dependency is unavailable.
+    """
+
     if not is_uvloop_supported():
         return False
     try:  # pragma: no cover - platform specific
@@ -40,6 +47,13 @@ def _maybe_install_uvloop() -> bool:
 
 
 def _build_middleware(app: FastAPI, settings: AppSettings) -> None:
+    """Register middleware ensuring deterministic execution order.
+
+    Args:
+        app: FastAPI application to configure.
+        settings: Application settings providing namespaces and tokens.
+    """
+
     rate_store = InMemoryStore(f"{settings.redis.namespace}:rate")
     idem_store = InMemoryStore(f"{settings.redis.namespace}:idempotency")
     retry = RetryConfig(
@@ -63,19 +77,38 @@ def _build_middleware(app: FastAPI, settings: AppSettings) -> None:
         store=rate_store,
         config=rate_config,
         retry=retry,
+        registry=getattr(app.state, "registry", None),
     )
     app.state.rate_store = rate_store
     app.state.idempotency_store = idem_store
 
 
 def _metrics_guard(x_metrics_token: str | None, settings: AppSettings) -> None:
+    """Validate metrics access tokens before exposing Prometheus data.
+
+    Args:
+        x_metrics_token: Optional token provided by the client.
+        settings: Application settings containing the expected token values.
+
+    Raises:
+        HTTPException: If the provided token does not match the expected value.
+    """
+
     expected = settings.auth.metrics_token or settings.auth.service_token
     if not expected or x_metrics_token != expected:
         raise HTTPException(status_code=403, detail="توکن متریک نامعتبر است.")
 
 
 def create_application(settings: AppSettings | None = None) -> FastAPI:
-    """Create a FastAPI application with deterministic middleware ordering."""
+    """Create a FastAPI application with deterministic middleware ordering.
+
+    Args:
+        settings: Optional pre-loaded settings instance. When omitted the
+            configuration is loaded from the environment.
+
+    Returns:
+        Configured FastAPI application ready for deterministic CI execution.
+    """
 
     ensure_agents_manifest()
     ensure_python_311()

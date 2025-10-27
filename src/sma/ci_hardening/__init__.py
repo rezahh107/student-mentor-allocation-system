@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .app_factory import create_application
+from .diagnostics import get_debug_context
 from .runtime import (
     ensure_agents_manifest,
     ensure_python_311,
@@ -17,6 +18,7 @@ __all__ = [
     "ensure_agents_manifest",
     "ensure_python_311",
     "ensure_tehran_tz",
+    "get_debug_context",
     "generate_env_example",
     "is_uvloop_supported",
 ]

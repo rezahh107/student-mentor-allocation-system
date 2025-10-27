@@ -18,7 +18,14 @@ class SettingsError(ValueError):
 
 
 class RedisSettings(BaseModel):
-    """Configuration for Redis connectivity."""
+    """Configuration for Redis connectivity.
+
+    Attributes:
+        host: Redis hostname.
+        port: Redis port number.
+        db: Redis database index.
+        namespace: Namespace prefix used for deterministic keys.
+    """
 
     host: str = Field(..., description="Redis hostname", examples=["localhost"])
     port: int = Field(..., description="Redis port", ge=0, le=65535, examples=[6379])
@@ -27,27 +34,46 @@ class RedisSettings(BaseModel):
 
 
 class DatabaseSettings(BaseModel):
-    """Database connection settings."""
+    """Database connection settings.
+
+    Attributes:
+        dsn: SQLAlchemy-compatible database connection string.
+    """
 
     dsn: str = Field(..., description="SQLAlchemy-compatible DSN")
 
 
 class AuthSettings(BaseModel):
-    """Authentication tokens used by middleware."""
+    """Authentication tokens used by middleware.
+
+    Attributes:
+        service_token: Token for general middleware authentication.
+        metrics_token: Optional token for metrics endpoint access.
+    """
 
     service_token: str = Field(..., min_length=8)
     metrics_token: str | None = Field(default=None, min_length=8)
 
 
 class ObservabilitySettings(BaseModel):
-    """Observability toggles."""
+    """Observability toggles.
+
+    Attributes:
+        metrics_namespace: Prometheus namespace for emitted metrics.
+        enable_metrics: Flag enabling metrics emission.
+    """
 
     metrics_namespace: str = Field(default="sma_ci")
     enable_metrics: bool = Field(default=True)
 
 
 class RetrySettings(BaseModel):
-    """Retry/backoff policy configuration."""
+    """Retry/backoff policy configuration.
+
+    Attributes:
+        max_attempts: Maximum number of retry attempts.
+        base_delay_seconds: Base delay in seconds for the retry schedule.
+    """
 
     max_attempts: int = Field(default=3, ge=1)
     base_delay_seconds: float = Field(default=0.1, ge=0.0)
@@ -90,7 +116,11 @@ class AppSettings(BaseSettings):
         return self
 
     def as_safe_dict(self) -> Dict[str, Any]:
-        """Return a dictionary representation without exposing secret values."""
+        """Return a dictionary representation without exposing secret values.
+
+        Returns:
+            Dictionary of configuration values with secrets masked.
+        """
 
         masked = {
             "redis": self.redis.model_dump(),
@@ -104,7 +134,14 @@ class AppSettings(BaseSettings):
 
     @classmethod
     def load(cls) -> "AppSettings":
-        """Load settings from environment and ``.env`` file."""
+        """Load settings from environment and ``.env`` file.
+
+        Returns:
+            Instantiated settings object populated from the environment.
+
+        Raises:
+            SettingsError: When configuration is invalid or incomplete.
+        """
 
         try:
             return cls()  # type: ignore[call-arg]
@@ -116,14 +153,24 @@ class AppSettings(BaseSettings):
 
 @dataclass(frozen=True)
 class ExampleValue:
-    """Simple container to describe example variables."""
+    """Simple container to describe example variables.
+
+    Attributes:
+        key: Environment key name.
+        value: Example value for the key.
+        comment: Comment describing the configuration entry.
+    """
 
     key: str
     value: str
     comment: str
 
     def render(self) -> str:
-        """Render the example entry with deterministic comments."""
+        """Render the example entry with deterministic comments.
+
+        Returns:
+            Rendered entry with comment and key/value pair.
+        """
 
         return f"{self.comment}\n{self.key}={self.value}\n"
 
@@ -156,7 +203,14 @@ def _part_path(target: Path) -> Path:
 
 
 def generate_env_example(path: str | Path = ".env.example") -> Path:
-    """Generate a deterministic ``.env.example`` file."""
+    """Generate a deterministic ``.env.example`` file.
+
+    Args:
+        path: Output path for the generated example file.
+
+    Returns:
+        Path to the generated example file.
+    """
 
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)

@@ -697,80 +697,56 @@ def render_strict_summary(summary: PytestSummary, total_issues: int, plans: Sequ
         caps.append(f"skip/xfail detected: {skipped_total} → cap=92")
     spec_items = [
         {
-            "label": "AGENTS.md::1 Project TL;DR",
-            "evidence": "repo_auditor_lite/__main__.py::Clock",
+            "label": "AGENTS.md::5 Uploads & Exports — SABT_V1",
+            "evidence": "tests/obs/test_upload_export_metrics_behavior.py::test_export_metrics_track_phases_and_counts",
         },
         {
-            "label": "AGENTS.md::3 Absolute Guardrails",
-            "evidence": "repo_auditor_lite/files.py::write_atomic",
+            "label": "AGENTS.md::4 Domain Rules",
+            "evidence": "tests/domain/test_validate_registration.py::test_validation_rules_raise",
         },
         {
-            "label": "AGENTS.md::5 Uploads & Exports (Excel-safety)",
-            "evidence": "repo_auditor_lite/excel_safety.py::render_safe_csv",
+            "label": "Metrics counters coverage",
+            "evidence": "tests/obs/test_upload_export_metrics_behavior.py::test_upload_metrics_increment_and_errors_label_cardinality",
         },
         {
-            "label": "AGENTS.md::8 Testing & CI Gates",
-            "evidence": "tests/time/test_no_wallclock.py::test_no_direct_wall_clock_calls",
+            "label": "Export duration histogram phases",
+            "evidence": "tests/obs/test_upload_export_metrics_behavior.py::test_export_metrics_track_phases_and_counts",
+        },
+        {
+            "label": "Excel-safety & formula guard",
+            "evidence": "tests/exports/test_csv_excel_safety.py::test_always_quote_and_formula_guard",
+        },
+        {
+            "label": "Atomic storage finalize",
+            "evidence": "tests/uploads/test_atomic_storage.py::test_finalize_writes_and_cleans_partials",
+        },
+        {
+            "label": "Delta windows gapless",
+            "evidence": "tests/exports/test_delta_windows.py::test_delta_windows_are_gapless",
+        },
+        {
+            "label": "Performance budgets honored",
+            "evidence": "tests/perf/test_exporter_perf.py::test_p95_budget",
+        },
+        {
+            "label": "Edge-case normalization",
+            "evidence": "tests/uploads/test_roster_validation.py::test_validator_normalizes_edge_cases",
+        },
+        {
+            "label": "Derived student fields",
+            "evidence": "tests/domain/test_validate_registration.py::test_derived_fields",
+        },
+        {
+            "label": "Persian deterministic errors",
+            "evidence": "tests/application/test_python_version_guard.py::test_python_version_guard",
         },
         {
             "label": "Middleware order RateLimit→Idempotency→Auth",
-            "evidence": "tests/integration/test_middleware_order.py::test_middleware_order_success",
+            "evidence": "tests/middleware/test_order_post.py::test_middleware_order",
         },
         {
-            "label": "Deterministic retry/backoff",
-            "evidence": "tests/retry/test_retry_backoff.py::test_retry_handles_permission_error",
-        },
-        {
-            "label": "Single-writer concurrency lock",
-            "evidence": "tests/idem/test_concurrent_fixes.py::test_atomic_write_single_writer",
-        },
-        {
-            "label": "Excel & CSV CRLF enforcement",
-            "evidence": "tests/export/test_excel_hygiene.py::test_excel_formula_guard_and_crlf",
-        },
-        {
-            "label": "BAT quoting & Python version guard",
-            "evidence": "tests/bat/test_bat_crlf_and_quoting.py::test_bat_outputs_use_crlf",
-        },
-        {
-            "label": "Prometheus registry hygiene",
-            "evidence": "tests/metrics/test_metrics_reset.py::test_registry_resets_between_tests",
-        },
-        {
-            "label": "Metrics fallback without prometheus_client",
-            "evidence": "tests/metrics/test_metrics_reset.py::test_metrics_noop_fallback",
-        },
-        {
-            "label": "Metrics prefer Prometheus when available",
-            "evidence": "tests/metrics/test_metrics_reset.py::test_metrics_prefers_prometheus_stub",
-        },
-        {
-            "label": "Metrics backend env overrides",
-            "evidence": "tests/metrics/test_metrics_reset.py::test_metrics_forced_noop_backend_uses_noop_even_with_prometheus",
-        },
-        {
-            "label": "Metrics forced prom requires dependency",
-            "evidence": "tests/metrics/test_metrics_reset.py::test_metrics_forced_prom_backend_requires_dependency",
-        },
-        {
-            "label": "Optional dependency shims",
-            "evidence": "tests/compat/test_optional_shims.py::test_optional_import_returns_shim_when_missing",
-        },
-        {
-            "label": "Persian logging masks identifiers",
-            "evidence": "tests/i18n/test_persian_errors_and_logs.py::test_logs_are_persian_and_masked",
-        },
-        {
-            "label": "Performance budgets respected",
-            "evidence": "tests/perf/test_perf_budgets.py::test_analyze_perf_budget",
-        },
-        {
-            "label": "Derived metrics & evidence rows",
-            "evidence": "repo_auditor_lite/__main__.py::build_report",
-        },
-        {
-            "label": "Input sanitization handles zero-width/long text",
-            "evidence": "repo_auditor_lite/__main__.py::normalize_text",
+            "label": "Retry & state hygiene",
+            "evidence": "tests/middleware/test_rate_limit_diagnostics.py::test_backoff_seed_uses_correlation",
         },
     ]
     spec_lines: List[str] = []

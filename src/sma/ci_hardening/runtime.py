@@ -46,13 +46,25 @@ def ensure_python_311() -> None:
 
 
 def is_uvloop_supported() -> bool:
-    """Return ``True`` when ``uvloop`` may be safely enabled on this platform."""
+    """Return ``True`` when ``uvloop`` may be safely enabled on this platform.
+
+    Returns:
+        ``True`` when the current platform supports ``uvloop``.
+    """
 
     return platform.system().lower() not in {"windows"}
 
 
 def ensure_tehran_tz() -> ZoneInfo:
-    """Ensure the Asia/Tehran timezone is installed and usable."""
+    """Ensure the Asia/Tehran timezone is installed and usable.
+
+    Returns:
+        ``ZoneInfo`` instance for ``Asia/Tehran`` when available.
+
+    Raises:
+        RuntimeConfigurationError: If tzdata is missing and the timezone cannot
+            be loaded.
+    """
 
     try:
         return ZoneInfo("Asia/Tehran")
@@ -63,7 +75,11 @@ def ensure_tehran_tz() -> ZoneInfo:
 
 
 def _default_search_roots() -> list[Path]:
-    """Return candidate directories to look for ``AGENTS.md``."""
+    """Return candidate directories to look for ``AGENTS.md``.
+
+    Returns:
+        List of directories to inspect for the manifest file.
+    """
 
     roots: list[Path] = []
     for candidate in (Path.cwd(), *Path(__file__).resolve().parents):
@@ -73,7 +89,17 @@ def _default_search_roots() -> list[Path]:
 
 
 def ensure_agents_manifest(roots: Iterable[Path] | None = None) -> Path:
-    """Ensure an AGENTS manifest is available within the repository tree."""
+    """Ensure an AGENTS manifest is available within the repository tree.
+
+    Args:
+        roots: Optional iterable of directories to search.
+
+    Returns:
+        Path to the discovered manifest file.
+
+    Raises:
+        RuntimeConfigurationError: If no manifest file is found.
+    """
 
     search_roots = list(roots) if roots is not None else _default_search_roots()
     for root in search_roots:

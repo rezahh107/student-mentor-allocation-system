@@ -45,4 +45,4 @@ class UploadsMetrics:
 
     def record_failure(self, fmt: str, error_type: str) -> None:
         self.uploads_total.labels(status="failure", format=fmt).inc()
-        self.upload_errors.labels(error_type).inc()
+        self.upload_errors.labels(type=error_type).inc()

@@ -1,0 +1,45 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  quality:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[ci]" -c constraints-dev.txt
+
+      - name: Check pytest version
+        run: python scripts/check_pytest_version.py
+
+      - name: Lint & static analysis
+        run: |
+          black --check .
+          isort --check-only .
+          ruff check .
+          mypy --config-file pyproject.toml src/sma/ci_hardening tests/middleware tests/time tests/config tests/application tests/ci
+          bandit -c pyproject.toml -r src/sma/ci_hardening
+
+      - name: Run pip check
+        run: pip check
+
+      - name: Run tests
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: |
+          mkdir -p reports
+          pytest -v --tb=short | tee reports/pytest-summary.txt

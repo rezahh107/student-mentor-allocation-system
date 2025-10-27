@@ -10,6 +10,16 @@ else:  # pragma: no cover
     PYTEST_TIMEOUT_PRESENT = True
 
 
+STUB_ACTIVE = not PYTEST_TIMEOUT_PRESENT
+
+__all__ = [
+    "pytest_addoption",
+    "pytest_configure",
+    "PYTEST_TIMEOUT_PRESENT",
+    "STUB_ACTIVE",
+]
+
+
 def pytest_addoption(parser):  # pragma: no cover - exercised via tests
     if PYTEST_TIMEOUT_PRESENT:
         return

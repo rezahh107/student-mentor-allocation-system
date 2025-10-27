@@ -28,7 +28,7 @@ def test_archive_in_backup_restore(archiver, insert_event, tz, archive_config, e
     )
 
     result = archiver.archive_month("2024_03")
-    manifest_path = archive_config.archive_root / "audit" / "2024" / "03" / "audit_archive_manifest.json"
+    manifest_path = archive_config.archive_root / "audit" / "2024" / "03" / "archive_manifest.json"
     manifest = json.loads(manifest_path.read_text("utf-8"))
     # corrupt manifest hash to force failure
     manifest["artifacts"][0]["sha256"] = "deadbeef"

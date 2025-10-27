@@ -1,0 +1,79 @@
+"""Runtime shims for optional pytest plugins and observability libraries."""
+
+from __future__ import annotations
+
+import importlib
+import sys
+from types import ModuleType
+from typing import Callable
+
+
+def _module_from(source: ModuleType, name: str, *, extra: dict[str, object] | None = None) -> ModuleType:
+    module = ModuleType(name)
+    for attr, value in source.__dict__.items():
+        if attr.startswith("__") and attr not in {"__all__", "__doc__"}:
+            continue
+        setattr(module, attr, value)
+    if extra:
+        for key, value in extra.items():
+            setattr(module, key, value)
+    module.__dict__.setdefault("__all__", [
+        attr for attr in module.__dict__ if not attr.startswith("__")
+    ])
+    return module
+
+
+def _install(name: str, factory: Callable[[], ModuleType]) -> ModuleType:
+    existing = sys.modules.get(name)
+    if existing is not None:
+        return existing
+    module = factory()
+    sys.modules[name] = module
+    return module
+
+
+def _install_pytest_timeout_stub() -> None:
+    try:
+        importlib.import_module("pytest_timeout")
+    except ModuleNotFoundError:
+        from tooling.plugins import timeout_stub
+
+        stub = _module_from(timeout_stub, "pytest_timeout", extra={"STUB_ACTIVE": True})
+        _install("pytest_timeout", lambda: stub)
+
+
+def _install_xdist_stub() -> None:
+    try:
+        importlib.import_module("xdist.plugin")
+        return
+    except ModuleNotFoundError:
+        pass
+    from tooling.plugins import xdist_stub
+
+    plugin_module = _module_from(xdist_stub, "xdist.plugin", extra={"STUB_ACTIVE": True})
+
+    def build_xdist() -> ModuleType:
+        base = ModuleType("xdist")
+        base.plugin = plugin_module  # type: ignore[attr-defined]
+        base.STUB_ACTIVE = True  # type: ignore[attr-defined]
+        base.__all__ = ["plugin"]
+        return base
+
+    _install("xdist.plugin", lambda: plugin_module)
+    _install("xdist", build_xdist)
+
+
+def _install_opentelemetry_stub() -> None:
+    try:
+        importlib.import_module("opentelemetry.trace")
+    except ModuleNotFoundError:
+        import sma._local_opentelemetry as local_ot
+
+        _install("opentelemetry", lambda: local_ot)
+        _install("opentelemetry.trace", lambda: local_ot.trace)
+
+
+_install_pytest_timeout_stub()
+_install_xdist_stub()
+_install_opentelemetry_stub()
+

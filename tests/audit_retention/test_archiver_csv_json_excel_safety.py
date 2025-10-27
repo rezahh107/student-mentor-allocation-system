@@ -87,7 +87,7 @@ def test_manifest_hash_and_counts(archiver, insert_event, tz, archive_config) ->
     )
 
     result = archiver.archive_month("2024_03")
-    manifest_path = archive_config.archive_root / "audit" / "2024" / "03" / "audit_archive_manifest.json"
+    manifest_path = archive_config.archive_root / "audit" / "2024" / "03" / "archive_manifest.json"
     payload = json.loads(manifest_path.read_text("utf-8"))
     assert payload["row_count"] == 1
     csv_entry = next(item for item in payload["artifacts"] if item["type"] == "csv")

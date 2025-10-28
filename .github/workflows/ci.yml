@@ -6,9 +6,50 @@ on:
 
 env:
   PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-  RUN_INTEGRATION: ${{ vars.RUN_INTEGRATION || '0' }}
+  RUN_INTEGRATION: ${{ vars.RUN_INTEGRATION || '1' }}
 
 jobs:
+  quality:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Upgrade pip tooling
+        run: python -m pip install --upgrade pip setuptools wheel
+
+      - name: Install quality dependencies
+        run: |
+          pip install -e ".[dev]" -c constraints-dev.txt
+          pip install black isort "bandit[toml]" pip-audit
+
+      - name: Check formatting with Black
+        run: black --check --diff .
+
+      - name: Check import order with isort
+        run: isort --check-only --diff .
+
+      - name: Run Ruff lint
+        run: ruff check .
+
+      - name: Run Ruff format validation
+        run: ruff format --check --diff .
+
+      - name: Run MyPy type checks
+        run: mypy --config-file pyproject.toml
+
+      - name: Run Bandit security scan
+        run: bandit -c pyproject.toml -r src
+
+      - name: Run pip-audit vulnerability scan
+        run: pip-audit --strict
+
   unit:
     name: Unit / Lintless Gate
     runs-on: ${{ matrix.os }}
@@ -39,8 +80,8 @@ jobs:
         run: pytest -q -c pytest.min.ini -m "not integration"
 
   integration:
-    name: Integration Matrix (opt-in)
-    if: ${{ env.RUN_INTEGRATION == '1' }}
+    name: Integration Matrix
+    if: ${{ env.RUN_INTEGRATION != '0' }}
     runs-on: ${{ matrix.os }}
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "0"

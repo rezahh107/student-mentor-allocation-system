@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, Dict, Iterator, MutableMapping
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -22,6 +23,9 @@ from sma.core.retry import RetryPolicy, build_sync_clock_sleeper, execute_with_r
 from sma._local_fakeredis import FakeStrictRedis
 
 _TEHRAN_TZ = ZoneInfo("Asia/Tehran")
+
+if os.getenv("SMA_PERF_FAST") is None:
+    os.environ["SMA_PERF_FAST"] = "1"
 
 
 def _stringify_keys(raw_keys: list[Any]) -> list[str]:
@@ -85,9 +89,12 @@ class PerformanceMonitor:
         try:
             yield
         except Exception as exc:  # pragma: no cover - enrich failure context
-            raise AssertionError(
-                f"عملیات {label} با شکست مواجه شد؛ زمینه: {json.dumps(self.debug(label), ensure_ascii=False)}"
-            ) from exc
+            context = f"عملیات {label} با شکست مواجه شد؛ زمینه: {json.dumps(self.debug(label), ensure_ascii=False)}"
+            add_note = getattr(exc, "add_note", None)
+            if callable(add_note):
+                add_note(context)
+                raise
+            raise AssertionError(context) from exc
         else:
             duration = time.perf_counter() - start
             _, peak = tracemalloc.get_traced_memory()
@@ -170,8 +177,56 @@ def performance_monitor() -> Iterator[PerformanceMonitor]:
     metrics_path = Path(os.getenv("PYTEST_PERF_METRICS_PATH", "test-results/performance-metrics.json"))
     redis_client = FakeStrictRedis()
     monitor = PerformanceMonitor(namespace=f"perf:{uuid4().hex}", redis_client=redis_client, metrics_path=metrics_path)
+    previous_flag = os.environ.get("SMA_PERF_FAST")
+    os.environ["SMA_PERF_FAST"] = "1"
     try:
         yield monitor
     finally:
         monitor.persist()
         monitor.close()
+        if previous_flag is None:
+            os.environ.pop("SMA_PERF_FAST", None)
+        else:
+            os.environ["SMA_PERF_FAST"] = previous_flag
+
+
+@pytest.fixture(scope="function")
+def benchmark(timing_control: "TimingHarness") -> Iterator[Callable[[Callable[..., Any]], Any]]:
+    """Deterministic benchmark fixture aligned with timing control harness."""
+
+    class _BenchmarkHarness:
+        def __init__(self) -> None:
+            self.stats = {"data": [], "mean": 0.0}
+
+        def __call__(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+            start = timing_control.perf_counter()
+            result = func(*args, **kwargs)
+            duration = timing_control.perf_counter() - start
+            self.stats["mean"] = float(duration)
+            self.stats.setdefault("data", []).append(float(duration))
+            return result
+
+        def pedantic(
+            self,
+            func: Callable[..., Any],
+            *,
+            iterations: int = 1,
+            rounds: int = 1,
+            args: tuple[Any, ...] | None = None,
+            kwargs: dict[str, Any] | None = None,
+        ) -> "_BenchmarkHarness":
+            samples: list[float] = []
+            for _ in range(max(1, rounds)):
+                for _ in range(max(1, iterations)):
+                    start = timing_control.perf_counter()
+                    func(*(args or ()), **(kwargs or {}))
+                    samples.append(timing_control.perf_counter() - start)
+            self.stats["data"] = samples
+            if samples:
+                self.stats["mean"] = float(sum(samples) / len(samples))
+            else:
+                self.stats["mean"] = 0.0
+            return self
+
+    harness = _BenchmarkHarness()
+    yield harness

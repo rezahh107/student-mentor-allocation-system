@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import base64
 import hmac
+import base64
+import hmac
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, Mapping, MutableMapping
 from urllib.parse import parse_qs, urlparse
+
+from binascii import Error as Base64Error
 
 from sma.phase6_import_to_sabt.models import SignedURLProvider
 from sma.phase6_import_to_sabt.security.config import SigningKeyDefinition
@@ -34,7 +38,28 @@ class SignedURLComponents:
     signature: str
 
     def as_query(self) -> Mapping[str, str]:
-        return {"signature": self.signature, "expires": str(self.expires), "kid": self.kid}
+        expiry_text = str(self.expires)
+        return {
+            "signed": self.token_id,
+            "token": self.token_id,
+            "kid": self.kid,
+            "exp": expiry_text,
+            "expires": expiry_text,
+            "signature": self.signature,
+            "sig": self.signature,
+        }
+
+    @property
+    def signed(self) -> str:
+        return self.token_id
+
+    @property
+    def exp(self) -> int:
+        return self.expires
+
+    @property
+    def sig(self) -> str:
+        return self.signature
 
 
 class SigningKeySet:
@@ -113,19 +138,38 @@ class DualKeySigner(SignedURLProvider):
     def verify_components(
         self,
         *,
-        token_id: str,
-        kid: str,
-        expires: int,
-        signature: str,
+        token_id: str | None = None,
+        token: str | None = None,
+        signed: str | None = None,
+        kid: str | None = None,
+        expires: int | None = None,
+        exp: int | None = None,
+        signature: str | None = None,
+        sig: str | None = None,
         now: datetime | None = None,
     ) -> str:
+        token_value = token_id or token or signed
+        if token_value is None:
+            self._metrics.download_signed_total.labels(outcome="malformed").inc()
+            raise SignatureError("توکن نامعتبر است.", reason="missing_token")
+        if not kid:
+            self._metrics.download_signed_total.labels(outcome="malformed").inc()
+            raise SignatureError("توکن نامعتبر است.", reason="missing_kid")
+        expiry_value = expires if expires is not None else exp
+        if expiry_value is None:
+            self._metrics.download_signed_total.labels(outcome="malformed").inc()
+            raise SignatureError("توکن نامعتبر است.", reason="missing_expiry")
+        signature_value = signature or sig
+        if signature_value is None:
+            self._metrics.download_signed_total.labels(outcome="malformed").inc()
+            raise SignatureError("توکن نامعتبر است.", reason="missing_signature")
         try:
-            path = self._decode_path(token_id)
+            path = self._decode_path(token_value)
         except SignatureError as exc:
             self._metrics.download_signed_total.labels(outcome=exc.reason).inc()
             raise
         now_ts = int((now or self._clock.now()).timestamp())
-        if expires <= now_ts:
+        if expiry_value <= now_ts:
             self._metrics.download_signed_total.labels(outcome="expired").inc()
             raise SignatureError("لینک دانلود منقضی شده است.", reason="expired")
         if kid not in self._keys.allowed_for_verification():
@@ -135,9 +179,9 @@ class DualKeySigner(SignedURLProvider):
         if key is None:
             self._metrics.download_signed_total.labels(outcome="unknown_kid").inc()
             raise SignatureError("کلید امضا ناشناخته است.", reason="unknown_kid")
-        canonical = self._canonical("GET", path, {}, expires)
+        canonical = self._canonical("GET", path, {}, expiry_value)
         expected = self._sign(key.secret, canonical)
-        if not hmac.compare_digest(expected, signature):
+        if not hmac.compare_digest(expected, signature_value):
             self._metrics.download_signed_total.labels(outcome="forged").inc()
             raise SignatureError("توکن نامعتبر است.", reason="signature")
         self._metrics.download_signed_total.labels(outcome="ok").inc()
@@ -159,7 +203,7 @@ class DualKeySigner(SignedURLProvider):
             self._metrics.download_signed_total.labels(outcome="malformed").inc()
             return False
         try:
-            self.verify_components(token_id=token_id, kid=kid, expires=expires, signature=sig, now=now)
+            self.verify_components(token_id=token_id, kid=kid, expires=expires, sig=sig, now=now)
         except SignatureError:
             return False
         return True
@@ -197,7 +241,14 @@ class DualKeySigner(SignedURLProvider):
     @staticmethod
     def _decode_path(value: str) -> str:
         padding = "=" * (-len(value) % 4)
-        decoded = base64.urlsafe_b64decode(value + padding).decode("utf-8")
+        try:
+            raw = base64.urlsafe_b64decode(value + padding)
+        except (Base64Error, ValueError) as exc:  # pragma: no cover - defensive
+            raise SignatureError("توکن نامعتبر است.", reason="token_decode") from exc
+        try:
+            decoded = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:  # pragma: no cover - defensive
+            raise SignatureError("توکن نامعتبر است.", reason="token_decode") from exc
         return DualKeySigner._normalize_path(decoded)
 
 

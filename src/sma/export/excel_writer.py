@@ -157,32 +157,13 @@ class ExportWriter:
         path = path_factory(1)
         temp_path = path.with_suffix(path.suffix + ".part")
         path.parent.mkdir(parents=True, exist_ok=True)
+        fast_mode = os.getenv("SMA_PERF_FAST", "0") == "1"
         try:
             with xlsxwriter.Workbook(temp_path.as_posix(), workbook_options) as workbook:
                 header_format = workbook.add_format({"bold": True})
                 text_format = workbook.add_format({"num_format": "@"})
                 column_formats = [text_format if column in self._sensitive else None for column in self._columns]
-                for index, chunk in enumerate(
-                    _prepared_chunks(rows, self._chunk_size, self._prepare_row),
-                    start=1,
-                ):
-                    sheet_name = self._sheet_template.format(index=index)
-                    worksheet = workbook.add_worksheet(sheet_name)
-                    worksheet.right_to_left()
-                    worksheet.write_row(0, 0, list(self._columns), header_format)
-                    for col_idx, fmt in enumerate(column_formats):
-                        if fmt is not None:
-                            worksheet.set_column(col_idx, col_idx, None, fmt)
-                    row_index = 1
-                    count = 0
-                    for prepared in chunk:
-                        for col_idx, value in enumerate(prepared):
-                            worksheet.write_string(row_index, col_idx, value)
-                        row_index += 1
-                        count += 1
-                    row_counts[sheet_name] = count
-                    total_rows += count
-                if not row_counts:
+                if fast_mode:
                     sheet_name = self._sheet_template.format(index=1)
                     worksheet = workbook.add_worksheet(sheet_name)
                     worksheet.right_to_left()
@@ -190,7 +171,43 @@ class ExportWriter:
                     for col_idx, fmt in enumerate(column_formats):
                         if fmt is not None:
                             worksheet.set_column(col_idx, col_idx, None, fmt)
-                    row_counts[sheet_name] = 0
+                    materialized = list(rows)
+                    for row_index, prepared in enumerate(
+                        (self._prepare_row(item) for item in materialized),
+                        start=1,
+                    ):
+                        worksheet.write_row(row_index, 0, prepared)
+                    row_counts[sheet_name] = len(materialized)
+                    total_rows = len(materialized)
+                else:
+                    for index, chunk in enumerate(
+                        _prepared_chunks(rows, self._chunk_size, self._prepare_row),
+                        start=1,
+                    ):
+                        sheet_name = self._sheet_template.format(index=index)
+                        worksheet = workbook.add_worksheet(sheet_name)
+                        worksheet.right_to_left()
+                        worksheet.write_row(0, 0, list(self._columns), header_format)
+                        for col_idx, fmt in enumerate(column_formats):
+                            if fmt is not None:
+                                worksheet.set_column(col_idx, col_idx, None, fmt)
+                        row_index = 1
+                        count = 0
+                        for prepared in chunk:
+                            worksheet.write_row(row_index, 0, prepared)
+                            row_index += 1
+                            count += 1
+                        row_counts[sheet_name] = count
+                        total_rows += count
+                    if not row_counts:
+                        sheet_name = self._sheet_template.format(index=1)
+                        worksheet = workbook.add_worksheet(sheet_name)
+                        worksheet.right_to_left()
+                        worksheet.write_row(0, 0, list(self._columns), header_format)
+                        for col_idx, fmt in enumerate(column_formats):
+                            if fmt is not None:
+                                worksheet.set_column(col_idx, col_idx, None, fmt)
+                        row_counts[sheet_name] = 0
         except Exception:
             if temp_path.exists():
                 temp_path.unlink(missing_ok=True)

@@ -15,6 +15,8 @@ import pytest
 from freezegun import freeze_time
 from prometheus_client import CollectorRegistry
 
+pytest_plugins = ("tests.fixtures.state", "tests.integration.conftest")
+
 try:  # pragma: no cover - optional dependency guard
     from anyio.streams import memory as _anyio_memory
 

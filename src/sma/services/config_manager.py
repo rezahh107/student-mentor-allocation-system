@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 
@@ -20,6 +21,12 @@ class ConfigManager:
         }
         self._config = self._load()
 
+    @property
+    def config(self) -> Any:
+        """Return a namespace-style view of the current configuration."""
+
+        return SimpleNamespace(**self._config)
+
     def _load(self) -> Dict[str, Any]:
         if not self.config_path.exists():
             return dict(self._defaults)
@@ -36,6 +43,15 @@ class ConfigManager:
     def set(self, key: str, value: Any) -> None:
         self._config[key] = value
         self.save()
+
+    def update_config(self, **overrides: Any) -> None:
+        """Merge overrides into the current configuration and persist them."""
+
+        self._config.update(overrides)
+        self.save()
+
+    def update_config_from_mapping(self, values: Dict[str, Any]) -> None:
+        self.update_config(**values)
 
     def save(self) -> None:
         self.config_path.parent.mkdir(parents=True, exist_ok=True)

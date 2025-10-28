@@ -10,6 +10,7 @@ import os
 import subprocess
 import socket
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -187,9 +188,16 @@ def ensure_agents_manifest(start: Path | None = None, *, max_depth: int = 6) -> 
 class SingleInstanceLock:
     path: Path
     _handle: int | None = field(default=None, init=False, repr=False)
+    _registry_key: str | None = field(default=None, init=False, repr=False)
 
     def acquire(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        resolved = os.fspath(self.path.resolve())
+        with _LOCK_REGISTRY_GUARD:
+            if resolved in _LOCK_REGISTRY:
+                raise LauncherError("ALREADY_RUNNING", ALREADY_RUNNING_MSG)
+            _LOCK_REGISTRY[resolved] = os.getpid()
+        self._registry_key = resolved
         handle = os.open(self.path, os.O_RDWR | os.O_CREAT)
         try:
             if os.name == "nt":  # pragma: win32-cover
@@ -202,6 +210,10 @@ class SingleInstanceLock:
                 fcntl.lockf(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
             os.close(handle)
+            with _LOCK_REGISTRY_GUARD:
+                if self._registry_key is not None:
+                    _LOCK_REGISTRY.pop(self._registry_key, None)
+                    self._registry_key = None
             raise LauncherError("ALREADY_RUNNING", ALREADY_RUNNING_MSG) from exc
         self._handle = handle
 
@@ -220,6 +232,10 @@ class SingleInstanceLock:
         finally:
             os.close(self._handle)
             self._handle = None
+            if self._registry_key is not None:
+                with _LOCK_REGISTRY_GUARD:
+                    _LOCK_REGISTRY.pop(self._registry_key, None)
+                self._registry_key = None
 
     def __enter__(self) -> "SingleInstanceLock":  # pragma: no cover - trivial
         self.acquire()
@@ -611,3 +627,6 @@ if __name__ == "__main__":  # pragma: no cover - script execution guard
 
     multiprocessing.freeze_support()
     raise SystemExit(main())
+_LOCK_REGISTRY: dict[str, int] = {}
+_LOCK_REGISTRY_GUARD = threading.Lock()
+

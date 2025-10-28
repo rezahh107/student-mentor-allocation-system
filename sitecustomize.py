@@ -63,6 +63,18 @@ def _install_xdist_stub() -> None:
     _install("xdist", build_xdist)
 
 
+def _install_pyside6_stub() -> None:
+    try:
+        importlib.import_module("PySide6.QtCore")
+        importlib.import_module("PySide6.QtWidgets")
+    except ModuleNotFoundError:
+        from tooling.stubs import pyside6
+
+        modules = pyside6.build_modules()
+        for name, module in modules.items():
+            _install(name, lambda module=module: module)
+
+
 def _install_opentelemetry_stub() -> None:
     try:
         importlib.import_module("opentelemetry.trace")
@@ -73,7 +85,18 @@ def _install_opentelemetry_stub() -> None:
         _install("opentelemetry.trace", lambda: local_ot.trace)
 
 
+def _install_fakeredis_stub() -> None:
+    try:
+        importlib.import_module("fakeredis")
+    except ModuleNotFoundError:
+        import sma._local_fakeredis as local_fakeredis
+
+        _install("fakeredis", lambda: _module_from(local_fakeredis, "fakeredis"))
+
+
 _install_pytest_timeout_stub()
 _install_xdist_stub()
+_install_pyside6_stub()
 _install_opentelemetry_stub()
+_install_fakeredis_stub()
 

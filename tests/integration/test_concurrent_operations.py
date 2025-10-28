@@ -34,11 +34,14 @@ async def test_concurrent_redis_writes(clean_redis_state, get_debug_context) -> 
                 backoff = deterministic_jitter(0.01, attempts, f"redis:{task_id}")
                 await asyncio.sleep(backoff)
 
-    results = await asyncio.gather(*(writer(i) for i in range(total_tasks)))
-    final_value = int((client.get(redis_key) or b"0"))
-    diagnostics = get_debug_context(extra={"results": results, "expected": total_tasks})
-    assert final_value == total_tasks, diagnostics
-    assert sorted(results) == list(range(1, total_tasks + 1)), diagnostics
+    try:
+        results = await asyncio.gather(*(writer(i) for i in range(total_tasks)))
+        final_value = int((client.get(redis_key) or b"0"))
+        diagnostics = get_debug_context(extra={"results": results, "expected": total_tasks})
+        assert final_value == total_tasks, diagnostics
+        assert sorted(results) == list(range(1, total_tasks + 1)), diagnostics
+    finally:
+        await asyncio.to_thread(client.delete, redis_key)
 
 
 @pytest.mark.asyncio

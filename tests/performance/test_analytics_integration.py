@@ -18,7 +18,7 @@ except RuntimeError as exc:  # pragma: no cover - headless environments
 
 
 @pytest.mark.asyncio
-async def test_large_scale_allocation_performance():
+async def test_large_scale_allocation_performance(timing_control):
     backend = MockBackendService(student_count=0, mentor_count=0)
 
     student_count = 5000
@@ -61,10 +61,10 @@ async def test_large_scale_allocation_performance():
     assert results["successful"] + results["failed"] == student_count
 
 
-def test_performance_monitor_metrics():
+def test_performance_monitor_metrics(timing_control):
     monitor = PerformanceMonitor(history_size=5)
     monitor.start_monitoring()
-    time.sleep(1.5)
+    timing_control.advance(1.5)
     monitor.stop_monitoring()
 
     monitor.record_allocation_performance(duration=2.0, student_count=200, success_count=150)
@@ -80,14 +80,14 @@ def test_performance_monitor_metrics():
 def test_config_manager_persistence(tmp_path):
     config_file = tmp_path / "test_allocation_config.json"
 
-    manager = ConfigManager(config_file=config_file)
+    manager = ConfigManager(config_path=config_file)
     manager.update_config(
         same_center_only=False,
         prefer_lower_load=False,
         capacity_weight=1.5,
     )
 
-    reloaded = ConfigManager(config_file=config_file)
+    reloaded = ConfigManager(config_path=config_file)
     assert not reloaded.config.same_center_only
     assert not reloaded.config.prefer_lower_load
     assert pytest.approx(reloaded.config.capacity_weight, rel=1e-3) == 1.5

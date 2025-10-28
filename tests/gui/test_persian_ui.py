@@ -12,6 +12,7 @@ import pytest
 from sma.core.clock import FrozenClock
 from sma.core.retry import RetryPolicy, build_sync_clock_sleeper, execute_with_retry
 from windows_launcher import launcher as launcher_mod
+from windows_shared.config import LauncherConfig, compute_port
 
 _TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
@@ -64,11 +65,11 @@ def test_rtl_text_rendering(gui_state: Path, frozen_clock: FrozenClock, gui_retr
     launcher.retry_metrics = launcher_mod.build_retry_metrics("launcher-test")
     launcher.probe = lambda port, cid: True
     launcher.backend_launcher = lambda port: None
-    launcher.enforce_memory_budget = lambda: None  # type: ignore[assignment]
-    launcher.enforce_performance_budgets = lambda: None  # type: ignore[assignment]
-    launcher._ensure_backend_started = lambda config, corr_id: None  # type: ignore[assignment]
+    monkeypatch.setattr(launcher_mod.Launcher, "enforce_memory_budget", lambda self: None)
+    monkeypatch.setattr(launcher_mod.Launcher, "enforce_performance_budgets", lambda self: None)
+    monkeypatch.setattr(launcher_mod.Launcher, "_ensure_backend_started", lambda self, config, corr_id: None)
 
-    config = launcher_mod.LauncherConfig(port=launcher_mod.compute_port(), ui_path="/رابط?جهت=rtl")
+    config = LauncherConfig(port=compute_port(), ui_path="/رابط?جهت=rtl")
     monkeypatch.setattr(launcher_mod, "ensure_agents_manifest", lambda start=None, max_depth=6: Path("AGENTS.md"))
     monkeypatch.setattr(launcher_mod, "load_launcher_config", lambda clock=None: config)
     monkeypatch.setattr(launcher_mod, "wait_for_backend", lambda *args, **kwargs: None)

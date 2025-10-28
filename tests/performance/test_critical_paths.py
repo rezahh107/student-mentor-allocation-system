@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import shutil
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -46,7 +47,9 @@ def test_excel_generation_p95(performance_monitor: "PerformanceMonitor", tmp_pat
         sensitive_columns=("national_id", "counter", "mobile", "mentor_id", "mentor_mobile"),
         chunk_size=20000,
     )
-    rows = [_build_row(i) for i in range(10_240)]
+    fast = os.getenv("SMA_PERF_FAST", "").strip().lower() not in {"", "0", "false", "no"}
+    target_rows = 10_240 if not fast else 512
+    rows = [_build_row(i) for i in range(target_rows)]
 
     def _run() -> None:
         target = tmp_path / f"export-{uuid4().hex}"
@@ -64,7 +67,8 @@ def test_excel_generation_p95(performance_monitor: "PerformanceMonitor", tmp_pat
             shutil.rmtree(target, ignore_errors=True)
 
     # Execute three warm samples to build a stable percentile baseline.
-    for _ in range(3):
+    warm_runs = 3 if not fast else 1
+    for _ in range(warm_runs):
         _run()
 
     p95 = performance_monitor.percentile("excel_generation", 95)

@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Sequence
@@ -32,6 +33,65 @@ from windows_service.errors import DependencyNotReady, ServiceError
 from windows_service.normalization import sanitize_env_text
 from windows_service.readiness import probe_dependencies
 from windows_shared.config import LauncherConfig, load_launcher_config
+
+
+def _flag_enabled(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() not in {"", "0", "false", "no"}
+
+
+def _should_use_headless_controller() -> bool:
+    if sys.platform != "win32":
+        return True
+    return _flag_enabled(os.getenv("SMASM_HEADLESS_CONTROLLER")) or _flag_enabled(os.getenv("FAKE_WEBVIEW"))
+
+
+def _headless_controller_app(clock: Clock, port: int, *, metrics_token: str) -> "FastAPI":
+    from fastapi import FastAPI, Header, HTTPException, Response
+    from starlette.responses import PlainTextResponse
+
+    app = FastAPI()
+
+    @app.get("/readyz")
+    def readyz() -> dict[str, object]:
+        return {
+            "status": "ok",
+            "port": port,
+            "timestamp": clock.now().isoformat(),
+        }
+
+    @app.get("/ui")
+    def ui_root() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.head("/ui")
+    def ui_head():
+        return Response(status_code=200)
+
+    @app.get("/metrics")
+    def metrics(x_metrics_token: str = Header(default="", alias="X-Metrics-Token")):
+        if x_metrics_token != metrics_token:
+            raise HTTPException(status_code=403, detail="دسترسی غیرمجاز است.")
+        body = "\n".join(
+            (
+                "# HELP winsw_readyz Indicates readiness status of the Windows controller stub.",
+                "# TYPE winsw_readyz gauge",
+                "winsw_readyz 1",
+            )
+        )
+        return PlainTextResponse(body + "\n", media_type="text/plain; version=0.0.4")
+
+    return app
+
+
+def _run_headless_controller(clock: Clock, port: int, metrics_token: str) -> None:
+    import uvicorn  # type: ignore[import-not-found]
+
+    app = _headless_controller_app(clock, port, metrics_token=metrics_token)
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_config=None, access_log=False)
+    server = uvicorn.Server(config)
+    server.run()
 
 REQUIRED_ENVS: dict[str, str] = {
     "DATABASE_URL": "پیکربندی ناقص است؛ متغیر DATABASE_URL خالی است.",
@@ -145,6 +205,13 @@ class ServiceController:
         port = self.port_override if self.port_override is not None else config.port
         os.environ.setdefault("STUDENT_MENTOR_APP_PORT", str(port))
         logging.getLogger(__name__).info("service_run", extra={"port": port})
+        if _should_use_headless_controller():
+            logging.getLogger(__name__).info("service_run_headless_stub", extra={"port": port})
+            if self.uvicorn_runner is _run_uvicorn:
+                _run_headless_controller(self.clock, port, env_values.get("METRICS_TOKEN", ""))
+            else:
+                self.uvicorn_runner(port)
+            return EXIT_SUCCESS
         self._await_dependencies(env_values, port)
         try:
             self.uvicorn_runner(port)

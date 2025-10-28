@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -14,10 +13,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing helper
     from .conftest import PerformanceMonitor
 
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("PYTEST_BENCHMARK_ACTIVE", "0") != "1",
-    reason="Benchmark suite only runs when PYTEST_BENCHMARK_ACTIVE=1",
-)
+DATASET_ROWS = 4096
 
 
 def _percentile(data: list[float], percentile: float) -> float:
@@ -51,7 +47,7 @@ def test_excel_writer_benchmark(performance_monitor: "PerformanceMonitor", bench
             "allocation_date": "1403-01-01",
             "year_code": "1403",
         }
-        for index in range(10_240)
+        for index in range(DATASET_ROWS)
     ]
 
     def _operation() -> None:

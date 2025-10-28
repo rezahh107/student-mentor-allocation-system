@@ -36,23 +36,42 @@ pwsh -NoLogo -File scripts/win/30-services.ps1 -Action Cleanup -Mode Docker -Com
 
 ### پیش‌نیازها
 - Python 3.11
-- (اختیاری) Docker Compose برای Redis/Postgres
+- PostgreSQL (پورت 5432) و Redis (پورت 6379) روی سیستم محلی یا از طریق Docker Compose
 
 ### نصب
-```bash
-make init
-cp -n .env.example .env.dev
-export SIGNING_KEY_HEX=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+#### Windows (PowerShell 7)
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip setuptools wheel
+pip install -e ".[dev]"
+Copy-Item -Path .env.example -Destination .env -Force
 ```
 
-#### نمونه تنظیمات محیطی (JSON-in-ENV)
-```env
-ENVIRONMENT=development
-IMPORT_TO_SABT_REDIS={"dsn":"redis://127.0.0.1:6379/0"}
-IMPORT_TO_SABT_DATABASE={"dsn":"postgresql+psycopg://postgres:postgres@127.0.0.1:5432/postgres","statement_timeout_ms":5000}
-IMPORT_TO_SABT_AUTH={"service_token":"dev-admin","metrics_token":"dev-metrics"}
-METRICS_TOKEN=dev-metrics
+#### Linux/macOS/WSL
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+pip install -e ".[dev]"
+cp .env.example .env
 ```
+
+> ℹ️ اسکریپت `devserver.py` فایل `.env` موجود در ریشهٔ مخزن را به صورت خودکار بارگذاری می‌کند؛ نیازی به تنظیم دستی `PYTHONPATH` یا اشارهٔ صریح به فایل نیست.
+
+#### نمونه تنظیمات محیطی (Nested ENV)
+```env
+IMPORT_TO_SABT_DATABASE__DSN=postgresql+psycopg://postgres:postgres@127.0.0.1:5432/student_mentor
+IMPORT_TO_SABT_DATABASE__STATEMENT_TIMEOUT_MS=500
+IMPORT_TO_SABT_REDIS__DSN=redis://127.0.0.1:6379/0
+IMPORT_TO_SABT_REDIS__NAMESPACE=import_to_sabt_local
+IMPORT_TO_SABT_AUTH__SERVICE_TOKEN=dev-service-token
+IMPORT_TO_SABT_AUTH__METRICS_TOKEN=dev-metrics-token
+IMPORT_TO_SABT_TIMEZONE=Asia/Tehran
+```
+
+> 💡 برای نگاشت ساختار‌های تودرتو از الگوی `SECTION__FIELD` (دو زیرخط متوالی) استفاده کنید؛ مثال: `IMPORT_TO_SABT_REDIS__DSN`. این الگو با تنظیم جدید `env_nested_delimiter="__"` پشتیبانی می‌شود و با نمونهٔ `.env.example` همسو است.
 
 ### دیتابیس‌ها (اختیاری)
 ```bash
@@ -62,14 +81,38 @@ docker compose -f docker-compose.dev.yml up -d
 فایل `docker-compose.dev.yml` یک نمونهٔ Redis و PostgreSQL تمیز برای توسعهٔ محلی راه‌اندازی می‌کند و می‌توان پس از اتمام کار با `docker compose -f docker-compose.dev.yml down` آن را جمع‌آوری کرد.
 
 ### اجرا
+
+دو مسیر رسمی اجرا پشتیبانی می‌شود:
+
 ```bash
-uvicorn main:app --host 127.0.0.1 --port 25119 --env-file .env.dev
+python devserver.py
 ```
+
+```bash
+uvicorn devserver:app --reload --host 0.0.0.0 --port 8000
+```
+
+> 🪟 برای اجرای یک‌مرحله‌ای در ویندوز می‌توانید از `scripts/dev.ps1` استفاده کنید؛ اسکریپت پس از فعال‌سازی ویرچوال‌انvironment، وجود `.env` را بررسی کرده و سپس سرور توسعه را با `devserver.py` اجرا می‌کند.
 
 ### اسموک‌تست
 ```bash
 METRICS_TOKEN=dev-metrics scripts/smoke.sh
 ```
+
+### تست‌ها و معیارهای پذیرش
+- همیشه قبل از اجرای تست‌ها `pip check` را اجرا کنید تا ناسازگاری وابستگی‌ها گزارش شود.
+- تست‌های واحد/ریگرشن به صورت پیش‌فرض بدون پلاگین اجرا می‌شوند (بارگذاری دستی `pytest-asyncio` در `pytest.min.ini` تضمین شده است):
+  ```bash
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q -c pytest.min.ini -m "not integration"
+  ```
+- برای اجرای تست‌های یکپارچه و پوشش سناریوهای حساس (ترتیب میان‌افزار، نرخ محدودسازی و پاک‌سازی Redis) متغیر `RUN_INTEGRATION=1` را مقداردهی کنید:
+  ```bash
+  RUN_INTEGRATION=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=0 pytest -q -c pytest.min.ini -m "integration"
+  ```
+  این پرچم همان متغیر محیطی است که در CI جهت فعال‌سازی شغل اختیاری استفاده می‌شود (`Settings → Variables → RUN_INTEGRATION`).
+- وابستگی `pytest-asyncio>=0.23` در بخش dev نصب می‌شود و به کمک `pytest.min.ini` و `tests/conftest.py` حتی با غیرفعال بودن autoload به صورت صریح لود می‌گردد؛ در صورت نبود پلاگین، پیغام skip مشخصی مشاهده خواهید کرد.
+- تست `tests/integration/test_middleware_order.py` تضمین می‌کند ترتیب میان‌افزارها همواره «RateLimit → Idempotency → Auth» باقی بماند.
+- تست‌های `tests/integration/test_redis_dirty_state.py` و `tests/integration/test_rate_limit_smoke.py` بدون نیاز به سرویس خارجی، رفتار پاک‌سازی Redis و کنترل نرخ را شبیه‌سازی می‌کنند.
 
 <!--dev-quick-start:end-->
 

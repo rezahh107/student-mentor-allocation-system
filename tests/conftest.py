@@ -24,6 +24,8 @@ from zoneinfo import ZoneInfo
 import prometheus_client
 import prometheus_client.registry as prometheus_registry
 import pytest
+
+pytest_plugins = ("pytest_asyncio.plugin",)
 from click.testing import CliRunner
 from freezegun import freeze_time
 from prometheus_client import CollectorRegistry
@@ -144,7 +146,21 @@ def _scan_wall_clock(repo_root: pathlib.Path) -> tuple[list[tuple[str, str]], li
     return banned, scanned
 
 
+def _ensure_pytest_asyncio_loaded(config: pytest.Config) -> None:
+    if config.pluginmanager.hasplugin("pytest_asyncio"):
+        return
+    try:
+        config.pluginmanager.import_plugin("pytest_asyncio")
+    except Exception as exc:  # pragma: no cover - defensive guard for local envs
+        pytest.skip(
+            f"pytest-asyncio not available: {exc}",
+            allow_module_level=True,
+        )
+
+
 def pytest_configure(config: pytest.Config) -> None:
+    _ensure_pytest_asyncio_loaded(config)
+
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     banned, scanned = _scan_wall_clock(repo_root)
     config._repo_wall_clock_guard = {  # type: ignore[attr-defined]

@@ -47,7 +47,11 @@ class ObservabilityConfig(BaseModel):
 
 
 class AppConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="IMPORT_TO_SABT_", extra="forbid")
+    model_config = SettingsConfigDict(
+        env_prefix="IMPORT_TO_SABT_",
+        env_nested_delimiter="__",  # برای پارس متغیرهای تودرتو به فرم SECTION__FIELD
+        extra="forbid",
+    )
 
     redis: RedisConfig
     database: DatabaseConfig

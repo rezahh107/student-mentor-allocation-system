@@ -88,7 +88,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         decision = "allow"
         route = request.url.path
         capacity = self._config.requests
-        if route in {"/healthz", "/readyz", "/metrics"} or route.startswith("/ui/"):
+        diagnostics = getattr(request.app.state, "diagnostics", None)
+        public_docs_enabled = getattr(request.app.state, "public_docs_enabled", False)
+        bypass_paths = {"/healthz", "/readyz", "/metrics"}
+        if public_docs_enabled:
+            bypass_paths.update({"/docs", "/redoc", "/openapi.json"})
+        if route in bypass_paths or route.startswith("/ui/"):
             duration = handle.elapsed()
             self._metrics.observe_rate_limit(
                 "bypass",
@@ -97,7 +102,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 remaining=capacity,
                 capacity=capacity,
             )
-            diagnostics = getattr(request.app.state, "diagnostics", None)
             if diagnostics and diagnostics.get("enabled"):
                 diagnostics["last_rate_limit"] = {"decision": "bypass", "duration": duration}
             return await call_next(request)
@@ -428,7 +432,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.middleware_chain = getattr(request.state, "middleware_chain", []) + ["Auth"]
         handle = self._timer.start()
         path = request.url.path
-        if path in {"/healthz", "/readyz", "/download", "/metrics"} or path.startswith("/downloads/"):
+        public_docs_enabled = getattr(request.app.state, "public_docs_enabled", False)
+        bypass_paths = {"/healthz", "/readyz", "/download", "/metrics"}
+        if public_docs_enabled:
+            bypass_paths.update({"/docs", "/redoc", "/openapi.json"})
+        if path in bypass_paths or path.startswith("/downloads/"):
             duration = handle.elapsed()
             self._metrics.observe_auth(duration)
             return await call_next(request)

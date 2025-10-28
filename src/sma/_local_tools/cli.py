@@ -117,7 +117,7 @@ def _build_test_app(namespace: str) -> TestClient:
     async def _lint_echo(request: Request) -> dict[str, t.Any]:  # pragma: no cover - docs helper
         return {"path": request.url.path}
 
-    return TestClient(fastapi_app)
+    return TestClient(fastapi_app, backend='asyncio')
 
 
 def _resolve_ref(schema: t.Any, components: dict[str, t.Any]) -> dict[str, t.Any]:

@@ -51,6 +51,12 @@ from sma.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore, KeyValue
 from sma.phase6_import_to_sabt.app.timing import MonotonicTimer, Timer
 from sma.phase6_import_to_sabt.app.utils import normalize_token
 
+
+def _is_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
 logger = logging.getLogger(__name__)
 
 
@@ -330,7 +336,18 @@ def create_application(
         metrics_token_source=metrics_token_source,
     )
 
-    app = FastAPI(title="ImportToSabt")
+    public_docs_enabled = _is_truthy(os.getenv("IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS"))
+    docs_url = "/docs" if public_docs_enabled else None
+    redoc_url = "/redoc" if public_docs_enabled else None
+    openapi_url = "/openapi.json" if public_docs_enabled else None
+
+    app = FastAPI(
+        title="ImportToSabt",
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
+    )
+    app.state.public_docs_enabled = public_docs_enabled
     static_root = _resolve_static_assets_root()
     if static_root.exists():
         app.mount("/static", StaticFiles(directory=str(static_root)), name="static")

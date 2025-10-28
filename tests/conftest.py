@@ -6,6 +6,7 @@ import logging
 import os
 import pathlib
 import shutil
+import tempfile
 import uuid
 import weakref
 from collections.abc import Iterator
@@ -271,3 +272,24 @@ def doctor_env(tmp_path: Path, clock: DeterministicClock) -> Iterator[DoctorEnv]
     yield env
     if base.exists():
         shutil.rmtree(base)
+
+
+@pytest.fixture(autouse=True)
+def clean_env():
+    keep = {"PATH", "PYTHONPATH", "METRICS_TOKEN", "BASE_URL"}
+    snapshot = dict(os.environ)
+    yield
+    for k in list(os.environ):
+        if k not in keep and os.environ.get(k) != snapshot.get(k):
+            if k in snapshot:
+                os.environ[k] = snapshot[k]
+            else:
+                os.environ.pop(k, None)
+
+
+@pytest.fixture
+def temp_home(monkeypatch):
+    d = tempfile.mkdtemp(prefix="sma_tmp_")
+    monkeypatch.setenv("HOME", d)
+    yield d
+    shutil.rmtree(d, ignore_errors=True)

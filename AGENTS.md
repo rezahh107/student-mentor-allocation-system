@@ -28,8 +28,8 @@ References: Phase-1 (SSR+HTMX/determinism), Phase-2 (ROSTER_V1 upload), Phase-3 
 > Agents should **run tests locally** and **fail fast** on warnings; assume shared CI runners and flaky infra (use retries with deterministic jitter).
 
 - **Install:** `python -m venv .venv && source .venv/bin/activate && pip install -e .`
-- **Run tests (no plugins, async ready):**  
-  `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q -p pytest_asyncio`
+- **Run tests (no plugins, async ready):**
+  `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q`
 - **Dev server (adjust entrypoint if different):**
   `uvicorn main:app --reload`
 - **Lint/Sec (typical):** `ruff check . && bandit -q -r src`
@@ -38,19 +38,22 @@ If tests rely on Redis/PostgreSQL, use local services or docker-compose. Clean *
 
 ## Windows Smoke & Acceptance
 
-```cmd
-findstr /s /n /i "src.main:app" * && echo "❌ Stale" || echo "✅ Clean"
-findstr /s /n /i "src\\main.py" * && echo "❌ Stale" || echo "✅ Clean"
-```
-
-```powershell
-$env:METRICS_TOKEN="test-token"
-$H=@{ Authorization="Bearer $env:METRICS_TOKEN" }
-(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/healthz).StatusCode
-(Invoke-WebRequest -UseBasicParsing -Headers $H http://127.0.0.1:8000/metrics).StatusCode
-```
-
-- Dev server (updated): `uvicorn main:app --reload --host 0.0.0.0 --port 8000`
+1. Python 3.11 را با `winget install Python.Python.3.11` نصب کنید.
+2. در PowerShell (UTF-8) و در ریشهٔ ریپو اجرا کنید:
+   ```powershell
+   $env:IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS = "true"
+   $env:METRICS_TOKEN = "dev-metrics"
+   python scripts\hooks\no_src_main_check.py
+   ```
+3. `.\run_application.bat` را اجرا کنید و Uvicorn را فعال نگه دارید (ورودی: `main:app`).
+4. در شل دوم دستور زیر را اجرا کنید تا خروجی JSON/LOG ذخیره شود:
+   ```powershell
+   pwsh -NoLogo -File .\run_server_check.ps1 -OutputJsonPath windows_check.json -OutputLogPath windows_check.log
+   ```
+5. انتظار نتایج:
+   - `/openapi.json`, `/docs`, `/redoc` → کد 200 زمانی که `PUBLIC_DOCS=1`.
+   - `/metrics` بدون هدر → کد 403.
+   - `/metrics` با `Authorization: Bearer dev-metrics` → کد 200.
 
 ## CI Integration
 

@@ -6,7 +6,7 @@
 
 1. `make static-checks` → اجرای تست‌های استاتیک و بررسی‌های Mypy.
 2. `make ci-checks` → اجرای پوشش ماژول `src/phase2_counter_service` با فرمانی که `--cov-fail-under=$(COV_MIN)` را بر اساس متغیر محیطی `COV_MIN` (پیش‌فرض ۹۵) تنظیم می‌کند تا خطای «No data to report» رفع شده و آستانهٔ تعیین‌شده تضمین شود.
-3. `COV_MIN=95 PYTEST_ARGS="-q --maxfail=1 -p pytest_cov --cov=sma --cov-report=term --cov-report=xml --cov-report=html" make test-coverage` → اجرای تست‌های legacy با خلاصهٔ فارسی و تولید `htmlcov/`. می‌توانید مقدار `COV_MIN` را متناسب با نیاز خود (مثلاً ۹۷) تغییر دهید.
+3. `COV_MIN=95 PYTEST_ARGS="-q --maxfail=1 --cov=sma --cov-report=term --cov-report=xml --cov-report=html" make test-coverage` → اجرای تست‌های legacy با خلاصهٔ فارسی و تولید `htmlcov/`. می‌توانید مقدار `COV_MIN` را متناسب با نیاز خود (مثلاً ۹۷) تغییر دهید.
 4. ماتریس جدید GitHub Actions با ابعاد `with_cov={true,false}` افزونهٔ `pytest-cov` را در یک اجرای جداگانه حذف می‌کند تا پیام فارسی `❌ PYTEST_COV_MISSING` و کد خروج ۶ به‌صورت خودکار راستی‌آزمایی شود.
 5. `make security-scan` → اجرای Bandit با پیام‌های دترمینیستیک فارسی و تولید `reports/bandit.json`.
 
@@ -37,7 +37,7 @@
 make init
 make static-checks
 make ci-checks
-COV_MIN=95 PYTEST_ARGS="-q --maxfail=1 -p pytest_cov --cov=sma --cov-report=term --cov-report=xml --cov-report=html" make test-coverage
+COV_MIN=95 PYTEST_ARGS="-q --maxfail=1 --cov=sma --cov-report=term --cov-report=xml --cov-report=html" make test-coverage
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/legacy -k "not gui"
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/export -k hygiene
 make security-scan

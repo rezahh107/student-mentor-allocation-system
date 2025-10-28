@@ -1,63 +1,76 @@
 @echo off
-setlocal enabledelayedexpansion
-chcp 65001 >nul
-set "SCRIPT_DIR=%~dp0"
-pushd "%SCRIPT_DIR%" >nul
-set "PYTHON_BIN="
-set "HOST=0.0.0.0"
-set "PORT=8000"
-set "WORKERS=1"
-if not "%APP_HOST%"=="" set "HOST=%APP_HOST%"
-if not "%APP_PORT%"=="" set "PORT=%APP_PORT%"
-if not "%APP_WORKERS%"=="" set "WORKERS=%APP_WORKERS%"
 
-REM Prefer venv Python with fallback
-if exist "%SCRIPT_DIR%.venv\Scripts\python.exe" (
-    set "PYTHON_BIN=%SCRIPT_DIR%.venv\Scripts\python.exe"
+setlocal enabledelayedexpansion
+
+chcp 65001 >nul 2>&1
+
+
+
+REM --- Determine Python (prefer venv) ---
+
+set "PYTHON_BIN="
+
+if exist ".venv\Scripts\python.exe" (
+
+  set "PYTHON_BIN=.venv\Scripts\python.exe"
+
+) else if exist ".venv/bin/python" (
+
+  set "PYTHON_BIN=.venv/bin/python"
+
 ) else (
-    if exist "%SCRIPT_DIR%.venv/bin/python" (
-        set "PYTHON_BIN=%SCRIPT_DIR%.venv/bin/python"
-    )
+
+  where py >nul 2>&1 && set "PYTHON_BIN=py"
+
+  if "%PYTHON_BIN%"=="" (
+
+    where python >nul 2>&1 && set "PYTHON_BIN=python"
+
+  )
+
 )
-if not defined PYTHON_BIN (
-    set "PYTHON_BIN=py"
+
+
+
+if "%PYTHON_BIN%"=="" (
+
+  echo ❌ Python 3.11 not found. Please install it (winget install Python.Python.3.11).
+
+  exit /b 1
+
 )
-if /I "%PYTHON_BIN%"=="py" (
-    py --version >nul 2>&1
-    if errorlevel 1 (
-        set "PYTHON_BIN=python"
-    )
+
+
+
+REM --- Defaults (overridable via env) ---
+
+if "%APP_HOST%"=="" set "APP_HOST=0.0.0.0"
+
+if "%APP_PORT%"=="" set "APP_PORT=8000"
+
+if "%APP_WORKERS%"=="" set "APP_WORKERS=1"
+
+
+
+REM --- Validate entrypoint ---
+
+if not exist "main.py" (
+
+  echo ❌ main.py not found at repo root. Expected entrypoint: main:app
+
+  exit /b 1
+
 )
-"%PYTHON_BIN%" -V >nul 2>&1
-if errorlevel 1 (
-    echo ❌ پایتون در دسترس نیست.
-    popd >nul
-    exit /b 1
-)
-"%PYTHON_BIN%" -c "import sys; sys.exit(0 if sys.version_info >= (3,8) else 1)" >nul 2>&1
-if errorlevel 1 (
-    echo ❌ نسخهٔ پایتون باید ۳٫۸ یا بالاتر باشد.
-    popd >nul
-    exit /b 1
-)
-"%PYTHON_BIN%" -m pip show uvicorn >nul 2>&1
-if errorlevel 1 (
-    echo ❌ کتابخانهٔ uvicorn نصب نیست؛ ابتدا install_requirements.bat را اجرا کنید.
-    popd >nul
-    exit /b 1
-)
-if not exist "%SCRIPT_DIR%main.py" (
-    echo ❌ خطا: فایل main.py در ریشهٔ مخزن پیدا نشد.
-    popd >nul
-    exit /b 1
-)
-echo 🚀 اجرای برنامه با uvicorn...
-"%PYTHON_BIN%" -m uvicorn main:app --host %HOST% --port %PORT% --workers %WORKERS%
-if errorlevel 1 (
-    echo ❌ اجرای سرور با خطا مواجه شد؛ فایل لاگ‌ها و تنظیمات را بررسی کنید.
-    popd >nul
-    exit /b 1
-)
-echo ✅ سرور با موفقیت متوقف شد.
-popd >nul
-exit /b 0
+
+
+
+echo 🚀 Starting FastAPI: main:app
+
+echo    Host: %APP_HOST%  Port: %APP_PORT%  Workers: %APP_WORKERS%
+
+
+
+"%PYTHON_BIN%" -m uvicorn main:app --host %APP_HOST% --port %APP_PORT% --workers %APP_WORKERS%
+
+exit /b %ERRORLEVEL%
+

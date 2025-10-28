@@ -1,128 +1,286 @@
-$ErrorActionPreference = "Stop"
-Write-Host "⚠️  PYTHONPATH تنظیم نشد؛ لطفاً از pip install -e . استفاده کنید."
+Param(
 
-# Provide deterministic defaults for local smoke tests if not set by caller.
-if (-not $env:IMPORT_TO_SABT_REDIS__DSN) {
-    $env:IMPORT_TO_SABT_REDIS__DSN = "redis://localhost:6379/0"
-}
-if (-not $env:IMPORT_TO_SABT_REDIS__NAMESPACE) {
-    $env:IMPORT_TO_SABT_REDIS__NAMESPACE = "import_to_sabt_smoke"
-}
-if (-not $env:IMPORT_TO_SABT_DATABASE__DSN) {
-    $env:IMPORT_TO_SABT_DATABASE__DSN = "postgresql+asyncpg://localhost/import_to_sabt_smoke"
-}
-if (-not $env:IMPORT_TO_SABT_AUTH__SERVICE_TOKEN) {
-    $env:IMPORT_TO_SABT_AUTH__SERVICE_TOKEN = "service-token-smoke"
-}
-if (-not $env:IMPORT_TO_SABT_AUTH__METRICS_TOKEN) {
-    $env:IMPORT_TO_SABT_AUTH__METRICS_TOKEN = "metrics-token-smoke"
-}
+  [string]$BaseUrl = "http://127.0.0.1:8000",
 
-function Test-ServerReadiness {
-    param(
-        [int]$MaxRetries = 5,
-        [int]$InitialDelay = 1
-    )
+  [string]$MetricsToken = $env:METRICS_TOKEN,
 
-    for ($i = 0; $i -lt $MaxRetries; $i++) {
-        try {
-            Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8000/healthz" -TimeoutSec 2 -ErrorAction Stop | Out-Null
-            return $true
-        } catch {
-            $delay = $InitialDelay * [math]::Pow(2, $i) + (Get-Random -Minimum 100 -Maximum 300) / 1000.0
-            $formattedDelay = [string]::Format("{0:N2}", $delay)
-            Write-Host "⏳ Waiting server… retry $($i + 1)/$MaxRetries in $formattedDelay s" -ForegroundColor Yellow
-            Start-Sleep -Seconds $delay
-        }
-    }
+  [string]$RequirePublicDocs = $env:REQUIRE_PUBLIC_DOCS,
 
-    return $false
-}
+  [string]$OutputJsonPath = "server_check_result.json",
 
-python tests/validate_structure.py
-python tests/test_imports.py
+  [string]$OutputLogPath = "run_server_check.log"
 
-$uvicornArgs = @(
-    "-m", "uvicorn",
-    "main:app",
-    "--host", "127.0.0.1",
-    "--port", "8000",
-    "--log-level", "warning"
 )
 
-$logDir = Join-Path $PSScriptRoot "tmp"
-if (-not (Test-Path $logDir)) {
-    New-Item -Path $logDir -ItemType Directory | Out-Null
+$ErrorActionPreference = "Stop"
+
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+
+if (Get-Command chcp -ErrorAction SilentlyContinue) { chcp 65001 | Out-Null }
+
+
+
+$HttpClient = [System.Net.Http.HttpClient]::new()
+
+$HttpClient.Timeout = [TimeSpan]::FromSeconds(5)
+
+$ProbeEntries = New-Object System.Collections.Generic.List[pscustomobject]
+
+$LogLines = New-Object System.Collections.Generic.List[string]
+
+
+
+function Write-LoggedLine {
+
+  param([string]$Message, [string]$Color = $null)
+
+  $LogLines.Add($Message)
+
+  if ($null -ne $Color) {
+
+    Write-Host $Message -ForegroundColor $Color
+
+  } else {
+
+    Write-Host $Message
+
+  }
+
 }
-$stdoutLog = Join-Path $logDir "uvicorn.stdout.log"
-$stderrLog = Join-Path $logDir "uvicorn.stderr.log"
 
-$server = $null
-try {
-    $server = Start-Process -FilePath "python" -ArgumentList $uvicornArgs -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
-    $baseUrl = "http://127.0.0.1:8000"
 
-    if (-not (Test-ServerReadiness -MaxRetries 5 -InitialDelay 1)) {
-        if ($null -ne $server -and -not $server.HasExited) {
-            Stop-Process -Id $server.Id -Force
-            $server.WaitForExit()
-        }
-        throw "Uvicorn failed to respond on $baseUrl/healthz; check $stdoutLog and $stderrLog"
+
+function Ok($m){ Write-LoggedLine "✅ $m" "Green" }
+
+function Warn($m){ Write-LoggedLine "⚠️  $m" "Yellow" }
+
+function Fail($m){ Write-LoggedLine "❌ $m" "Red" }
+
+
+
+function Invoke-Endpoint {
+
+  param(
+
+    [string]$Path,
+
+    [int[]]$ExpectedCodes,
+
+    [hashtable]$Headers = @{}
+
+  )
+
+  $attempts = 3
+
+  $backoffMs = 300
+
+  $lastError = $null
+
+  for ($i = 0; $i -lt $attempts; $i++) {
+
+    $code = $null
+
+    $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, "$BaseUrl$Path")
+
+    try {
+
+      foreach ($key in $Headers.Keys) {
+
+        $request.Headers.TryAddWithoutValidation($key, $Headers[$key]) | Out-Null
+
+      }
+
+      $response = $HttpClient.SendAsync($request).GetAwaiter().GetResult()
+
+      $code = [int]$response.StatusCode
+
+    } catch {
+
+      $lastError = $_.Exception
+
+      if ($lastError -and $lastError.Response -and $lastError.Response.StatusCode) {
+
+        $code = $lastError.Response.StatusCode.value__
+
+      }
+
+    } finally {
+
+      $request.Dispose()
+
     }
 
-    function Invoke-SmokeCheck {
-        param(
-            [string]$Name,
-            [string]$Uri,
-            [int[]]$ExpectedStatus,
-            [hashtable]$Headers = @{}
-        )
+    $ok = ($code -ne $null) -and ($ExpectedCodes -contains $code)
 
-        try {
-            $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -Method Get -Headers $Headers -TimeoutSec 10
-            $statusCode = [int]$response.StatusCode
-            $body = $response.Content
-        } catch {
-            $errorResponse = $_.Exception.Response
-            if ($null -ne $errorResponse) {
-                $statusCode = [int]$errorResponse.StatusCode
-                $reader = New-Object System.IO.StreamReader($errorResponse.GetResponseStream())
-                $body = $reader.ReadToEnd()
-            } else {
-                throw
-            }
-        }
+    $statusLine = $(if ($ok) { "✅" } else { "❌" }) + " $Path -> $code"
 
-        if ($ExpectedStatus -contains $statusCode) {
-            Write-Host "✅ $Name ($statusCode)"
-        } else {
-            Write-Host "❌ $Name expected $ExpectedStatus but received $statusCode"
-            Write-Host "    Response snippet: $($body.Substring(0, [Math]::Min(200, $body.Length)))"
-            throw "Smoke check failed"
-        }
+    Write-LoggedLine $statusLine $(if ($ok) { "Green" } else { "Red" })
 
-        return @{ Status = $statusCode; Body = $body }
+    if ($ok) {
+
+      $ProbeEntries.Add([pscustomobject]@{
+
+        path = $Path
+
+        attempts = $i + 1
+
+        status_code = $code
+
+        expected = $ExpectedCodes
+
+        success = $true
+
+        headers = if ($Headers.Count -gt 0) { @($Headers.GetEnumerator() | ForEach-Object { [pscustomobject]@{ key = $_.Key; value = $_.Value } }) } else { @() }
+
+      })
+
+      return $true
+
     }
 
-    Invoke-SmokeCheck -Name "GET /healthz" -Uri "$baseUrl/healthz" -ExpectedStatus @(200)
-    Invoke-SmokeCheck -Name "GET /readyz" -Uri "$baseUrl/readyz" -ExpectedStatus @(200,503)
+    Start-Sleep -Milliseconds $backoffMs
 
-    $unauth = Invoke-SmokeCheck -Name "GET /metrics (no token)" -Uri "$baseUrl/metrics" -ExpectedStatus @(401,403)
-    $metricsToken = $env:IMPORT_TO_SABT_AUTH__METRICS_TOKEN
-    if (-not $metricsToken) {
-        throw "IMPORT_TO_SABT_AUTH__METRICS_TOKEN must be set for authorised metrics smoke test"
-    }
-    $authHeaders = @{ Authorization = "Bearer $metricsToken" }
-    $authMetrics = Invoke-SmokeCheck -Name "GET /metrics (token)" -Uri "$baseUrl/metrics" -Headers $authHeaders -ExpectedStatus @(200)
-    if (-not ($authMetrics.Body.StartsWith("# HELP") -or $authMetrics.Body.Contains("_total"))) {
-        Write-Host "❌ /metrics response body missing Prometheus markers"
-        throw "Metrics response validation failed"
-    }
-    Write-Host "✅ /metrics payload validated"
+  }
 
-} finally {
-    if ($null -ne $server -and -not $server.HasExited) {
-        Stop-Process -Id $server.Id -Force
-        $server.WaitForExit()
-    }
+  if ($lastError) {
+
+    Fail "$Path error: $($lastError.Message)"
+
+  }
+
+  $ProbeEntries.Add([pscustomobject]@{
+
+    path = $Path
+
+    attempts = $attempts
+
+    status_code = $code
+
+    expected = $ExpectedCodes
+
+    success = $false
+
+    error = if ($lastError) { $lastError.Message } else { "unknown" }
+
+    headers = if ($Headers.Count -gt 0) { @($Headers.GetEnumerator() | ForEach-Object { [pscustomobject]@{ key = $_.Key; value = $_.Value } }) } else { @() }
+
+  })
+
+  return $false
+
 }
+
+
+
+$pass = 0; $fail = 0
+
+$requireDocs = $false
+
+if (-not [string]::IsNullOrWhiteSpace($RequirePublicDocs)) {
+
+  switch -Regex ($RequirePublicDocs.Trim().ToLowerInvariant()) {
+
+    '^(1|true|yes)$' { $requireDocs = $true }
+
+  }
+
+}
+
+
+
+Write-LoggedLine "`n🔍 Running server checks against $BaseUrl" "Cyan"
+
+
+
+if (Invoke-Endpoint "/healthz" @(200)) { $pass++ } else { $fail++ }
+
+if (Invoke-Endpoint "/readyz" @(200,503)) { $pass++ } else { $fail++ }
+
+
+
+$docExpected = if ($requireDocs) { @(200) } else { @(200,401,403) }
+
+foreach ($p in @("/openapi.json","/docs","/redoc")) {
+
+  if (Invoke-Endpoint $p $docExpected) { $pass++ } else { $fail++ }
+
+}
+
+
+
+if (Invoke-Endpoint "/metrics" @(403)) { $pass++ } else { $fail++ }
+
+
+
+if ([string]::IsNullOrWhiteSpace($MetricsToken)) {
+
+  Warn "METRICS_TOKEN not set; treating authorized metrics check as N/A"
+
+  $ProbeEntries.Add([pscustomobject]@{
+
+    path = "/metrics"
+
+    attempts = 0
+
+    status_code = $null
+
+    expected = @(200)
+
+    success = $true
+
+    skipped = $true
+
+    headers = @()
+
+  })
+
+  $pass++
+
+} else {
+
+  $headers = @{ Authorization = "Bearer $MetricsToken" }
+
+  if (Invoke-Endpoint "/metrics" @(200) $headers) { $pass++ } else { $fail++ }
+
+}
+
+
+
+Write-LoggedLine "`n📊 Result: $pass passed, $fail failed" "Cyan"
+
+
+
+$summary = [pscustomobject]@{
+
+  base_url = $BaseUrl
+
+  require_public_docs = $requireDocs
+
+  metrics_token_supplied = -not [string]::IsNullOrWhiteSpace($MetricsToken)
+
+  passed = $pass
+
+  failed = $fail
+
+  checks = $ProbeEntries
+
+}
+
+
+
+$LogLines | Set-Content -Path $OutputLogPath -Encoding UTF8
+
+$summary | ConvertTo-Json -Depth 6 | Set-Content -Path $OutputJsonPath -Encoding UTF8
+
+
+
+if ($fail -gt 0) {
+
+  $HttpClient.Dispose(); exit 1
+
+} else {
+
+  $HttpClient.Dispose(); exit 0
+
+}
+

@@ -32,8 +32,8 @@ def test_run_application_prefers_venv(clean_state: dict[str, object]) -> None:
     expected_order = [
         ".venv\\Scripts\\python.exe",
         ".venv/bin/python",
-        "set \"PYTHON_BIN=py\"",
-        "if /I \"%PYTHON_BIN%\"==\"py\"",
+        'set "PYTHON_BIN=py"',
+        'where python >nul 2>&1 && set "PYTHON_BIN=python"',
         "-m uvicorn main:app",
     ]
     _assert_contains(run_application, expected_order)
@@ -45,7 +45,7 @@ def test_docs_anchor_windows_acceptance(clean_state: dict[str, object]) -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     section_snippets = [
         "## Windows Smoke & Acceptance",
-        "findstr /s /n /i \"src.main:app\" *",
+        "python scripts\\hooks\\no_src_main_check.py",
         "(Invoke-WebRequest -UseBasicParsing -Headers $H http://127.0.0.1:8000/metrics).StatusCode",
         "### 🧪 Windows Acceptance Checks",
         "uvicorn main:app --reload --host 0.0.0.0 --port 8000",

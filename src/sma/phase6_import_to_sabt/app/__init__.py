@@ -5,11 +5,13 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
+_MODULE_PREFIX = "sma.phase6_import_to_sabt.app.app_factory"
+
 _EXPORTS = {
-    "create_application": "phase6_import_to_sabt.app.app_factory:create_application",
-    "create_app": "phase6_import_to_sabt.app.app_factory:create_application",
-    "build_app": "phase6_import_to_sabt.app.app_factory:create_application",
-    "ApplicationContainer": "phase6_import_to_sabt.app.app_factory:ApplicationContainer",
+    "create_application": f"{_MODULE_PREFIX}:create_application",
+    "create_app": f"{_MODULE_PREFIX}:create_application",
+    "build_app": f"{_MODULE_PREFIX}:create_application",
+    "ApplicationContainer": f"{_MODULE_PREFIX}:ApplicationContainer",
 }
 
 

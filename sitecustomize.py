@@ -4,8 +4,21 @@ from __future__ import annotations
 
 import importlib
 import sys
+from pathlib import Path
 from types import ModuleType
 from typing import Callable
+
+
+def _ensure_repo_paths() -> None:
+    repo_root = Path(__file__).resolve().parent
+    src_path = repo_root / "src"
+    for entry in (repo_root, src_path):
+        entry_str = str(entry)
+        if entry_str not in sys.path:
+            sys.path.insert(0, entry_str)
+
+
+_ensure_repo_paths()
 
 
 def _module_from(source: ModuleType, name: str, *, extra: dict[str, object] | None = None) -> ModuleType:

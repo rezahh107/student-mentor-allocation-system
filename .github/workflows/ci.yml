@@ -43,3 +43,119 @@ jobs:
         run: |
           mkdir -p reports
           pytest -v --tb=short | tee reports/pytest-summary.txt
+
+  linux:
+    runs-on: ubuntu-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS: "true"
+      REQUIRE_PUBLIC_DOCS: "1"
+      METRICS_TOKEN: dev-metrics
+      BASE_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -U pip
+      - run: pip install -r requirements.txt
+      - run: pip install -r tests/requirements.txt
+      - run: pip install "packaging>=25"
+      - run: pip check
+      - name: Boot main:app
+        run: |
+          nohup python -m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1 >/dev/null 2>&1 &
+          echo $! > uvicorn.pid
+          sleep 3
+      - name: Server check (Linux)
+        run: python scripts/server_check.py
+      - name: Stop main:app
+        if: always()
+        run: |
+          if [ -f uvicorn.pid ]; then
+            kill "$(cat uvicorn.pid)" || true
+            rm -f uvicorn.pid
+          fi
+      - name: Pytests (Linux)
+        run: pytest -q
+      - name: Coverage (server probe)
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          COVERAGE_RCFILE: coverage_server_check.rc
+        run: |
+          coverage erase
+          coverage run -m pytest tests/probes/test_server_check_unit.py
+          coverage report --fail-under=90 --include scripts/server_check.py
+          coverage xml -o coverage-server-check.xml --include scripts/server_check.py
+      - name: Upload probe coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-probe-coverage
+          path: coverage-server-check.xml
+
+  windows:
+    runs-on: windows-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS: "true"
+      REQUIRE_PUBLIC_DOCS: "1"
+      METRICS_TOKEN: dev-metrics
+      BASE_URL: http://127.0.0.1:8000
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+          pip install -r tests/requirements.txt
+          pip install "packaging>=25"
+          pip check
+      - name: Acceptance probes (Windows)
+        run: |
+          function Clear-Port {
+            param([int]$Port, [int[]]$Backoff)
+            foreach ($delay in $Backoff) {
+              $connections = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
+              if (-not $connections) { return }
+              foreach ($conn in $connections) {
+                if ($conn.OwningProcess) {
+                  try { Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue } catch { }
+                }
+              }
+              Start-Sleep -Seconds $delay
+            }
+            $remaining = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
+            if ($remaining) {
+              throw "Port $Port is still busy after retries"
+            }
+          }
+
+          Clear-Port -Port 8000 -Backoff @(2,4,8)
+          $python = (Get-Command python).Source
+          $app = Start-Process -PassThru -WindowStyle Hidden $python -ArgumentList "-m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1"
+          try {
+            Start-Sleep -Seconds 3
+            python scripts/server_check.py | Tee-Object -FilePath server_check_windows.log
+            .\run_server_check.ps1 -OutputJsonPath server_check_windows.json -OutputLogPath run_server_check_windows.log
+          } finally {
+            if ($app -and -not $app.HasExited) {
+              Stop-Process -Id $app.Id -Force
+            }
+          }
+          Clear-Port -Port 8000 -Backoff @(2,4,8)
+      - name: Upload Windows server check artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-server-check
+          path: |
+            server_check_windows.log
+            run_server_check_windows.log
+            server_check_windows.json
+      - name: Pytests (Windows)
+        run: pytest -q

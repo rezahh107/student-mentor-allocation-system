@@ -1,0 +1,17 @@
+[run]
+source = .
+branch = true
+parallel = false
+omit =
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */site-packages/*
+    */.venv/*
+    */venv/*
+    src/sma/ui/components/mentor_form.py
+[report]
+precision = 2
+skip_covered = false
+skip_empty = true
+show_missing = true

@@ -1,6 +1,12 @@
 # SmartAllocPY Environment Guide
 
+
 ## Quick Start
+
+### TL;DR
+- `./quick_start.bat` یا `pwsh -ExecutionPolicy Bypass -File ./Start-App.ps1`
+- `python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload`
+- Set `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` and `METRICS_TOKEN=<token>` in dev/CI before running server checks; docs stay locked otherwise and `/metrics` always requires `Authorization: Bearer <token>`.
 - Run `python setup.py` to install dependencies, set `PYTHONPATH`, configure VS Code, and generate `activate` scripts.
 - Use `activate.bat` (Windows) or `source ./activate.sh` (macOS/Linux) before working in a new shell.
 - Launch diagnostics with `python scripts/environment_doctor.py` to validate the environment and apply optional fixes.
@@ -18,6 +24,15 @@
 make init
 cp -n .env.example .env.dev
 export SIGNING_KEY_HEX=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+#### نمونه تنظیمات محیطی (JSON-in-ENV)
+```env
+ENVIRONMENT=development
+IMPORT_TO_SABT_REDIS={"dsn":"redis://127.0.0.1:6379/0"}
+IMPORT_TO_SABT_DATABASE={"dsn":"postgresql+psycopg://postgres:postgres@127.0.0.1:5432/postgres","statement_timeout_ms":5000}
+IMPORT_TO_SABT_AUTH={"service_token":"dev-admin","metrics_token":"dev-metrics"}
+METRICS_TOKEN=dev-metrics
 ```
 
 ### دیتابیس‌ها (اختیاری)
@@ -45,19 +60,22 @@ METRICS_TOKEN=dev-metrics scripts/smoke.sh
 
 ### 🧪 Windows Acceptance Checks
 
-```cmd
-findstr /s /n /i "src.main:app" * && echo "❌ Stale" || echo "✅ Clean"
-findstr /s /n /i "src\\main.py" * && echo "❌ Stale" || echo "✅ Clean"
-```
-
-```powershell
-$env:METRICS_TOKEN="test-token"
-$H=@{ Authorization="Bearer $env:METRICS_TOKEN" }
-(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/healthz).StatusCode
-(Invoke-WebRequest -UseBasicParsing -Headers $H http://127.0.0.1:8000/metrics).StatusCode
-```
-
-- Dev server (updated): `uvicorn main:app --reload --host 0.0.0.0 --port 8000`
+1. نصب Python 3.11 (مثال: `winget install Python.Python.3.11`).
+2. در PowerShell (ریشهٔ ریپو) اجرا کنید:
+   ```powershell
+   Set-Location <repo>
+   $env:IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS = "true"
+   $env:METRICS_TOKEN = "dev-metrics"
+   ```
+3. با همان شل `.\run_application.bat` را اجرا کنید و Uvicorn را فعال نگه دارید.
+4. در شل دوم دستور زیر را اجرا کنید تا خروجی JSON/LOG ذخیره شود:
+   ```powershell
+   pwsh -NoLogo -File .\run_server_check.ps1 -OutputJsonPath windows_check.json -OutputLogPath windows_check.log
+   ```
+5. خروجی انتظار می‌رود:
+   - `/openapi.json`, `/docs`, `/redoc` → وضعیت 200 زمانی که `PUBLIC_DOCS=1`.
+   - `/metrics` بدون هدر → وضعیت 403.
+   - `/metrics` با `Authorization: Bearer dev-metrics` → وضعیت 200 و نتایج در فایل‌های JSON/LOG ثبت می‌شود.
 
 ### 🔁 CI Integration (Windows Smoke)
 
@@ -116,12 +134,12 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -c pytest.min.ini tests/refactor -q
 - `REDIS_NAMESPACE` و `REDIS_URL` برای تفکیک فضای کلید و اتصال به Redis استفاده می‌شوند؛ در CI مقدار `REDIS_URL` از سرویس `redis:7` تزریق می‌گردد.
 - سیاست Retry Redis از طریق متغیرهای `REDIS_MAX_RETRIES` (پیش‌فرض ۳)، `REDIS_BASE_DELAY_MS`، `REDIS_MAX_DELAY_MS` و `REDIS_JITTER_MS` قابل تنظیم است.
 - برای فعال‌سازی Fail-Open عمومی می‌توانید `RATE_LIMIT_FAIL_OPEN=1` را تنظیم کنید؛ GET ها در صورت خطا همیشه Fail-Open می‌شوند و `POST /allocations` تنها در صورت تنظیم صریح Fail-Open آزاد می‌ماند.
-- مسیر `/metrics` نیازمند تعیین یکی از `METRICS_TOKEN` یا قرار گرفتن IP در `METRICS_IP_ALLOWLIST` است؛ خروجی شامل متریک‌های `redis_retry_attempts_total` و `redis_retry_exhausted_total` است که برای پایش پایداری Redis ضروری‌اند.
-- مقداردهی متغیر سراسری `METRICS_TOKEN` بر مقدار تو در توی `IMPORT_TO_SABT_AUTH__METRICS_TOKEN` اولویت دارد؛ در صورت خالی بودن هر دو، پاسخ `/metrics` با خطای فارسی «متغیر METRICS_TOKEN یا IMPORT_TO_SABT_AUTH__METRICS_TOKEN را مقداردهی کنید» قطع می‌شود.
+- مسیر `/metrics` نیازمند تعیین یکی از `METRICS_TOKEN` یا قرار گرفتن IP در `METRICS_IP_ALLOWLIST` است و در حالت توکن باید هدر `Authorization: Bearer <token>` ارسال شود؛ خروجی شامل متریک‌های `redis_retry_attempts_total` و `redis_retry_exhausted_total` است که برای پایش پایداری Redis ضروری‌اند.
+- مقداردهی متغیر سراسری `METRICS_TOKEN` بر مقدار JSON `IMPORT_TO_SABT_AUTH` (کلید `metrics_token`) اولویت دارد؛ در صورت خالی بودن هر دو، پاسخ `/metrics` با خطای فارسی «متغیر METRICS_TOKEN یا مقدار `metrics_token` داخل JSON `IMPORT_TO_SABT_AUTH` را مقداردهی کنید» قطع می‌شود.
 - مسیر پیش‌فرض ذخیرهٔ خروجی‌ها `<ریشهٔ پروژه>/storage/exports` است و در اولین اجرا ساخته می‌شود؛ در صورت نیاز می‌توانید `EXPORT_STORAGE_DIR` را روی مسیر مطمئن دیگری تنظیم کنید.
 - برای کوتاه‌کردن زمان تست استریم بزرگ در CI، متغیر `EXPORT_STRESS_ROWS` تعداد ردیف‌های تولیدی را کنترل می‌کند (پیش‌فرض ۱۲٬۰۰۰).
 - برای اجرای آزمون یکپارچه‌ی ردیس واقعی، متغیر `LIVE_REDIS_URL` را روی DSN محیط زنده/لوکال تنظیم کنید؛ در غیر این صورت این مسیر جمع‌آوری نمی‌شود.
-- اجرای آزمون‌های سخت‌سازی اکنون بدون پرچم‌های اضافی انجام می‌شود: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p pytest_asyncio.plugin tests/hardened_api -q`. حلقهٔ پیش‌فرض asyncio در `pytest.ini` روی `function` ثابت شده و دیگر نیاز به `-o asyncio_default_fixture_loop_scope=function` نیست.
+- اجرای آزمون‌های سخت‌سازی اکنون بدون پرچم‌های اضافی انجام می‌شود: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/hardened_api -q`. حلقهٔ پیش‌فرض asyncio در `pytest.ini` روی `function` ثابت شده و دیگر نیاز به `-o asyncio_default_fixture_loop_scope=function` نیست.
 - تمامی سناریوهای HTTP آزمایشی با `httpx.AsyncClient` و `ASGITransport` اجرا می‌شوند تا اخطارهای فرسودگی نسخه‌های آینده (`data=` خام) حذف شوند؛ برای بدنهٔ دلخواه از آرگومان‌های `json=` یا `content=` استفاده کنید.
 - لانچر Redis ابتدا باینری محلی را تلاش می‌کند و در صورت نبود، به طور خودکار کانتینر `redis:7` را با Docker اجرا می‌کند؛ با متغیر `REDIS_LAUNCH_MODE` می‌توانید حالت را به `binary`، `docker` یا `skip` محدود کنید. در صورت نبود Docker و باینری، مقدار `skip` باعث ثبت `xfail` مستند در تست‌ها می‌شود.
 - نگهبان اخطارهای HTTPX اکنون علاوه بر مسیر موفق POST، مسیر GET `/status` و خطای نوع محتوا را هم بررسی می‌کند تا هیچ اخطار فرسودگی در سناریوهای رایج باقی نماند.

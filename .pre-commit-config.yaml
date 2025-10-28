@@ -27,3 +27,10 @@ repos:
     hooks:
       - id: bandit
         args: ['-c', 'pyproject.toml']
+  - repo: local
+    hooks:
+      - id: no-src-main-app
+        name: Prevent src-dot-main entrypoint regressions
+        language: python
+        entry: python scripts/hooks/no_src_main_check.py
+        pass_filenames: false

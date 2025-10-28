@@ -11,6 +11,25 @@
 - Use `activate.bat` (Windows) or `source ./activate.sh` (macOS/Linux) before working in a new shell.
 - Launch diagnostics with `python scripts/environment_doctor.py` to validate the environment and apply optional fixes.
 
+> 📘 **جدید برای Windows**: راهنمای کامل نصب و اجرای بومی/WSL2/Docker در [docs/windows-install.md](docs/windows-install.md) موجود است.
+
+#### Windows quickstart (10 فرمان)
+
+```powershell
+cd E:\
+git clone https://github.com/OWNER/student-mentor-allocation-system.git
+cd student-mentor-allocation-system
+pwsh -NoLogo -File scripts/win/00-diagnose.ps1
+pwsh -NoLogo -File scripts/win/10-venv-install.ps1 -ConstraintsPath constraints-win.txt
+pwsh -NoLogo -File scripts/win/20-create-env.ps1 -WriteEnv
+pwsh -NoLogo -File scripts/win/30-services.ps1 -Mode Docker -ComposeFile docker-compose.dev.yml
+pwsh -NoLogo -File scripts/win/40-run.ps1 -Background -StateDir tmp\win-app
+pwsh -NoLogo -File scripts/win/50-smoke.ps1 -StateDir tmp\win-app
+pwsh -NoLogo -File scripts/win/30-services.ps1 -Action Cleanup -Mode Docker -ComposeFile docker-compose.dev.yml
+```
+
+> نتیجه: اجرای کامل ImportToSabt با RBAC، گارد متریک، اسموک‌تست و پاک‌سازی سرویس‌ها؛ گزارش‌ها در `reports/win-smoke/` ذخیره می‌شوند (`smoke-log.jsonl`, `smoke-summary.json`, `http-responses.json`).
+
 <!--dev-quick-start:start-->
 
 ## Quick Start (Dev)
@@ -56,7 +75,7 @@ METRICS_TOKEN=dev-metrics scripts/smoke.sh
 
 ### Windows (PowerShell 7)
 
-راهنمای کامل نصب و اجرای نسخهٔ توسعه را در مستند «[راهنمای PowerShell 7 ویندوز](docs/windows-powershell-setup.md)» دنبال کنید؛ این سند شامل TL;DR، چک‌های پیش‌نیاز، اعتبارسنجی محیط، اجرای `Start-App.ps1` و اسموک‌تست‌های ضروری است.
+راهنمای رسمی نصب ویندوز در فایل «[docs/windows-install.md](docs/windows-install.md)» شامل مسیر پیشنهادی بومی، گزینهٔ WSL2 و Docker، اسکریپت‌های `scripts/win/*.ps1` و اسموک‌تست‌های کامل است.
 
 ### 🧪 Windows Acceptance Checks
 

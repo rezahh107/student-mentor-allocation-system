@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable, Iterable, TypeVar
 
@@ -33,22 +34,32 @@ class RetryMetrics:
             self.backoff_seconds.labels(operation=operation, namespace=self.namespace).observe(delay)
 
 
+_INVALID_METRIC_CHARS = re.compile(r"[^a-zA-Z0-9_]")
+
+
+def _metric_prefix(namespace: str) -> str:
+    sanitized = _INVALID_METRIC_CHARS.sub("_", namespace)
+    sanitized = re.sub(r"__+", "_", sanitized).strip("_")
+    return sanitized or "sma"
+
+
 def build_retry_metrics(namespace: str, registry: CollectorRegistry | None = None) -> RetryMetrics:
     reg = registry or CollectorRegistry()
+    prefix = _metric_prefix(namespace)
     attempts_total = Counter(
-        f"{namespace}_retry_attempts_total",
+        f"{prefix}_retry_attempts_total",
         "Retry attempts recorded by operation and outcome.",
         registry=reg,
         labelnames=("operation", "namespace", "outcome"),
     )
     exhaustion_total = Counter(
-        f"{namespace}_retry_exhaustion_total",
+        f"{prefix}_retry_exhaustion_total",
         "Retry exhaustion occurrences by operation.",
         registry=reg,
         labelnames=("operation", "namespace"),
     )
     backoff_seconds = Histogram(
-        f"{namespace}_retry_backoff_seconds",
+        f"{prefix}_retry_backoff_seconds",
         "Retry backoff schedule seconds by operation.",
         registry=reg,
         labelnames=("operation", "namespace"),

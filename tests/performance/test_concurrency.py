@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import concurrent.futures as cf
+import os
 import time
 from typing import List
 
@@ -13,8 +14,12 @@ from tests.factories import make_mentor, make_student
 
 @pytest.mark.concurrent
 def test_concurrent_users():
+    fast = os.getenv("SMA_PERF_FAST", "").strip().lower() not in {"", "0", "false", "no"}
     users = 50
     per_user = 200
+    if fast:
+        users = 10
+        per_user = 40
     mentors = [make_mentor(i + 1) for i in range(200)]
 
     def work(uid: int) -> int:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gc
 import platform
+import tracemalloc
 from typing import Optional
 
 import pytest
@@ -44,7 +45,8 @@ def get_memory_usage() -> Optional[int]:
 def test_memory_profile_small_batch():
     rss_before = get_memory_usage()
     if rss_before is None:
-        pytest.skip("Memory profiling requires psutil or resource support")
+        tracemalloc.start()
+        tracemalloc.reset_peak()
 
     eng = AllocationEngine()
     mentors = [make_mentor(i + 1) for i in range(100)]
@@ -54,7 +56,11 @@ def test_memory_profile_small_batch():
 
     gc.collect()
     rss_after = get_memory_usage()
-    assert rss_after is not None
-
-    # Accept up to ~200MB increase depending on OS units
-    assert (rss_after - rss_before) < 200 * 1024 * 1024
+    if rss_before is None or rss_after is None:
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        assert peak < 200 * 1024 * 1024
+        assert current < peak
+    else:
+        # Accept up to ~200MB increase depending on OS units
+        assert (rss_after - rss_before) < 200 * 1024 * 1024

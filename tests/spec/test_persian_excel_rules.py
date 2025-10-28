@@ -40,15 +40,19 @@ def _نمونه_ردیف() -> dict[str, Any]:
 
 @retry(times=3, delay=0.1)
 @pytest.mark.usefixtures("timing_control")
-def test_excel_formula_injection_guard(tmp_path: Path, clean_redis_state, db_session) -> None:
+def test_excel_formula_injection_guard(
+    tmp_path: Path, clean_redis_state_sync, db_session
+) -> None:
     """مقدار آغازشده با '=' باید با پیشوند امن وارد فایل CSV شود."""
 
     db_session.execute(text("SELECT 1"))
-    target_dir = tmp_path / clean_redis_state.namespace
+    target_dir = tmp_path / clean_redis_state_sync.namespace
     target_dir.mkdir(parents=True, exist_ok=True)
     csv_path = target_dir / "guarded.csv"
 
-    writer = ExportWriter(formula_guard=True, sensitive_columns=("first_name", "last_name", "mentor_name"))
+    writer = ExportWriter(
+        formula_guard=True, sensitive_columns=("first_name", "last_name", "mentor_name")
+    )
     rows = [_نمونه_ردیف()]
     result = writer.write_csv(rows, path_factory=lambda _: csv_path)
 
@@ -62,12 +66,16 @@ def test_excel_formula_injection_guard(tmp_path: Path, clean_redis_state, db_ses
 
 @retry(times=3, delay=0.1)
 @pytest.mark.usefixtures("timing_control")
-def test_always_quote_persian_strings(tmp_path: Path, clean_redis_state, db_session) -> None:
+def test_always_quote_persian_strings(
+    tmp_path: Path, clean_redis_state_sync, db_session
+) -> None:
     """همه مقادیر فارسی باید در CSV با علامت نقل‌قول احاطه شوند."""
 
     db_session.execute(text("SELECT 1"))
-    csv_path = tmp_path / f"quoted-{clean_redis_state.namespace}.csv"
-    writer = ExportWriter(formula_guard=True, sensitive_columns=("first_name", "last_name", "mentor_name"))
+    csv_path = tmp_path / f"quoted-{clean_redis_state_sync.namespace}.csv"
+    writer = ExportWriter(
+        formula_guard=True, sensitive_columns=("first_name", "last_name", "mentor_name")
+    )
     rows = [_نمونه_ردیف() | {"last_name": "مریم", "mentor_name": "سارا", "first_name": "پارسا"}]
     writer.write_csv(rows, path_factory=lambda _: csv_path)
     raw_text = csv_path.read_text(encoding="utf-8")
@@ -79,12 +87,16 @@ def test_always_quote_persian_strings(tmp_path: Path, clean_redis_state, db_sess
 
 @retry(times=3, delay=0.1)
 @pytest.mark.usefixtures("timing_control")
-def test_rtl_direction_metadata(tmp_path: Path, clean_redis_state, db_session) -> None:
+def test_rtl_direction_metadata(
+    tmp_path: Path, clean_redis_state_sync, db_session
+) -> None:
     """پرچم راست‌به‌چپ باید در فایل اکسل تولیدی تنظیم شود."""
 
     db_session.execute(text("SELECT 1"))
-    xlsx_path = tmp_path / f"rtl-{clean_redis_state.namespace}.xlsx"
-    writer = ExportWriter(formula_guard=True, sensitive_columns=("first_name", "last_name", "mentor_name"))
+    xlsx_path = tmp_path / f"rtl-{clean_redis_state_sync.namespace}.xlsx"
+    writer = ExportWriter(
+        formula_guard=True, sensitive_columns=("first_name", "last_name", "mentor_name")
+    )
     result = writer.write_xlsx([_نمونه_ردیف()], path_factory=lambda _: xlsx_path)
 
     workbook = openpyxl.load_workbook(xlsx_path)

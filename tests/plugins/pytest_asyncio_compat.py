@@ -26,7 +26,15 @@ def pytest_configure(config: Config) -> None:
     module = _load_asyncio_module()
     if not config.pluginmanager.has_plugin("pytest_asyncio"):
         config.pluginmanager.register(module, "pytest_asyncio")
-    scope = config.getini("asyncio_default_fixture_loop_scope") or "function"
+    try:
+        scope = config.getini("asyncio_default_fixture_loop_scope")
+    except ValueError:
+        config._parser.addini(  # type: ignore[attr-defined]
+            "asyncio_default_fixture_loop_scope",
+            "Default loop scope when pytest-asyncio is unavailable",
+            default="function",
+        )
+        scope = "function"
     config.inicfg.setdefault("asyncio_default_fixture_loop_scope", scope)
     if hasattr(config, "_inicache"):
         config._inicache["asyncio_default_fixture_loop_scope"] = scope  # type: ignore[attr-defined]

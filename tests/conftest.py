@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import asyncio
+import functools
 import hashlib
 import json
 import logging
 import os
 import pathlib
+import random
 import shutil
+import unicodedata
 import uuid
 import weakref
-from collections.abc import Iterator
-from dataclasses import dataclass
-from datetime import datetime
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
+import time
 from zoneinfo import ZoneInfo
 
 import prometheus_client
@@ -26,6 +31,9 @@ from sma._local_fakeredis import FakeStrictRedis
 from sma.repo_doctor.clock import tehran_clock
 from sma.repo_doctor.metrics import DoctorMetrics
 from sma.testing.state import get_test_namespace, maybe_connect_redis
+from tests.integration.conftest import RedisNamespace
+from tenacity import RetryCallState, Retrying, retry_if_exception_type, stop_after_attempt
+from tenacity.wait import wait_base as TenacityWaitBase
 from tools import reqs_doctor
 from tools.reqs_doctor.clock import DeterministicClock
 
@@ -38,9 +46,60 @@ WALL_CLOCK_ALLOWLIST = {
     pathlib.Path("src/sma/_local_fakeredis/__init__.py"),
     pathlib.Path("src/sma/git_sync_verifier/clock.py"),
 }
+
+T = TypeVar("T")
+
+_DIGIT_FOLD_MAP = str.maketrans({
+    "۰": "0",
+    "۱": "1",
+    "۲": "2",
+    "۳": "3",
+    "۴": "4",
+    "۵": "5",
+    "۶": "6",
+    "۷": "7",
+    "۸": "8",
+    "۹": "9",
+    "٠": "0",
+    "١": "1",
+    "٢": "2",
+    "٣": "3",
+    "٤": "4",
+    "٥": "5",
+    "٦": "6",
+    "٧": "7",
+    "٨": "8",
+    "٩": "9",
+})
 SCAN_ROOTS = (pathlib.Path("src/sma"),)
 STATE_LOGGER = logging.getLogger("tests.state_hygiene")
 _FAKE_REDIS_INSTANCES: "weakref.WeakSet[FakeStrictRedis]" = weakref.WeakSet()
+_TRACKED_EVENT_LOOPS: "weakref.WeakSet[asyncio.AbstractEventLoop]" = weakref.WeakSet()
+_ORIGINAL_NEW_EVENT_LOOP = asyncio.new_event_loop
+_POLICY = asyncio.get_event_loop_policy()
+_ORIGINAL_POLICY_NEW_LOOP = getattr(_POLICY, "new_event_loop", None)
+
+
+def _tracked_new_event_loop() -> asyncio.AbstractEventLoop:
+    loop = _ORIGINAL_NEW_EVENT_LOOP()
+    _TRACKED_EVENT_LOOPS.add(loop)
+    return loop
+
+
+if not getattr(asyncio.new_event_loop, "_sma_tracked", False):
+    setattr(asyncio.new_event_loop, "_sma_tracked", True)
+    asyncio.new_event_loop = _tracked_new_event_loop  # type: ignore[assignment]
+
+
+def _tracked_policy_new_event_loop() -> asyncio.AbstractEventLoop:
+    loop = _ORIGINAL_POLICY_NEW_LOOP()
+    _TRACKED_EVENT_LOOPS.add(loop)
+    return loop
+
+
+if _ORIGINAL_POLICY_NEW_LOOP and not getattr(_POLICY, "_sma_tracked_new_loop", False):
+    setattr(_POLICY, "_sma_tracked_new_loop", True)
+    _POLICY.new_event_loop = _tracked_policy_new_event_loop  # type: ignore[assignment]
 
 
 def _track_fake_redis_instances() -> None:
@@ -99,12 +158,48 @@ def freeze_tehran_time() -> Iterator[object]:
         yield frozen
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _close_tracked_event_loops() -> Iterator[None]:
+    try:
+        yield
+    finally:
+        for loop in list(_TRACKED_EVENT_LOOPS):
+            if loop.is_closed():
+                continue
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:  # pragma: no cover - defensive cleanup
+                pass
+            finally:
+                loop.close()
+        asyncio.new_event_loop = _ORIGINAL_NEW_EVENT_LOOP
+        if _ORIGINAL_POLICY_NEW_LOOP is not None:
+            _POLICY.new_event_loop = _ORIGINAL_POLICY_NEW_LOOP
+            setattr(_POLICY, "_sma_tracked_new_loop", False)
+
+
 @pytest.fixture(scope="function", autouse=True)
 def fresh_metrics_registry(monkeypatch: pytest.MonkeyPatch) -> Iterator[CollectorRegistry]:
     registry = CollectorRegistry()
     monkeypatch.setattr(prometheus_registry, "REGISTRY", registry, raising=False)
     monkeypatch.setattr(prometheus_client, "REGISTRY", registry, raising=False)
     yield registry
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_event_loops_function() -> Iterator[None]:
+    try:
+        yield
+    finally:
+        for loop in list(_TRACKED_EVENT_LOOPS):
+            if loop.is_closed() or loop.is_running():
+                continue
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:  # pragma: no cover - defensive cleanup
+                pass
+            finally:
+                loop.close()
 
 
 @pytest.fixture()
@@ -199,6 +294,193 @@ def fresh_state_namespaces(rid: str) -> Iterator[None]:
 
     _reset_test_database(correlation_id, namespace)
 
+
+def _normalize_label(raw: str) -> str:
+    collapsed = raw.replace("\ufeff", "").replace("\u200c", "")
+    folded = collapsed.translate(_DIGIT_FOLD_MAP)
+    return unicodedata.normalize("NFKC", folded)
+
+
+def _normalize_attempts(value: Any) -> int:
+    if value in (None, "", "0"):
+        return 3
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 3
+    return max(1, number)
+
+
+def _normalize_exception_types(value: Any) -> tuple[type[BaseException], ...]:
+    if value in (None, "", "0", 0):
+        return (Exception,)
+    if isinstance(value, type) and issubclass(value, BaseException):
+        return (value,)
+    if isinstance(value, (list, tuple, set)):
+        normalized: list[type[BaseException]] = []
+        for candidate in value:
+            if isinstance(candidate, type) and issubclass(candidate, BaseException):
+                normalized.append(candidate)
+        return tuple(normalized) if normalized else (Exception,)
+    return (Exception,)
+
+
+def _seed_from_label(label: str) -> int:
+    digest = hashlib.blake2s(label.encode("utf-8"), digest_size=16).digest()
+    return int.from_bytes(digest, "big", signed=False)
+
+
+def _normalize_delay(value: Any) -> float:
+    if value in (None, "", "0", 0):
+        return 0.1
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return 0.1
+    return max(parsed, 0.0)
+
+
+class _DeterministicExponential(TenacityWaitBase):
+    """Tenacity wait strategy with seeded jitter for deterministic retries."""
+
+    def __init__(
+        self, *, initial: float, maximum: float, jitter: float, rng: random.Random
+    ) -> None:
+        self._initial = max(initial, 0.0) or 0.1
+        self._maximum = max(maximum, self._initial)
+        self._jitter = max(jitter, 0.0)
+        self._rng = rng
+
+    def __call__(self, retry_state: RetryCallState) -> float:
+        attempt_index = max(retry_state.attempt_number - 1, 0)
+        base_delay = self._initial * (2 ** attempt_index)
+        jitter = self._rng.uniform(0.0, self._jitter) if self._jitter > 0 else 0.0
+        return min(self._maximum, base_delay + jitter)
+
+
+def retry(
+    *,
+    times: Any = 3,
+    delay: Any = 0.1,
+    exceptions: Any = Exception,
+    jitter: float = 0.1,
+    label: str | None = None,
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    normalized_attempts = _normalize_attempts(times)
+    base_delay = _normalize_delay(delay)
+    exception_types = _normalize_exception_types(exceptions)
+    normalized_label = _normalize_label(label or "tests.retry")
+
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        correlation_id = f"{func.__module__}.{func.__name__}"
+
+        def _log_state(state: RetryCallState, event: str) -> None:
+            payload = {
+                "attempt": state.attempt_number,
+                "elapsed": state.seconds_since_start,
+                "sleep": getattr(getattr(state, "next_action", None), "sleep", None),
+                "error": str(state.outcome.exception()) if state.outcome.failed else None,
+            }
+            _emit_state_log(event, correlation_id, normalized_label, **payload)
+
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            seed_label = f"{normalized_label}:{correlation_id}"
+            rng = random.Random(_seed_from_label(seed_label))
+            max_delay = max(base_delay, 0.1) * (2 ** (normalized_attempts - 1))
+            wait = _DeterministicExponential(
+                initial=base_delay if base_delay > 0 else 0.1,
+                maximum=max_delay,
+                jitter=float(jitter),
+                rng=rng,
+            )
+
+            retrying = Retrying(
+                stop=stop_after_attempt(normalized_attempts),
+                retry=retry_if_exception_type(exception_types),
+                wait=wait,
+                reraise=True,
+                before_sleep=lambda state: _log_state(state, "retry-before-sleep"),
+            )
+
+            for attempt in retrying:
+                with attempt:
+                    result = func(*args, **kwargs)
+                _log_state(attempt.retry_state, "retry-success")
+                return result
+
+            raise RuntimeError("retry policy exited without executing function")
+
+        return wrapper
+
+    return decorator
+
+
+@dataclass(slots=True)
+class TimingHarness:
+    """Deterministic timing controls aligned with Asia/Tehran timezone."""
+
+    base: datetime
+    step: float = 0.0005
+    _perf_value: float = field(default=0.0)
+    _current: datetime = field(init=False)
+
+    def __post_init__(self) -> None:
+        self._current = self.base
+
+    def advance(self, seconds: float) -> None:
+        seconds = max(0.0, float(seconds))
+        self._current += timedelta(seconds=seconds)
+        self._perf_value += seconds
+
+    def perf_counter(self) -> float:
+        self._perf_value += self.step
+        return self._perf_value
+
+    def epoch_seconds(self) -> float:
+        return self._current.timestamp()
+
+    def sleep(self, seconds: float) -> None:
+        self.advance(seconds)
+
+
+@pytest.fixture()
+def timing_control(monkeypatch: pytest.MonkeyPatch) -> Iterator[TimingHarness]:
+    """Provide deterministic replacements for timing functions during tests."""
+
+    harness = TimingHarness(base=FREEZE_INSTANT)
+
+    def _perf_counter() -> float:
+        return harness.perf_counter()
+
+    def _time() -> float:
+        return harness.epoch_seconds()
+
+    def _sleep(seconds: float) -> None:
+        harness.sleep(seconds)
+
+    monkeypatch.setattr(time, "perf_counter", _perf_counter)
+    monkeypatch.setattr(time, "time", _time)
+    monkeypatch.setattr(time, "sleep", _sleep)
+    yield harness
+
+
+@pytest.fixture()
+def clean_redis_state_sync() -> Iterator[RedisNamespace]:
+    """Synchronous wrapper ensuring Redis namespaces are isolated per test."""
+
+    client = FakeStrictRedis()
+    namespace = f"tests:{uuid.uuid4().hex}"
+    client.flushdb()
+    context = RedisNamespace(client=client, namespace=namespace)
+    yield context
+    leaked_keys = context.keys()
+    client.flushdb()
+    if leaked_keys:
+        pytest.fail(
+            f"کلیدهای ردیس پاک‌سازی نشدند: {sorted(leaked_keys)}",
+            pytrace=False,
+        )
 
 def pytest_addoption(parser):
     parser.addini("env", type="linelist", help="environment variables for tests")

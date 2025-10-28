@@ -17,6 +17,17 @@
    ```
    این فرمان فایل‌های `reports/pytest.json` و `reports/pytest-summary.txt` را تولید می‌کند و می‌توانید آن‌ها را با `python strict_report.py` اعتبارسنجی کنید.
 
+> ℹ️ **Pytest حداقلی:** برای اجرای یک ماژول مشخص (مثلاً اسناد ویندوز) از الگوی زیر استفاده کنید تا شیم‌های `sitecustomize.py` فعال و پلاگین‌های ناخواسته غیرفعال شوند:
+> ```bash
+> PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/docs/test_windows_install_guide.py -q
+> ```
+
+## یادداشت‌های Windows
+
+- پیش از تغییرات وابسته به محیط، `pwsh -NoLogo -File scripts/win/00-diagnose.ps1` را اجرا کنید تا نسخهٔ Python 3.11، ابزارهای ساخت و Docker/WSL بررسی شوند.
+- نصب پکیج‌ها در ویندوز باید از طریق `scripts/win/10-venv-install.ps1` انجام شود؛ این اسکریپت `uvloop` را حذف و `tzdata==2025.2` را تضمین می‌کند.
+- برای تولید `.env` و اجرای smoke test‌ها، از زنجیرهٔ `20-create-env.ps1` → `30-services.ps1` → `40-run.ps1` → `50-smoke.ps1` استفاده کنید و نتایج را در Pull Request ذکر کنید.
+
 ## دیباگ و حالت‌های آفلاین
 
 - در صورتی که Redis واقعی در دسترس نباشد، متغیر `SMA_TEST_FAKE_REDIS=1` یک backend قطعی و قابل پاک‌سازی را فعال می‌کند. این backend در آزمون‌ها از نام‌فضای منحصربه‌فردی استفاده می‌کند تا اجراهای موازی با `pytest-xdist` (واقعی یا شبیه‌سازی شده) تداخلی ایجاد نکند.

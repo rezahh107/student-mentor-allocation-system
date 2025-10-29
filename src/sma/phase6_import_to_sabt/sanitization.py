@@ -7,6 +7,9 @@ import re
 import unicodedata
 from typing import BinaryIO, Iterable, Optional, Union
 
+from .normalization import fold_digits as normalize_digits
+from .normalization import normalize_phone as normalize_phone_value
+from .normalization import normalize_text as normalize_text_value
 ZERO_WIDTH = {"\u200c", "\u200d", "\ufeff"}
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 PERSIAN_DIGITS = {
@@ -79,34 +82,15 @@ def secure_digest(source: StreamSource) -> str:
 
 
 def fold_digits(value: str) -> str:
-    return "".join(PERSIAN_DIGITS.get(ch, ch) for ch in value)
+    return normalize_digits(value)
 
 
 def sanitize_text(value: Optional[object]) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        value = value.decode("utf-8", errors="ignore")
-    elif not isinstance(value, str):
-        value = str(value)
-    if value and value.isascii():
-        stripped = value.strip()
-        if all(" " <= ch <= "~" for ch in stripped):
-            return stripped
-    normalized = unicodedata.normalize("NFKC", value)
-    normalized = normalized.replace("ي", "ی").replace("ك", "ک")
-    for zw in ZERO_WIDTH:
-        normalized = normalized.replace(zw, "")
-    normalized = normalized.replace("\r", " ").replace("\n", " ").replace("\t", " ")
-    normalized = CONTROL_RE.sub("", normalized)
-    normalized = fold_digits(normalized)
-    return normalized.strip()
+    return normalize_text_value(value)
 
 
 def sanitize_phone(value: Optional[str]) -> str:
-    text = sanitize_text(value)
-    digits_only = "".join(ch for ch in fold_digits(text) if ch.isdigit())
-    return digits_only
+    return normalize_phone_value(value)
 
 
 def guard_formula(value: str) -> str:
@@ -143,7 +127,7 @@ def hash_national_id(national_id: Optional[str]) -> str:
 
 
 def deterministic_jitter(base_delay: float, attempt: int, seed: str) -> float:
-    digest = secure_digest(f"{seed}:{attempt}")
+    digest = hashlib.blake2b(f"{seed}:{attempt}".encode("utf-8"), digest_size=16).hexdigest()
     rnd_seed = int(digest, 16)
     rnd = random.Random(rnd_seed)
     return base_delay * (2 ** (attempt - 1)) * (1 + rnd.random() * 0.1)

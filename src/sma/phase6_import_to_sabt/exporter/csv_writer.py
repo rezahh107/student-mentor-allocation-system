@@ -150,4 +150,32 @@ def write_csv_atomic(
     return destination
 
 
-__all__ = ["normalize_cell", "write_csv_atomic"]
+class SafeCsvWriter:
+    """High-level helper that enforces Excel safety and atomic writes."""
+
+    def __init__(
+        self,
+        *,
+        header: Sequence[str],
+        sensitive_fields: Sequence[str] | Sequence[int],
+        metrics: "ServiceMetrics" | None = None,
+        timer: Timer | None = None,
+    ) -> None:
+        self._header = list(header)
+        self._sensitive = list(sensitive_fields)
+        self._metrics = metrics
+        self._timer = timer
+
+    def write(self, destination: Path, rows: Iterable[Any], *, include_bom: bool = True) -> Path:
+        return write_csv_atomic(
+            destination,
+            rows,
+            header=self._header,
+            sensitive_fields=self._sensitive,
+            metrics=self._metrics,
+            timer=self._timer,
+            include_bom=include_bom,
+        )
+
+
+__all__ = ["normalize_cell", "write_csv_atomic", "SafeCsvWriter"]

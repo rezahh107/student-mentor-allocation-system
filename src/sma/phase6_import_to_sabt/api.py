@@ -5,12 +5,13 @@ import os
 import time
 import asyncio
 import inspect
-from hashlib import sha256
+from hashlib import blake2b, sha256
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dateutil import parser
 from prometheus_client import generate_latest
@@ -294,6 +295,7 @@ class ExportAPI:
             self._submit_supports_correlation = False
         self._runner_clock = _resolve_runner_clock(self.runner)
         self._rate_limiter = rate_limiter or ExportRateLimiter(clock=self._runner_clock)
+        self._legacy_sunset = "2025-03-01T00:00:00Z"
 
     @property
     def rate_limiter(self) -> ExportRateLimiter:
@@ -308,6 +310,17 @@ class ExportAPI:
     def configure_rate_limit(self, settings: RateLimitSettings) -> None:
         self._rate_limiter.configure(settings)
 
+    def _derive_legacy_idempotency_key(self, request: Request, candidate: str | None) -> str:
+        if candidate:
+            return candidate
+        correlation_id = (
+            getattr(request.state, "correlation_id", None)
+            or request.headers.get("X-Request-ID")
+            or "legacy-export"
+        )
+        digest = blake2b(correlation_id.encode("utf-8"), digest_size=16).hexdigest()
+        return f"legacy-{digest}"
+
     @staticmethod
     def _init_readiness_gate(readiness_gate: ReadinessGate | None) -> ReadinessGate:
         if readiness_gate is not None:
@@ -320,40 +333,42 @@ class ExportAPI:
     def create_router(self) -> APIRouter:
         router = APIRouter()
 
-        @router.post("/exports", response_model=ExportResponse)
-        async def create_export(
-            payload: ExportRequest,
+        def _submit_export_request(
             request: Request,
-            _: None = Depends(rate_limit_dependency),
-            idempotency_key: str = Depends(idempotency_dependency),
-            auth: tuple[str, Optional[int]] = Depends(auth_dependency),
+            *,
+            year: int,
+            center: int | None,
+            fmt: str | None,
+            chunk_size: int | None,
+            include_bom: bool | None,
+            excel_mode: bool | None,
+            delta_created_at: str | None,
+            delta_id: int | None,
+            idempotency_key: str,
+            role: str,
+            center_scope: Optional[int],
         ) -> ExportResponse:
-            role, center_scope = auth
-            if role == "MANAGER" and payload.center != center_scope:
+            if role == "MANAGER" and center != center_scope:
                 raise HTTPException(status_code=403, detail="اجازه دسترسی ندارید")
-            if (payload.delta_created_at is None) ^ (payload.delta_id is None):
+            if (delta_created_at is None) ^ (delta_id is None):
                 raise self._validation_error({"delta": "هر دو مقدار پنجره دلتا الزامی است."})
             delta = None
-            if payload.delta_created_at and payload.delta_id is not None:
+            if delta_created_at and delta_id is not None:
                 delta = ExportDeltaWindow(
-                    created_at_watermark=parser.isoparse(payload.delta_created_at),
-                    id_watermark=payload.delta_id,
+                    created_at_watermark=parser.isoparse(delta_created_at),
+                    id_watermark=delta_id,
                 )
-            filters = ExportFilters(
-                year=payload.year,
-                center=payload.center,
-                delta=delta,
-            )
-            fmt = (payload.format or "xlsx").lower()
-            chunk_size = payload.chunk_size or 50_000
-            if chunk_size <= 0:
+            filters = ExportFilters(year=year, center=center, delta=delta)
+            fmt_value = (fmt or "xlsx").lower()
+            effective_chunk = chunk_size or 50_000
+            if effective_chunk <= 0:
                 raise self._validation_error({"chunk_size": "اندازه قطعه باید بزرگتر از صفر باشد."})
             try:
                 options = ExportOptions(
-                    chunk_size=chunk_size,
-                    include_bom=payload.bom or False,
-                    excel_mode=payload.excel_mode if payload.excel_mode is not None else True,
-                    output_format=fmt,
+                    chunk_size=effective_chunk,
+                    include_bom=include_bom or False,
+                    excel_mode=excel_mode if excel_mode is not None else True,
+                    output_format=fmt_value,
                 )
             except ValueError as exc:
                 if "unsupported_format" in str(exc):
@@ -362,7 +377,7 @@ class ExportAPI:
             namespace_components = [
                 role,
                 str(center_scope or "ALL"),
-                str(payload.year),
+                str(year),
                 options.output_format,
             ]
             if filters.delta:
@@ -393,6 +408,72 @@ class ExportAPI:
                 format=options.output_format,
                 middleware_chain=chain,
             )
+
+        @router.post("/exports", response_model=ExportResponse, status_code=status.HTTP_202_ACCEPTED)
+        async def create_export(
+            payload: ExportRequest,
+            request: Request,
+            _: None = Depends(rate_limit_dependency),
+            idempotency_key: str = Depends(idempotency_dependency),
+            auth: tuple[str, Optional[int]] = Depends(auth_dependency),
+        ) -> ExportResponse:
+            role, center_scope = auth
+            return _submit_export_request(
+                request,
+                year=payload.year,
+                center=payload.center,
+                fmt=payload.format,
+                chunk_size=payload.chunk_size,
+                include_bom=payload.bom,
+                excel_mode=payload.excel_mode,
+                delta_created_at=payload.delta_created_at,
+                delta_id=payload.delta_id,
+                idempotency_key=idempotency_key,
+                role=role,
+                center_scope=center_scope,
+            )
+
+        @router.get(
+            "/exports/csv",
+            response_model=ExportResponse,
+            status_code=status.HTTP_202_ACCEPTED,
+            deprecated=True,
+        )
+        async def legacy_export_csv(
+            request: Request,
+            year: int = Query(...),
+            center: int | None = Query(default=None),
+            chunk_size: int | None = Query(default=None),
+            bom: bool | None = Query(default=None),
+            excel_mode: bool | None = Query(default=None),
+            _: None = Depends(rate_limit_dependency),
+            idempotency_hint: Optional[str] = Depends(optional_idempotency_dependency),
+            auth: tuple[str, Optional[int]] = Depends(auth_dependency),
+        ) -> JSONResponse:
+            role, center_scope = auth
+            derived_key = self._derive_legacy_idempotency_key(request, idempotency_hint)
+            export_response = _submit_export_request(
+                request,
+                year=year,
+                center=center,
+                fmt="csv",
+                chunk_size=chunk_size,
+                include_bom=bom,
+                excel_mode=excel_mode,
+                delta_created_at=None,
+                delta_id=None,
+                idempotency_key=derived_key,
+                role=role,
+                center_scope=center_scope,
+            )
+            response = JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content=export_response.model_dump(),
+            )
+            response.headers["Deprecation"] = "true"
+            response.headers["Link"] = "</api/exports?format=csv>; rel=\"successor-version\""
+            response.headers["Sunset"] = self._legacy_sunset
+            return response
 
         @router.get("/exports/{job_id}", response_model=ExportStatusResponse)
         async def get_export(

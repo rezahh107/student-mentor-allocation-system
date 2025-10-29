@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
 
+from sma.phase6_import_to_sabt.api import ExportAPI
 from sma.phase6_import_to_sabt.app.clock import Clock, build_system_clock
 from sma.phase6_import_to_sabt.app.config import AppConfig
 from sma.phase6_import_to_sabt.app.errors import install_error_handlers
@@ -27,6 +28,7 @@ from sma.phase6_import_to_sabt.app.middleware import (
     RateLimitMiddleware,
     RequestLoggingMiddleware,
 )
+from sma.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore, KeyValueStore
 from sma.phase6_import_to_sabt.download_api import (
     DownloadMetrics,
     DownloadRetryPolicy,
@@ -35,8 +37,15 @@ from sma.phase6_import_to_sabt.download_api import (
     SignatureSecurityManager,
     create_download_router,
 )
+from sma.phase6_import_to_sabt.exporter import ImportToSabtExporter
+from sma.phase6_import_to_sabt.data_source import InMemoryDataSource
+from sma.phase6_import_to_sabt.job_runner import ExportJobRunner
+from sma.phase6_import_to_sabt.logging_utils import ExportLogger
+from sma.phase6_import_to_sabt.metrics import ExporterMetrics
 from sma.phase6_import_to_sabt.obs.metrics import ServiceMetrics, build_metrics, render_metrics
 from sma.phase6_import_to_sabt.observability import MetricsCollector, profile_endpoint, trace_span
+from sma.phase6_import_to_sabt.models import SignedURLProvider
+from sma.phase6_import_to_sabt.roster import InMemoryRoster
 from sma.phase6_import_to_sabt.security import AuthenticatedActor
 from sma.phase6_import_to_sabt.security.config import AccessConfigGuard, ConfigGuardError, SigningKeyDefinition, TokenDefinition
 from sma.phase6_import_to_sabt.security.rbac import (
@@ -45,9 +54,9 @@ from sma.phase6_import_to_sabt.security.rbac import (
     enforce_center_scope,
 )
 from sma.phase6_import_to_sabt.security.signer import DualKeySigner, SignatureError, SigningKeySet
+from sma.phase7_release.deploy import ReadinessGate
 from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 from sma.phase6_import_to_sabt.app.probes import AsyncProbe, ProbeResult
-from sma.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore, KeyValueStore
 from sma.phase6_import_to_sabt.app.timing import MonotonicTimer, Timer
 from sma.phase6_import_to_sabt.app.utils import normalize_token
 
@@ -138,6 +147,27 @@ def _resolve_storage_root(
     return default_root.resolve()
 
 
+def _build_default_export_runner(
+    *,
+    storage_root: Path,
+    clock: Clock,
+    metrics: ExporterMetrics,
+    logger: ExportLogger,
+) -> ExportJobRunner:
+    exports_root = storage_root.resolve()
+    exports_root.mkdir(parents=True, exist_ok=True)
+    data_source = InMemoryDataSource([])
+    roster = InMemoryRoster({})
+    exporter = ImportToSabtExporter(
+        data_source=data_source,
+        roster=roster,
+        output_dir=exports_root,
+        metrics=metrics,
+        clock=clock,
+    )
+    return ExportJobRunner(exporter=exporter, metrics=metrics, logger=logger, clock=clock)
+
+
 def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
     app.add_middleware(CorrelationIdMiddleware, clock=container.clock)
     ordered_middlewares = [
@@ -208,10 +238,16 @@ def create_application(
     idempotency_store: KeyValueStore | None = None,
     readiness_probes: Mapping[str, AsyncProbe] | None = None,
     workflow: ImportToSabtWorkflow | None = None,
+    export_runner: ExportJobRunner | None = None,
+    export_metrics: ExporterMetrics | None = None,
+    export_logger: ExportLogger | None = None,
+    export_signer: SignedURLProvider | None = None,
 ) -> FastAPI:
     config = config or AppConfig.from_env()
     clock = clock or build_system_clock(config.timezone)
     metrics = metrics or build_metrics(config.observability.metrics_namespace)
+    export_metrics = export_metrics or ExporterMetrics(metrics.registry)
+    export_logger = export_logger or ExportLogger()
     timer = timer or MonotonicTimer()
     templates = templates or _build_templates()
     rate_limit_store = rate_limit_store or InMemoryKeyValueStore(
@@ -298,9 +334,17 @@ def create_application(
         metrics=metrics,
         default_ttl_seconds=access.download_ttl_seconds if access else config.auth.download_url_ttl_seconds,
     )
+    export_signer = export_signer or signer
 
     storage_root = _resolve_storage_root(workflow=workflow)
     storage_root.mkdir(parents=True, exist_ok=True)
+    if export_runner is None:
+        export_runner = _build_default_export_runner(
+            storage_root=storage_root,
+            clock=clock,
+            metrics=export_metrics,
+            logger=export_logger,
+        )
     download_secret = normalize_token(config.auth.service_token) or "import-to-sabt-download"
     download_settings = DownloadSettings(
         workspace_root=storage_root,
@@ -366,6 +410,23 @@ def create_application(
     app.state.signature_security = signature_security
     app.state.download_signer = signer
     app.state.service_metrics = metrics
+    export_api = ExportAPI(
+        runner=export_runner,
+        signer=export_signer,
+        metrics=export_metrics,
+        logger=export_logger,
+        metrics_token=metrics_token,
+    )
+    app.include_router(export_api.create_router(), prefix="/api")
+    app.state.export_runner = export_runner
+    app.state.export_metrics = export_metrics
+    app.state.export_logger = export_logger
+    app.state.export_signer = export_signer
+    app.state.export_rate_limiter = export_api.rate_limiter
+    app.state.rate_limit_snapshot = export_api.snapshot_rate_limit
+    app.state.rate_limit_restore = export_api.restore_rate_limit
+    app.state.rate_limit_configure = export_api.configure_rate_limit
+    app.state.export_readiness_gate = export_api.readiness_gate
 
     def _legacy_forbidden(
         message: str,
@@ -658,11 +719,6 @@ def create_application(
             "role": actor.role,
             "center": center_value,
         }
-
-    @app.get("/api/exports/csv")
-    async def exporter_stub(request: Request) -> dict[str, str]:
-        actor = _require_actor(request, roles={"ADMIN", "MANAGER"})
-        return {"status": "queued", "role": actor.role}
 
     if workflow is not None:
         try:

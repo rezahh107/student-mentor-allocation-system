@@ -33,7 +33,7 @@ def test_post_get_flow_with_signed_urls(tmp_path):
         json={"year": 1402, "center": 1, "format": "csv"},
         headers={"Idempotency-Key": "abc", "X-Role": "ADMIN"},
     )
-    assert response.status_code == 200
+    assert response.status_code == 202
     data = response.json()
     assert data["middleware_chain"] == ["ratelimit", "idempotency", "auth"]
     assert data["format"] == "csv"
@@ -72,6 +72,6 @@ def test_default_format_is_xlsx(tmp_path):
         json={"year": 1402, "center": 1},
         headers={"Idempotency-Key": "auto", "X-Role": "ADMIN"},
     )
-    assert response.status_code == 200
+    assert response.status_code == 202
     payload = response.json()
     assert payload["format"] == "xlsx"

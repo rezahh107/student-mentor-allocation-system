@@ -15,6 +15,7 @@ from sma.phase6_import_to_sabt.errors import (
     EXPORT_VALIDATION_FA_MESSAGE,
     make_error,
 )
+from sma.phase6_import_to_sabt.export_runner import RetryingExportRunner
 from sma.phase6_import_to_sabt.exporter import ExportIOError, ExportValidationError, ImportToSabtExporter
 from sma.phase6_import_to_sabt.logging_utils import ExportLogger
 from sma.phase6_import_to_sabt.metrics import ExporterMetrics
@@ -24,10 +25,11 @@ from sma.phase6_import_to_sabt.models import (
     ExportJob,
     ExportJobStatus,
     ExportOptions,
+    ExportManifest,
     ExportSnapshot,
     RedisLike,
 )
-from sma.phase6_import_to_sabt.sanitization import deterministic_jitter, dumps_json
+from sma.phase6_import_to_sabt.sanitization import dumps_json
 
 TRANSIENT_ERRORS = (OSError, ConnectionError, TimeoutError)
 
@@ -121,6 +123,20 @@ class ExportJobRunner:
         self._lock = threading.Lock()
         self._threads: Dict[str, threading.Thread] = {}
         self._sleep = sleeper or time.sleep
+        base_sleep = self._sleep
+
+        def _runner_sleep(delay: float) -> None:
+            self.metrics.observe_retry(phase="job", outcome="retry")
+            base_sleep(delay)
+
+        self.retry_runner = RetryingExportRunner(
+            retryable=TRANSIENT_ERRORS,
+            clock=self.clock,
+            sleeper=_runner_sleep,
+            metrics=self.metrics,
+            base_delay=0.1,
+            max_attempts=self.max_retries,
+        )
         attach = getattr(self.exporter, "attach_metrics", None)
         if callable(attach):
             attach(self.metrics)
@@ -182,176 +198,177 @@ class ExportJobRunner:
             self.metrics.observe_duration("queue", queue_duration, format_label)
         self._update_job(job_id, status=ExportJobStatus.RUNNING, started_at=start_time)
         self.redis.hset(redis_key, {"status": ExportJobStatus.RUNNING.value})
-        attempt = 0
-        while True:
-            attempt += 1
-            job = self.jobs[job_id]
-            try:
-                stats = ExportExecutionStats()
-                manifest = self.exporter.run(
-                    filters=job.filters,
-                    options=job.options,
-                    snapshot=job.snapshot,
-                    clock_now=start_time,
-                    stats=stats,
-                    correlation_id=job.correlation_id,
-                )
-                duration = (self.clock.now() - start_time).total_seconds()
-                self.metrics.observe_duration("total", duration, format_label)
-                for phase, value in stats.phase_durations.items():
-                    self.metrics.observe_duration(phase, value, format_label)
-                for file in manifest.files:
-                    self.metrics.observe_file_bytes(file.byte_size, format_label)
-                    self.metrics.observe_rows(file.row_count, format_label)
-                self.metrics.inc_job(ExportJobStatus.SUCCESS.value, format_label)
-                self._update_job(
-                    job_id,
-                    status=ExportJobStatus.SUCCESS,
-                    finished_at=self.clock.now(),
-                    manifest=manifest,
-                )
-                self.redis.hset(redis_key, {"status": ExportJobStatus.SUCCESS.value})
-                self.redis.expire(redis_key, 86_400)
-                self.logger.info(
-                    "export_completed",
-                    job_id=job_id,
-                    rid=job_id,
-                    namespace=job.namespace,
-                    snapshot=job.snapshot.marker,
-                    operation="export",
-                    rows=manifest.total_rows,
-                    last_error="",
-                    correlation_id=self.jobs[job_id].correlation_id,
-                )
-                break
-            except ExportValidationError as exc:
-                error_payload = make_error("EXPORT_VALIDATION_ERROR", EXPORT_VALIDATION_FA_MESSAGE).as_dict()
-                error_payload["detail"] = str(exc)
-                self.metrics.inc_error("validation", format_label)
-                self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
-                self._update_job(
-                    job_id,
-                    status=ExportJobStatus.FAILED,
-                    finished_at=self.clock.now(),
-                    error=error_payload,
-                )
-                self.redis.hset(
-                    redis_key,
-                    {
-                        "status": ExportJobStatus.FAILED.value,
-                        "error": dumps_json(error_payload),
-                    },
-                )
-                self.redis.expire(redis_key, 86_400)
-                self.logger.error(
-                    "export_failed",
-                    job_id=job_id,
-                    rid=job_id,
-                    namespace=job.namespace,
-                    snapshot=job.snapshot.marker,
-                    operation="export",
-                    last_error=error_payload["error_code"],
-                    correlation_id=self.jobs[job_id].correlation_id,
-                )
-                break
-            except (ExportIOError, RetryExhaustedError) as exc:
-                error_payload = make_error("EXPORT_IO_ERROR", EXPORT_IO_FA_MESSAGE).as_dict()
-                error_payload["detail"] = type(exc).__name__
-                self.metrics.inc_error("io", format_label)
-                if isinstance(exc, RetryExhaustedError):
-                    self.metrics.observe_retry_exhaustion(phase="job")
-                self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
-                self._update_job(
-                    job_id,
-                    status=ExportJobStatus.FAILED,
-                    finished_at=self.clock.now(),
-                    error=error_payload,
-                )
-                self.redis.hset(
-                    redis_key,
-                    {
-                        "status": ExportJobStatus.FAILED.value,
-                        "error": dumps_json(error_payload),
-                    },
-                )
-                self.redis.expire(redis_key, 86_400)
-                self.logger.error(
-                    "export_failed",
-                    job_id=job_id,
-                    rid=job_id,
-                    namespace=self.jobs[job_id].namespace,
-                    snapshot=self.jobs[job_id].snapshot.marker,
-                    operation="export",
-                    last_error=error_payload["error_code"],
-                    correlation_id=self.jobs[job_id].correlation_id,
-                )
-                break
-            except TRANSIENT_ERRORS as exc:
-                self.metrics.inc_error("transient", format_label)
-                if attempt >= self.max_retries:
-                    error_payload = make_error("EXPORT_IO_ERROR", EXPORT_IO_FA_MESSAGE).as_dict()
-                    error_payload["detail"] = str(exc)
-                    self.metrics.observe_retry_exhaustion(phase="job")
-                    self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
-                    self._update_job(
-                        job_id,
-                        status=ExportJobStatus.FAILED,
-                        finished_at=self.clock.now(),
-                        error=error_payload,
-                    )
-                    self.redis.hset(
-                        redis_key,
-                        {
-                            "status": ExportJobStatus.FAILED.value,
-                            "error": dumps_json(error_payload),
-                        },
-                    )
-                    self.redis.expire(redis_key, 86_400)
-                    self.logger.error(
-                        "export_failed",
-                        job_id=job_id,
-                        rid=job_id,
-                        namespace=self.jobs[job_id].namespace,
-                        snapshot=self.jobs[job_id].snapshot.marker,
-                        operation="export",
-                        last_error=error_payload["error_code"],
-                        correlation_id=self.jobs[job_id].correlation_id,
-                    )
-                    break
-                delay = deterministic_jitter(0.1, attempt, job_id)
-                self.metrics.observe_retry(phase="job", outcome="retry")
-                self._sleep(delay)
-                continue
-            except Exception as exc:  # pragma: no cover - defensive logging
-                self.metrics.inc_error("unknown", format_label)
-                self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
-                error_payload = make_error("EXPORT_IO_ERROR", EXPORT_IO_FA_MESSAGE).as_dict()
-                error_payload["detail"] = type(exc).__name__
-                self._update_job(
-                    job_id,
-                    status=ExportJobStatus.FAILED,
-                    finished_at=self.clock.now(),
-                    error=error_payload,
-                )
-                self.redis.hset(
-                    redis_key,
-                    {
-                        "status": ExportJobStatus.FAILED.value,
-                        "error": dumps_json(error_payload),
-                    },
-                )
-                self.redis.expire(redis_key, 86_400)
-                self.logger.error(
-                    "export_failed",
-                    job_id=job_id,
-                    rid=job_id,
-                    namespace=job.namespace,
-                    snapshot=job.snapshot.marker,
-                    operation="export",
-                    last_error=error_payload["error_code"],
-                    correlation_id=self.jobs[job_id].correlation_id,
-                )
-                break
+        job = self.jobs[job_id]
+
+        def _execute_once() -> tuple[ExportManifest, ExportExecutionStats]:
+            stats = ExportExecutionStats()
+            manifest = self.exporter.run(
+                filters=job.filters,
+                options=job.options,
+                snapshot=job.snapshot,
+                clock_now=start_time,
+                stats=stats,
+                correlation_id=job.correlation_id,
+            )
+            return manifest, stats
+
+        try:
+            manifest, stats = self.retry_runner.execute(
+                _execute_once,
+                reason="job",
+                correlation_id=job.correlation_id,
+            )
+        except ExportValidationError as exc:
+            error_payload = make_error("EXPORT_VALIDATION_ERROR", EXPORT_VALIDATION_FA_MESSAGE).as_dict()
+            error_payload["detail"] = str(exc)
+            self.metrics.inc_error("validation", format_label)
+            self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
+            self._update_job(
+                job_id,
+                status=ExportJobStatus.FAILED,
+                finished_at=self.clock.now(),
+                error=error_payload,
+            )
+            self.redis.hset(
+                redis_key,
+                {
+                    "status": ExportJobStatus.FAILED.value,
+                    "error": dumps_json(error_payload),
+                },
+            )
+            self.redis.expire(redis_key, 86_400)
+            self.logger.error(
+                "export_failed",
+                job_id=job_id,
+                rid=job_id,
+                namespace=job.namespace,
+                snapshot=job.snapshot.marker,
+                operation="export",
+                last_error=error_payload["error_code"],
+                correlation_id=self.jobs[job_id].correlation_id,
+            )
+            return
+        except (ExportIOError, RetryExhaustedError) as exc:
+            error_payload = make_error("EXPORT_IO_ERROR", EXPORT_IO_FA_MESSAGE).as_dict()
+            error_payload["detail"] = type(exc).__name__
+            self.metrics.inc_error("io", format_label)
+            if isinstance(exc, RetryExhaustedError):
+                self.metrics.observe_retry_exhaustion(phase="job")
+            self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
+            self._update_job(
+                job_id,
+                status=ExportJobStatus.FAILED,
+                finished_at=self.clock.now(),
+                error=error_payload,
+            )
+            self.redis.hset(
+                redis_key,
+                {
+                    "status": ExportJobStatus.FAILED.value,
+                    "error": dumps_json(error_payload),
+                },
+            )
+            self.redis.expire(redis_key, 86_400)
+            self.logger.error(
+                "export_failed",
+                job_id=job_id,
+                rid=job_id,
+                namespace=self.jobs[job_id].namespace,
+                snapshot=self.jobs[job_id].snapshot.marker,
+                operation="export",
+                last_error=error_payload["error_code"],
+                correlation_id=self.jobs[job_id].correlation_id,
+            )
+            return
+        except TRANSIENT_ERRORS as exc:
+            self.metrics.inc_error("transient", format_label)
+            self.metrics.observe_retry_exhaustion(phase="job")
+            error_payload = make_error("EXPORT_IO_ERROR", EXPORT_IO_FA_MESSAGE).as_dict()
+            error_payload["detail"] = str(exc)
+            self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
+            self._update_job(
+                job_id,
+                status=ExportJobStatus.FAILED,
+                finished_at=self.clock.now(),
+                error=error_payload,
+            )
+            self.redis.hset(
+                redis_key,
+                {
+                    "status": ExportJobStatus.FAILED.value,
+                    "error": dumps_json(error_payload),
+                },
+            )
+            self.redis.expire(redis_key, 86_400)
+            self.logger.error(
+                "export_failed",
+                job_id=job_id,
+                rid=job_id,
+                namespace=self.jobs[job_id].namespace,
+                snapshot=self.jobs[job_id].snapshot.marker,
+                operation="export",
+                last_error=error_payload["error_code"],
+                correlation_id=self.jobs[job_id].correlation_id,
+            )
+            return
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self.metrics.inc_error("unknown", format_label)
+            self.metrics.inc_job(ExportJobStatus.FAILED.value, format_label)
+            error_payload = make_error("EXPORT_IO_ERROR", EXPORT_IO_FA_MESSAGE).as_dict()
+            error_payload["detail"] = type(exc).__name__
+            self._update_job(
+                job_id,
+                status=ExportJobStatus.FAILED,
+                finished_at=self.clock.now(),
+                error=error_payload,
+            )
+            self.redis.hset(
+                redis_key,
+                {
+                    "status": ExportJobStatus.FAILED.value,
+                    "error": dumps_json(error_payload),
+                },
+            )
+            self.redis.expire(redis_key, 86_400)
+            self.logger.error(
+                "export_failed",
+                job_id=job_id,
+                rid=job_id,
+                namespace=job.namespace,
+                snapshot=job.snapshot.marker,
+                operation="export",
+                last_error=error_payload["error_code"],
+                correlation_id=self.jobs[job_id].correlation_id,
+            )
+            return
+
+        duration = (self.clock.now() - start_time).total_seconds()
+        self.metrics.observe_duration("total", duration, format_label)
+        for phase, value in stats.phase_durations.items():
+            self.metrics.observe_duration(phase, value, format_label)
+        for file in manifest.files:
+            self.metrics.observe_file_bytes(file.byte_size, format_label)
+            self.metrics.observe_rows(file.row_count, format_label)
+        self.metrics.inc_job(ExportJobStatus.SUCCESS.value, format_label)
+        self._update_job(
+            job_id,
+            status=ExportJobStatus.SUCCESS,
+            finished_at=self.clock.now(),
+            manifest=manifest,
+        )
+        self.redis.hset(redis_key, {"status": ExportJobStatus.SUCCESS.value})
+        self.redis.expire(redis_key, 86_400)
+        self.logger.info(
+            "export_completed",
+            job_id=job_id,
+            rid=job_id,
+            namespace=job.namespace,
+            snapshot=job.snapshot.marker,
+            operation="export",
+            rows=manifest.total_rows,
+            last_error="",
+            correlation_id=self.jobs[job_id].correlation_id,
+        )
 
     def _update_job(self, job_id: str, **updates) -> None:
         with self._lock:

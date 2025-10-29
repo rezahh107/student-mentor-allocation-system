@@ -1,0 +1,23 @@
+گزارش خودترمیمی فاز اجرا — تاریخ: 2025-10-28 20:42:52 UTC
+
+خطاهای یکتا:
+1. python3.11 executable not found (مرحله: Preflight، تعداد: 1)
+2. Failed to import AppConfig due to missing package (مرحله: ENV، تعداد: 1)
+3. AppConfig validation failed due to missing nested sections (مرحله: ENV، تعداد: 1)
+4. AppConfig validation still missing required sections (مرحله: ENV، تعداد: 1)
+5. uvicorn failed: missing jinja2 dependency (مرحله: Run، تعداد: 1)
+6. Health endpoint returned 401 (مرحله: Probe، تعداد: 1)
+7. Docs endpoint returned 401 (مرحله: Probe، تعداد: 1)
+
+اقدام‌های اصلاحی:
+- برای python3.11 executable not found: فعال‌سازی نسخهٔ 3.11.12 با «pyenv local 3.11.12».
+- برای Failed to import AppConfig due to missing package: نصب بسته‌های پروژه با «pip install -e .».
+- برای AppConfig validation failed due to missing nested sections: بازنویسی نام متغیرهای محیطی به الگوی «IMPORT_TO_SABT_REDIS__DSN» و بارگذاری مجدد.
+- برای AppConfig validation still missing required sections: اکسپورت مستقیم مقادیر اصلاح‌شده و تأیید موفقیت AppConfig.
+- برای uvicorn failed: missing jinja2 dependency: نصب «jinja2» و «MarkupSafe» با pip.
+- برای Health endpoint returned 401: استفاده از مسیر بدون احراز هویت «/healthz» برای health check.
+- برای Docs endpoint returned 401: فعال‌سازی مستندات عمومی با «IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true».
+
+Next steps:
+1. ارزیابی نیاز به خودکارسازی نصب پیش‌نیازهای پیاده‌سازی در اسکریپت bootstrap.
+2. افزودن تست خودکار برای تأیید مقداردهی PUBLIC_DOCS در محیط توسعه یا مستندسازی روشن‌تر.

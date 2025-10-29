@@ -56,6 +56,18 @@ class ExporterMetrics:
             labelnames=("phase",),
             registry=self.registry,
         )
+        self.retry_attempts_total = Counter(
+            "export_retry_attempts_total",
+            "Retry attempts for export runner",
+            labelnames=("reason",),
+            registry=self.registry,
+        )
+        self.retries_exhausted_total = Counter(
+            "export_retries_exhausted_total",
+            "Retry exhaustion counts",
+            labelnames=("reason",),
+            registry=self.registry,
+        )
         self.rate_limit_total = Counter(
             "export_rate_limit_total",
             "Rate limit decisions for export API",
@@ -121,6 +133,12 @@ class ExporterMetrics:
 
     def observe_sort_rows(self, *, format_label: str, rows: int) -> None:
         self.sort_rows_total.labels(format=format_label).inc(rows)
+
+    def record_retry_attempt(self, *, reason: str) -> None:
+        self.retry_attempts_total.labels(reason=reason).inc()
+
+    def record_retry_exhausted(self, *, reason: str) -> None:
+        self.retries_exhausted_total.labels(reason=reason).inc()
 
 
 def reset_registry(registry: CollectorRegistry) -> None:

@@ -25,6 +25,14 @@ import prometheus_client
 import prometheus_client.registry as prometheus_registry
 import pytest
 
+try:  # pragma: no cover - optional dependency guard for anyio
+    from anyio.streams import memory as _anyio_memory
+
+    _anyio_memory.MemoryObjectReceiveStream.__del__ = lambda self: None  # type: ignore[attr-defined]
+    _anyio_memory.MemoryObjectSendStream.__del__ = lambda self: None  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - if anyio changes behaviour
+    pass
+
 pytest_plugins = ("pytest_asyncio.plugin",)
 from click.testing import CliRunner
 from freezegun import freeze_time

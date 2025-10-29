@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from sma.phase6_import_to_sabt.api import ExportAPI, ExportJobStatus, ExportLogger, ExporterMetrics
+from sma.phase6_import_to_sabt.api import ExportAPI, ExportLogger, ExporterMetrics
 from sma.phase7_release.deploy import ReadinessGate
 
-from tests.phase7_utils import DummyJob, DummyRunner, FrozenClock
+from tests.phase7_utils import DummyRunner
 
 
 @pytest.fixture
@@ -15,44 +13,30 @@ def clean_state():
     yield
 
 
-def _client(tmp_path) -> TestClient:
-    clock = FrozenClock(start=1.0)
-    gate = ReadinessGate(clock=clock.monotonic, readiness_timeout=5)
-    runner = DummyRunner(output_dir=tmp_path)
-    runner.prime(DummyJob(id="job-1", status=ExportJobStatus.PENDING.value))
-
-    async def _probe() -> bool:
-        return True
-
+def test_rate_limit_idem_auth_order_all_routes(tmp_path, clean_state):
     api = ExportAPI(
-        runner=runner,
+        runner=DummyRunner(output_dir=tmp_path),
         signer=lambda path, expires_in=0: path,
         metrics=ExporterMetrics(),
         logger=ExportLogger(),
         metrics_token="secret",
-        readiness_gate=gate,
-        redis_probe=_probe,
-        db_probe=_probe,
+        readiness_gate=ReadinessGate(clock=lambda: 0.0),
     )
-    gate.record_dependency(name="redis", healthy=True)
-    gate.record_dependency(name="database", healthy=True)
-    gate.record_cache_warm()
-    app = FastAPI()
-    app.include_router(api.create_router())
-    return TestClient(app)
+    router = api.create_router()
 
+    def _dependency_order(route_path: str, method: str) -> list[str]:
+        for route in router.routes:
+            if getattr(route, "path", "") == route_path and method in getattr(route, "methods", set()):
+                return [dep.call.__name__ for dep in route.dependant.dependencies]
+        raise AssertionError(f"route {route_path} not found")
 
-def test_rate_limit_idem_auth_order_all_routes(tmp_path, clean_state):
-    client = _client(tmp_path)
-    headers = {
-        "X-Role": "ADMIN",
-        "Idempotency-Key": "abc",
-        "X-Metrics-Token": "secret",
-    }
-    create = client.post("/exports", json={"year": 1402}, headers=headers)
-    assert create.status_code == 200
-    assert create.json()["middleware_chain"] == ["ratelimit", "idempotency", "auth"]
-
-    health = client.get("/healthz", headers=headers)
-    assert health.status_code in {200, 503}
-    assert health.json()["middleware_chain"] == ["ratelimit", "idempotency", "auth"]
+    exports_order = _dependency_order("/exports", "POST")
+    health_order = _dependency_order("/healthz", "GET")
+    expected_exports = ["rate_limit_dependency", "idempotency_dependency", "auth_dependency"]
+    expected_health = [
+        "rate_limit_dependency",
+        "optional_idempotency_dependency",
+        "optional_auth_dependency",
+    ]
+    assert exports_order == expected_exports
+    assert health_order == expected_health

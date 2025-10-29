@@ -1,284 +1,129 @@
 # Windows installation guide
 
-این راهنمای گام‌به‌گام کاربران Windows 10/11 را از نصب پیش‌نیازها تا اجرای کامل سامانه **ImportToSabt** هدایت می‌کند. سناریوهای سه‌گانه (محیط بومی، WSL2 و Docker Desktop) پوشش داده شده‌اند و در پایان یک مسیر پیشنهادی همراه با ۱۰ فرمان پشت‌سرهم ارائه می‌شود.
+این نسخهٔ به‌روزشدهٔ راهنما مسیر **خودترمیم‌شونده** برای کاربران Windows 10/11 (PowerShell 7+) فراهم می‌کند تا سامانهٔ ImportToSabt را بدون خطا اجرا کنند. تمام مراحل از پیش‌نیازها تا تست پایانی در اسکریپت `scripts/win/install_and_run.ps1` مجتمع شده است و هر فرمان خروجی **[PASS]/[FIXED]/[SKIP]/[FAIL]** چاپ می‌کند تا خطاها زود تشخیص داده شوند.
 
-> **پروفایل سامانه**
->
-> * **ASGI entrypoint:** `main:app` (ساخته‌شده از `sma.phase6_import_to_sabt.app.app_factory.create_application`).
-> * **تنظیمات محیطی:** کلاس `AppConfig` در `sma/phase6_import_to_sabt/app/config.py` با پیشوند `IMPORT_TO_SABT_` و فیلدهای تو در تو (`__`).
-> * **سرویس‌های اجباری:** PostgreSQL 16 (درگاه پیش‌فرض `5432`) و Redis 7 (درگاه پیش‌فرض `6379`).
-> * **دروازه‌های امنیتی:** گارد توکن `/metrics`، RBAC با نقش‌های `ADMIN` و `MANAGER`، جریان‌های امضا برای دانلودها، و آرشیو/ممیزی فعال.
+## 1. پیش‌نیازهای سیستم
 
-## Prerequisites
+1. **PowerShell 7+** را با [Microsoft Store](https://apps.microsoft.com) نصب یا به‌روزرسانی کنید.
+2. **Windows Terminal** را با پروفایل PowerShell 7 باز کرده و مطمئن شوید که می‌توانید فرمان‌های زیر را اجرا کنید (بدون خطا و بدون پیام `[FAIL]`):
 
-همه فرمان‌ها را در PowerShell 7+ با **UTF-8** اجرا کنید:
+   ```powershell
+   chcp 65001
+   pwsh -NoLogo -Command "$PSVersionTable.PSVersion"
+   ```
 
-```powershell
-$PSStyle.OutputRendering = 'ANSI'
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-chcp 65001 | Out-Null
-```
+3. ریپو را در مسیری کوتاه (مثلاً `C:\Dev\student-mentor-allocation-system`) کلون کنید تا طول مسیر بیش از حد نشود.
 
-۱. **بسته‌ها (با winget):**
+## 2. اجرای اسکریپت خودترمیمی
+
+در ریشهٔ ریپو، PowerShell 7 را باز و دستورات زیر را **به‌ترتیب** اجرا کنید. هر بخش را می‌توان جداگانه اجرا/تکرار کرد؛ اسکریپت idempotent است و اجرای دوباره فقط وضعیت را تأیید می‌کند.
 
 ```powershell
-winget install --id Python.Python.3.11 --exact --source winget
-winget install --id Git.Git --source winget
-winget install --id Microsoft.VisualStudio.2022.BuildTools --source winget --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools"
-winget install --id OpenSSL.Light --source winget
+Set-Location C:\Dev\student-mentor-allocation-system
+pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1
 ```
 
-۲. **گزینه‌های جایگزین:** اگر از Chocolatey استفاده می‌کنید:
+### خروجی مورد انتظار (خلاصه)
 
-```powershell
-choco install python --version=3.11.9
-choco install git
-choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools"
-choco install openssl.light
-```
+| فاز | نمونهٔ خروجی | هدف |
+| --- | --- | --- |
+| پوسته | `[PASS] repo-root::Repository root set to ...` | اطمینان از مسیر صحیح |
+| سیاست اجرا | `[FIXED] execution-policy::ExecutionPolicy set to RemoteSigned` | فعال‌سازی اسکریپت‌ها بدون اخطار |
+| مفسر Python | `[PASS] python-discovery::Using Python from py launcher: Python 3.11.12` | جلوگیری از خطای «python3.11 executable not found» |
+| نصب وابستگی‌ها | `[PASS] pip-install::Editable install with dev extras completed` | رفع خطای `ModuleNotFoundError: No module named 'sma'` |
+| اعتبارسنجی env | `[PASS] dotenv::AppConfig instantiated successfully` | تصحیح کلیدهای تو در تو (`IMPORT_TO_SABT_*__*`) |
+| سرویس‌ها | `[FIXED] services::Started container 'sma-dev-redis-<RUN_ID>'...` یا `[SKIP] services::Docker CLI not available...` | رفع خطاهای اتصال Redis/PostgreSQL |
+| اجرا | `[PASS] uvicorn::Uvicorn listening on port ...` سپس `/readyz → HTTP 200` | تضمین سلامتی endpoint صحیح |
+| امنیت | `/metrics (no token) → HTTP 403`, `/metrics (with token) → HTTP 200` | تأیید توکن و جلوگیری از دسترسی عمومی |
 
-۳. **ابزارهای اختیاری:**
+> **توجه:** اگر `ENVIRONMENT=production` در `.env` تنظیم شده باشد و `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` باشد، اسکریپت با پیام فارسی/انگلیسی متوقف می‌شود تا از انتشار اسناد در محیط تولید جلوگیری شود.
 
-* [Docker Desktop](https://www.docker.com/products/docker-desktop/) (برای بخش‌های Docker/WSL2).
-* [WSL2 + Ubuntu 22.04](https://learn.microsoft.com/windows/wsl/install) برای اجرای لینوکسی.
+## 3. چه مواردی کنترل می‌شود؟
 
-> **نکتهٔ دایرکتوری** — پیشنهاد می‌شود ریپو را در مسیری مانند `E:\StudentMentor` کلون کنید تا با طول مسیرهای کوتاه و بدون فاصله کار کنید.
+اسکریپت ۸ گام اصلی دارد؛ هر گام با لاگ‌های وضعیت و بازرسی‌های درون‌خطی همراه است:
 
-## Environment configuration
+1. **تنظیم پوسته:** `Set-StrictMode`, `chcp 65001`, تنظیم خروجی UTF-8.
+2. **سیاست اجرا:** تبدیل ExecutionPolicy کاربر جاری به RemoteSigned (در صورت نیاز).
+3. **پیش‌نیازهای ویژوال C++:** بررسی/نصب `Microsoft.VisualStudio.2022.BuildTools` با `winget`.
+4. **Python 3.11.12:** جست‌وجوی `py -3.11`, مسیر `pyenv-win`, یا `python.exe` و رد هر نسخهٔ خارج از بازهٔ `>=3.11,<3.12`.
+5. **محیط مجازی + وابستگی‌ها:** ساخت `.venv`, ارتقای `pip`, نصب `pip install -e .[dev]`, حذف `uvloop` در صورت وجود، اجرای `pip check`، و اعتبارسنجی `import sma, jinja2`.
+6. **تنظیم فایل `.env`:** در صورت عدم وجود، کپی از `.env.example`, سپس تضمین کلیدهای تو در توی حیاتی (`IMPORT_TO_SABT_REDIS__DSN`, `...DATABASE__DSN`, `...AUTH__METRICS_TOKEN`, `...AUTH__SERVICE_TOKEN`, `...SECURITY__PUBLIC_DOCS`) و پاک‌سازی متغیرهای فرآیندی `IMPORT_TO_SABT_*` که ممکن است از تلاش‌های قبلی باقی مانده باشند.
+7. **سرویس‌های داده:** تست درگاه‌های 6379/5432. اگر بسته باشند و Docker موجود باشد، کانتینرهای `sma-dev-redis-<RUN_ID>` و `sma-dev-postgres-<RUN_ID>` با `--restart unless-stopped` راه‌اندازی می‌شوند؛ در غیر این صورت `DEVMODE=1` برای استفاده از Fakeredis/SQLite تنظیم می‌شود.
+8. **اجرای برنامه و پروب‌ها:** اجرای `python -m uvicorn main:app --host 127.0.0.1 --port 8000 --factory`, سپس درخواست‌های `/readyz`→`/healthz`→`/health`, `/docs`, و `/metrics` (با و بدون توکن).
 
-کلاس `AppConfig` مقادیر زیر را می‌پذیرد؛ کلیدها با ساختار `IMPORT_TO_SABT_<FIELD>` و برای فیلدهای تو در تو از `__` استفاده می‌کند. اسکریپت `scripts/win/20-create-env.ps1` تمام این مقادیر را با خواندن مدل Pydantic تولید می‌کند و فایل‌های `.env.example.win` و (در صورت فعال‌سازی سوییچ `-WriteEnv`) فایل `.env` را به صورت اتمیک می‌سازد.
+## 4. نقشهٔ خطاهای تاریخی (reports/selfheal-run.json)
 
-نمونهٔ محتوای `.env.example.win` (خروجی پیش‌فرض اسکریپت):
+| شناسهٔ خطای تاریخی | توضیح مشکل پیشین | گارد فعلی |
+| --- | --- | --- |
+| `python3.11 executable not found` | پوستهٔ قبلی نسخهٔ صحیح Python را پیدا نمی‌کرد | گام 4 نسخهٔ دقیق `Python 3.11.12` را جست‌وجو کرده و در غیر این صورت متوقف می‌شود |
+| «pyenv/apt confusion» | تضاد بین نصب‌های `pyenv` و سیستم | اولویت با `py -3.11` است، سپس مسیر `pyenv-win` و در نهایت `python.exe`; هر گزینه با پیام صریح `[PASS]/[FAIL]` گزارش می‌شود |
+| `ModuleNotFoundError: No module named 'sma'` | نصب ناقص پکیج | نصب editable (`pip install -e .[dev]`) + اضافه شدن `jinja2` به dev extras |
+| `ValidationError: redis/database/auth fields required` | کلیدهای تو در تو با `_` عادی اشتباه شده بودند | `Ensure-Var` تمام کلیدها را با ساختار `SECTION__FIELD` تصحیح می‌کند |
+| «dotenv path» | بارگذاری `.env` در پوسته‌های غیرتعاملی انجام نمی‌شد | `main.py` اکنون `load_dotenv(dotenv_path='.env', override=True)` فراخوانی می‌کند |
+| `missing jinja2 dependency` | uvicorn بدون Jinja2 اجرا می‌شد | dev extras شامل `jinja2` است و اسکریپت صحت `import jinja2` را بررسی می‌کند |
+| «missing/invalid signing keys» | مقادیر قبلی `IMPORT_TO_SABT_*` در محیط فرآیند باقی می‌ماند و گارد امضا را خراب می‌کرد | `Clear-StaleImportEnv` تمام متغیرهای فرآیند را پاک می‌کند تا فقط `.env` مرجع باشد؛ مقداردهی پیش‌فرض توکن/سرویس نیز انجام می‌شود |
+| `/health` → 401 | آدرس اشتباه استفاده می‌شد | حلقهٔ پروب ابتدا `/readyz`، سپس `/healthz` و در نهایت `/health` را بررسی می‌کند تا از کد 200 مطمئن شود |
+| `/docs` → 401 | `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS` تنظیم نشده بود | مقدار پیش‌فرض `true` تزریق می‌شود و اسکریپت وضعیت 200 را بررسی می‌کند |
+| `/metrics` بدون توکن | توکن نادرست یا غیرفعال | اسکریپت یکبار بدون توکن (403) و یکبار با `IMPORT_TO_SABT_AUTH__METRICS_TOKEN` (200) تست می‌کند |
 
-```dotenv
-# توکن‌های مراقبت (RBAC و متریک)
-METRICS_TOKEN=dev-metrics-ro
-IMPORT_TO_SABT_AUTH__SERVICE_TOKEN=dev-service-token
-IMPORT_TO_SABT_AUTH__METRICS_TOKEN=dev-metrics-ro
-IMPORT_TO_SABT_AUTH__TOKENS_ENV_VAR=TOKENS
-IMPORT_TO_SABT_AUTH__DOWNLOAD_SIGNING_KEYS_ENV_VAR=DOWNLOAD_SIGNING_KEYS
-IMPORT_TO_SABT_AUTH__DOWNLOAD_URL_TTL_SECONDS=900
-IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true
-TOKENS=[{"value":"dev-service-token","role":"ADMIN"}]
-DOWNLOAD_SIGNING_KEYS=[{"kid":"legacy","secret":"dev-download-secret","state":"active"}]
+> اجرای مجدد اسکریپت باید فقط `[PASS]`‌ها را چاپ کند؛ اگر `[FIXED]` ظاهر شود یعنی مشکلی برطرف شده است و می‌توانید فرمان را دوباره برای اطمینان اجرا کنید.
 
-# اتصال به Redis و PostgreSQL
-IMPORT_TO_SABT_REDIS__DSN=redis://localhost:6379/0
-IMPORT_TO_SABT_REDIS__NAMESPACE=import_to_sabt
-IMPORT_TO_SABT_REDIS__OPERATION_TIMEOUT=0.2
-IMPORT_TO_SABT_DATABASE__DSN=postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
-IMPORT_TO_SABT_DATABASE__STATEMENT_TIMEOUT_MS=500
+## 5. پس از اجرا
 
-# پیکربندی گیت وی
-IMPORT_TO_SABT_RATELIMIT__NAMESPACE=imports
-IMPORT_TO_SABT_RATELIMIT__REQUESTS=30
-IMPORT_TO_SABT_RATELIMIT__WINDOW_SECONDS=60
-IMPORT_TO_SABT_RATELIMIT__PENALTY_SECONDS=120
-IMPORT_TO_SABT_OBSERVABILITY__SERVICE_NAME=import-to-sabt
-IMPORT_TO_SABT_OBSERVABILITY__METRICS_NAMESPACE=import_to_sabt
-IMPORT_TO_SABT_TIMEZONE=Asia/Tehran
-IMPORT_TO_SABT_READINESS_TIMEOUT_SECONDS=0.5
-IMPORT_TO_SABT_HEALTH_TIMEOUT_SECONDS=0.2
-IMPORT_TO_SABT_ENABLE_DEBUG_LOGS=false
-IMPORT_TO_SABT_ENABLE_DIAGNOSTICS=false
-EXPORT_STORAGE_DIR=storage\\exports
-```
+1. مرورگر را به `http://127.0.0.1:8000/docs` باز کنید (فقط اگر در `.env` مقدار `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` است).
+2. برای `/metrics` از هدر `Authorization: Bearer <METRICS_TOKEN>` استفاده کنید که مقدار آن در `.env` ذخیره شده است.
+3. برای توقف برنامه، از همان پنجرهٔ PowerShell که اسکریپت را اجرا کرده‌اید استفاده کنید؛ اسکریپت uvicorn را در انتها متوقف می‌کند و فایل لاگ در `tmp\win-run\uvicorn.log` ذخیره می‌شود.
 
-> **چرا METRICS_TOKEN؟** مسیر `/metrics` تنها با توکن فقط‌خواندنی پاسخ‌گو است. اگر `METRICS_TOKEN` یا `IMPORT_TO_SABT_AUTH__METRICS_TOKEN` مقداردهی نشود پیام «توکن متریک تنظیم نشده است.» باز می‌گردد.
+## 6. اشکال‌زدایی
 
-## Native virtual environment (Recommended)
+* اگر خروجی `[FAIL] prerequisites::winget is required` مشاهده شد، آخرین نسخهٔ `App Installer` را نصب کرده و دوباره اسکریپت را اجرا کنید.
+* پیام `Expected Python 3.11.12` یعنی نسخهٔ دیگری روی سیستم فعال است. `py -0` را اجرا کرده و سایر نسخه‌ها را حذف یا غیرفعال کنید.
+* اگر Docker نصب نیست و اسکریپت `DEVMODE=1` را فعال کرد، مطمئن شوید که اتصال Redis/PostgreSQL قبلی باز نیست؛ در غیر این صورت پورت‌ها را آزاد کنید یا Docker Desktop را نصب کنید.
+* برای بررسی نتیجهٔ پروب‌ها به `tmp\win-run\uvicorn.log` یا خروجی `[FAIL]` مراجعه کنید؛ متن پاسخ (اولین ۱۰۰ کاراکتر) در همان پیام چاپ می‌شود.
 
-۱. **تشخیص سیستم:**
+## 7. CI & Verification
 
-```powershell
-pwsh -NoLogo -File scripts/win/00-diagnose.ps1
-```
+برای اطمینان از سلامت خودکار، مخزن دارای گردش‌کار GitHub Actions به نام **Windows Smoke** است که روی `windows-latest` اجرا می‌شود.
 
-۲. **ساخت و فعال‌سازی ویرچوال‌اِن‌وایرونمنت:**
+1. قبل از اجرای اسکریپت، گام پاک‌سازی `tools/win/clear_state.ps1 -Force -RunId <RUN_ID>` اجرا می‌شود تا فقط کانتینرهایی که با همان پسوند ساخته شده‌اند حذف شوند. مقدار `RUN_ID` معمولاً همان `github.run_id` است و از تداخل اجرای موازی جلوگیری می‌کند.
+2. اسکریپت اصلی با حالت بدون‌تعامل اجرا می‌شود:
 
-```powershell
-pwsh -NoLogo -File scripts/win/10-venv-install.ps1 -ConstraintsPath constraints-win.txt
-.\.venv\Scripts\Activate.ps1
-```
+   ```powershell
+   pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1 -Ci -Port 8000 -MetricsToken dev-metrics-token -RunId $env:GITHUB_RUN_ID
+   ```
 
-اسکریپت `10-venv-install.ps1` موارد زیر را تضمین می‌کند:
+   * در حالت `-Ci`، تایم‌اوت‌ها کوتاه‌تر می‌شوند، تمام مارکرها به صورت `reports/ci/installer.ndjson` ذخیره می‌شوند، نتیجهٔ پروب‌ها در `reports/ci/probes.json` ثبت شده و تخلیهٔ متغیرها در `reports/ci/env_dump.json` انجام می‌شود.
+   * هر سطر خروجی در CI با `[PASS] step::detail`، `[FIXED] step::detail`، `[SKIP] step::detail` یا `[FAIL] step::detail` شروع می‌شود. ابزار `tools/ci/parse_markers.py` خروجی را بررسی و در صورت مشاهدهٔ هر `[FAIL]` مرحلهٔ CI را متوقف می‌کند.
+   * سوئیچ جدید `-RunId` نام کانتینرهای Docker را به صورت `sma-dev-redis-<RUN_ID>` و `sma-dev-postgres-<RUN_ID>` می‌سازد؛ به این ترتیب اجرای هم‌زمان چند Job بدون تصادم ادامه می‌یابد و اجرای مجدد با همان مقدار فقط وضعیت فعلی را تأیید می‌کند.
 
-* استفاده از `py -3.11` یا `python` سازگار؛ نسخه‌های دیگر رد می‌شوند.
-* ارتقای `pip`, `setuptools`, `wheel` و نصب بسته‌ها با احترام به `constraints-win.txt`.
-* اجتناب قطعی از نصب `uvloop` در Windows (در صورت نصب، حذف می‌شود) و نصب `tzdata==2025.2`.
-* اجرای `pip check` بدون هشدار.
+3. پس از اتمام اسکریپت، گردش‌کار دو تست Pytest را اجرا می‌کند تا گاردهای دامنه‌ای سالم بمانند:
 
-۳. **تولید فایل‌های محیطی:**
+   ```powershell
+   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/middleware/test_order.py
+   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/excel/test_safe_export.py
+   ```
 
-```powershell
-pwsh -NoLogo -File scripts/win/20-create-env.ps1 -WriteEnv
-```
+   * تست `tests/middleware/test_order.py::test_middleware_order_chain` آرایهٔ `app.user_middleware` را بررسی می‌کند تا ترتیب `RateLimit → Idempotency → Auth` حفظ شود؛ اگر یکی از کلاس‌ها وجود نداشته باشد نتیجه به صورت `xfail` گزارش می‌شود تا توسعه‌دهنده به کمبود آگاه شود.
+   * تست `tests/excel/test_safe_export.py::test_excel_export_guards_formula_and_utf8` دادهٔ فارسی و مقادیر خطرناک را خروجی می‌گیرد و مطمئن می‌شود که نگهبان فرمول (`'`)، حذف نویسه‌های صفرعرض و نرمال‌سازی اعداد/نقل‌قول‌ها برقرار است.
 
-این اسکریپت تمام کلیدها را مستقیماً از `AppConfig` استخراج می‌کند، مقدارهای پیش‌فرض (از جمله JSONهای `TOKENS` و `DOWNLOAD_SIGNING_KEYS`) را درج می‌کند، فایل را به‌صورت اتمیک (`.part` → `rename`) می‌نویسد و در پایان خلاصه‌ای فارسی از تعداد کلیدهای الزامی/اختیاری چاپ می‌کند.
+4. آرتیفکت‌های زیر در پایان Job آپلود می‌شوند:
 
-۴. **راه‌اندازی سرویس‌های پشتیبان:**
+   - `reports/ci/installer.ndjson`, `reports/ci/probes.json`, `reports/ci/env_dump.json`
+   - `reports/ci/pip-freeze.txt`
+   - `tmp/win-run/uvicorn.log`
 
-```powershell
-pwsh -NoLogo -File scripts/win/30-services.ps1 -Mode Docker -ComposeFile docker-compose.dev.yml
-```
+5. برای اجرای محلی همان سناریوی CI، مراحل زیر را دنبال کنید:
 
-ویژگی‌های کلیدی:
+   ```powershell
+   $runId = (Get-Date -Format 'yyyyMMddHHmmss')
+   pwsh -NoLogo -ExecutionPolicy Bypass -File .\tools\win\clear_state.ps1 -Force -RunId $runId
+   $log = .\reports\ci\installer.log
+   $output = & .\scripts\win\install_and_run.ps1 -Ci -Port 8000 -MetricsToken dev-metrics-token -RunId $runId 2>&1 | Tee-Object -FilePath $log
+   python .\tools\ci\parse_markers.py $log --json .\reports\ci\markers.json
+   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/middleware/test_order.py
+   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/excel/test_safe_export.py
+   ```
 
-* backoff نمایی به‌همراه jitter تعیین‌گر برای آماده‌سازی سرویس‌ها
-* ثبت لاگ JSON با `Correlation-ID` در `reports/win-smoke/services-log.jsonl`
-* شمارندهٔ Prometheus-friendly در `reports/win-smoke/services-metrics.prom`
-* حالت `-Action Cleanup` برای `docker compose down -v --remove-orphans` یا پاک‌سازی سرویس‌های محلی با `redis-cli`/`psql`
+   اگر خروجی ابزار پارس‌کننده بدون خطا پایان یافت و `/readyz`, `/docs`, `/metrics` مطابق جدول فوق بودند، سناریوی کامل تأیید شده است.
 
-۵. **اجرای برنامه:**
-
-```powershell
-pwsh -NoLogo -File scripts/win/40-run.ps1 -Host 0.0.0.0 -Port 8000 -Background -StateDir tmp\win-app
-```
-
-این اسکریپت فایل‌های `.env` را بارگذاری می‌کند، وجود `METRICS_TOKEN` را الزامی می‌کند و سپس `python -m uvicorn main:app` را با پروسهٔ جداگانه اجرا می‌کند. شناسهٔ فرایند و نشانی endpoint در `tmp\win-app\state.json` ذخیره می‌شود.
-
-۶. **تست دود (Smoke):**
-
-```powershell
-pwsh -NoLogo -File scripts/win/50-smoke.ps1 -BaseUrl http://127.0.0.1:8000 -StateDir tmp\win-app
-```
-
-این تست‌ها موارد زیر را پوشش می‌دهند:
-
-* `/healthz` و `/readyz` → پاسخ موفق با زمان‌سنجی ثبت‌شده.
-* `/docs` → فقط در صورت فعال بودن `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS` (در نمونه فعال است).
-* `/metrics` بدون هدر → کد 403 با پیام فارسی «دسترسی به /metrics نیازمند توکن فقط‌خواندنی است.»
-* `/metrics` با هدر `Authorization: Bearer dev-metrics-ro` → کد 200 و متریک‌های Prometheus.
-* فراخوانی RBAC: `POST /api/jobs` با توکن سرویسی → زنجیرهٔ middleware به ترتیب `RateLimit → Idempotency → Auth` و نقش `ADMIN` در پاسخ.
-* برگهٔ دانلود/خروجی آزمایشی (`GET /api/exports/csv`) → پاسخ JSON با نقش کاربر.
-
-نتایج کامل در `reports/win-smoke/` ذخیره می‌شود (`smoke-log.jsonl`, `smoke-summary.json`, `http-responses.json`). اسکریپت قبل و بعد از اجرای درخواست‌ها به‌ترتیب `Start-Services` و `Cleanup-State`/`Stop-Services` را فرامی‌خواند تا Redis/PostgreSQL بدون حالت باقی بمانند.
-
-> **بودجهٔ کارایی:** برای حفظ توافق با [AGENTS.md](../AGENTS.md) باید `p95 ≤ 200ms` (همراه با backoff) و مصرف حافظهٔ `≤ 300MB` در محیط‌های تستی رعایت شود. متریک‌های `services-metrics.prom` و خروجی `/metrics` این اعداد را پایش می‌کنند.
-
-## WSL2 path
-
-۱. در Windows ویژگی‌های WSL و ماشین مجازی را فعال کنید و Ubuntu 22.04 را نصب نمایید.
-۲. در ترمینال Ubuntu:
-
-```bash
-sudo apt update && sudo apt install -y python3.11 python3.11-venv python3-pip git redis-server postgresql
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip wheel setuptools
-pip install -e . -c constraints.txt
-pip check
-```
-
-۳. PostgreSQL/Redis را در WSL راه‌اندازی کنید (systemd یا `service redis-server start`، `service postgresql start`).
-۴. فایل `.env` را با `python -m scripts.win.env_exporter` (یا اجرای `20-create-env.ps1` از Windows و کپی به WSL) بسازید.
-۵. اجرای برنامه:
-
-```bash
-METRICS_TOKEN=dev-metrics-ro uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-۶. دستورات smoke مانند PowerShell ولی با `curl`:
-
-```bash
-curl -sS http://127.0.0.1:8000/healthz | jq
-curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/metrics
-curl -sS -H "Authorization: Bearer dev-metrics-ro" http://127.0.0.1:8000/metrics | head
-```
-
-## Docker Desktop path
-
-اگر ترجیح می‌دهید همه چیز در کانتینر باشد:
-
-۱. Docker Desktop را فعال کنید (Linux containers).
-۲. فایل‌های `.env` را با `20-create-env.ps1` تولید کنید.
-۳. یک تصویر سبک بسازید (Dockerfile نمونه):
-
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt constraints-win.txt ./
-RUN pip install --upgrade pip wheel setuptools \
-    && pip install --no-cache-dir -r requirements.txt \
-       --constraint constraints.txt \
-    && pip uninstall -y uvloop || true
-COPY . .
-ENV PYTHONUNBUFFERED=1
-CMD ["python","-m","uvicorn","main:app","--host","0.0.0.0","--port","8000"]
-```
-
-۴. Compose فایل ساده (از سرویس‌های آمادهٔ ریپو استفاده می‌کند):
-
-```yaml
-services:
-  app:
-    build: .
-    env_file:
-      - .env
-    ports:
-      - "8000:8000"
-    depends_on:
-      - redis
-      - postgres
-  redis:
-    image: redis:7-alpine
-    ports: ["6379:6379"]
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-    ports: ["5432:5432"]
-```
-
-۵. اجرای compose:
-
-```powershell
-docker compose up --build
-```
-
-۶. smoke test را از Windows یا داخل کانتینر اجرا کنید (`pwsh -File scripts/win/50-smoke.ps1 -BaseUrl http://127.0.0.1:8000`).
-
-## Troubleshooting
-
-| پیام | علت | راه‌حل |
-|------|------|--------|
-| «uvloop does not support Windows» | تلاش برای نصب uvloop | اسکریپت `10-venv-install.ps1` آن را حذف می‌کند؛ در صورت مشاهده `pip uninstall uvloop` اجرا و دوباره نصب را با `-SkipUvloopGuard:$false` انجام دهید. |
-| «منطقهٔ زمانی در دسترس نیست؛ بستهٔ tzdata…» | نصب `tzdata` انجام نشده | `pip install tzdata==2025.2 --constraint constraints-win.txt` را اجرا و `pip check` را تکرار کنید. |
-| نویز پلاگین pytest | Pytest در Windows پلاگین‌های سراسری را لود می‌کند | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q` یا از `sitecustomize.py` ریپو استفاده کنید. |
-| `No module named main` یا ورودی نادرست | اجرای uvicorn با ماژول اشتباه | `main:app` تنها نقطهٔ ورود پشتیبانی‌شده است (به `main.py` مراجعه کنید). |
-| درگاه مشغول (مثلاً 8000) | سرویس دیگر در حال استفاده از پورت است | `Get-NetTCPConnection -LocalPort 8000 | Format-Table -AutoSize` سپس `Stop-Process -Id <PID>` یا پورت دیگری به `40-run.ps1` بدهید. |
-| کلیدهای تو در تو در `.env` ناقص است | ویرایش دستی کلیدها | همیشه از `20-create-env.ps1` استفاده کنید؛ کلیدها باید مانند `IMPORT_TO_SABT_REDIS__DSN` باشند. |
-| مشکل در کدپیج یا حروف فارسی | PowerShell در UTF-8 نیست | `chcp 65001` و تنظیم `OutputEncoding` طبق بخش مقدمات. |
-
-## TL;DR (Recommended path)
-
-۱۰ فرمان پشت‌سرهم برای یک راه‌اندازی بومی استاندارد:
-
-```powershell
-cd E:\
-git clone https://github.com/OWNER/student-mentor-allocation-system.git
-cd student-mentor-allocation-system
-pwsh -NoLogo -File scripts/win/00-diagnose.ps1
-pwsh -NoLogo -File scripts/win/10-venv-install.ps1 -ConstraintsPath constraints-win.txt
-pwsh -NoLogo -File scripts/win/20-create-env.ps1 -WriteEnv
-pwsh -NoLogo -File scripts/win/30-services.ps1 -Mode Docker -ComposeFile docker-compose.dev.yml
-pwsh -NoLogo -File scripts/win/40-run.ps1 -Background -StateDir tmp\win-app
-pwsh -NoLogo -File scripts/win/50-smoke.ps1 -StateDir tmp\win-app
-pwsh -NoLogo -File scripts/win/30-services.ps1 -Action Cleanup -Mode Docker -ComposeFile docker-compose.dev.yml
-```
-
-> **نتیجهٔ پیشنهادی:** محیط بومی (venv) سریع‌ترین مسیر است؛ فقط در صورت نیاز به ابزارهای خاص لینوکسی/کانتینری به سراغ WSL2 یا Docker بروید.
-
-گزارش اجرای اسکریپت‌های دود به‌صورت خودکار در مسیر `reports/win-smoke/` ذخیره می‌شود:
-
-- `smoke-log.jsonl` و `smoke-summary.json` شامل لاگ JSON با `Correlation-ID` (بدون افشای توکن‌ها)
-- `http-responses.json` برای تشخیص سریع وضعیت درخواست‌ها
-- فایل‌های متریک سرویس‌ها `services-metrics.prom` با شمارش Retry (Prometheus-ready)
-
-## Evidence
-
-- Evidence: AGENTS.md::6 Atomic I/O — اسکریپت‌های `20-create-env.ps1` و `50-smoke.ps1` نوشتن فایل‌ها را با `.part` و `rename` انجام می‌دهند.
-- Evidence: AGENTS.md::8 Testing & CI Gates — سرویس‌ها و دود تست‌ها گزارش Prometheus و آرشیو `reports/win-smoke/` تولید می‌کنند و در CI (`windows-smoke.yml`) اجرا می‌شوند.
-- Evidence: AGENTS.md::10 User-Visible Errors — پیام‌های `/metrics` و خطاهای اسکریپت‌ها به‌صورت فارسی و تعیین‌گر مستندسازی شده‌اند.
-
+با دنبال‌کردن این مراحل، کاربر تازه‌وارد در Windows می‌تواند اسکریپت را خط‌به‌خط اجرا کرده و به خروجی سالم `/readyz`, `/docs`, `/metrics` برسد؛ تمام خطاهای ثبت‌شده در `reports/selfheal-run.json` پیش از رخداد شناسایی و خنثی می‌شوند.

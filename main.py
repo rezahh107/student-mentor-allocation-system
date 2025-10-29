@@ -17,6 +17,10 @@ def _ensure_src_on_path() -> None:
 
 _ensure_src_on_path()
 
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=".env", override=True)
+
 from sma.phase6_import_to_sabt.app.app_factory import create_application
 
 app = create_application()

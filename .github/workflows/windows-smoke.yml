@@ -2,82 +2,95 @@ name: Windows Smoke
 
 on:
   push:
-    branches: [ main ]
+    branches: ["main", "master"]
   pull_request:
 
 jobs:
   smoke:
     runs-on: windows-latest
-    env:
-      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
-    defaults:
-      run:
-        shell: pwsh
+    strategy:
+      fail-fast: false
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Ensure UTF-8 session
-        run: |
-          chcp 65001 | Out-Null
-          [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-
-      - name: Diagnose host
-        run: pwsh -NoLogo -File scripts/win/00-diagnose.ps1
-
-      - name: Provision virtual environment
-        run: pwsh -NoLogo -File scripts/win/10-venv-install.ps1 -ConstraintsPath constraints-win.txt
-
-      - name: Generate environment files
-        run: pwsh -NoLogo -File scripts/win/20-create-env.ps1 -WriteEnv -Force
-
-      - name: Start backing services
-        run: pwsh -NoLogo -File scripts/win/30-services.ps1 -Mode Docker -ComposeFile docker-compose.dev.yml
-
-      - name: Launch application
-        run: pwsh -NoLogo -File scripts/win/40-run.ps1 -Background -StateDir tmp\ci-win -Host 127.0.0.1 -Port 8000
-
-      - name: Smoke tests
-        run: pwsh -NoLogo -File scripts/win/50-smoke.ps1 -StateDir tmp\ci-win -ServiceMode Docker -ComposeFile docker-compose.dev.yml
-
-      - name: Run documentation tests
-        run: |
-          .\.venv\Scripts\python.exe -m pytest tests/docs/test_windows_install_guide.py -q
-
-      - name: Upload smoke artifacts
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+      - uses: actions/setup-python@v5
         with:
-          name: win-smoke-artifacts
-          if-no-files-found: ignore
-          path: reports/win-smoke
+          python-version: '3.11'
 
-      - name: Upload pytest summary (if present)
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-pytest-summary
-          if-no-files-found: ignore
-          path: reports/pytest-summary.txt
-
-      - name: Stop application
-        if: ${{ always() }}
+      - name: Clear cached state
+        shell: pwsh
         run: |
-          $statePath = 'tmp\ci-win\state.json'
-          if (Test-Path $statePath) {
-            $json = Get-Content -Path $statePath -Encoding UTF8 | ConvertFrom-Json
-            if ($json.pid) {
-              Stop-Process -Id [int]$json.pid -Force -ErrorAction SilentlyContinue
-            }
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          Set-Location $env:GITHUB_WORKSPACE
+          $runId = if ($env:GITHUB_RUN_ID) { $env:GITHUB_RUN_ID } else { Get-Date -Format 'yyyyMMddHHmmss' }
+          if (Test-Path .\tools\win\clear_state.ps1) {
+              pwsh -NoLogo -File .\tools\win\clear_state.ps1 -Force -RunId $runId
           }
 
-      - name: Docker cleanup
-        if: ${{ always() }}
+      - name: Run Windows installer
+        shell: pwsh
         run: |
-          if (Get-Command docker -ErrorAction SilentlyContinue) {
-            docker compose -f docker-compose.dev.yml down --remove-orphans
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          Set-Location $env:GITHUB_WORKSPACE
+          $runId = if ($env:GITHUB_RUN_ID) { $env:GITHUB_RUN_ID } else { Get-Date -Format 'yyyyMMddHHmmss' }
+          if (-not (Test-Path 'reports\ci')) { New-Item -ItemType Directory -Path 'reports\ci' | Out-Null }
+          $logPath = 'reports\ci\installer.log'
+          $output = & .\scripts\win\install_and_run.ps1 -Ci -Port 8000 -MetricsToken 'dev-metrics-token' -RunId $runId 2>&1 | Tee-Object -FilePath $logPath
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host $output
+              exit $LASTEXITCODE
           }
 
-      - name: Post-run service cleanup
-        if: ${{ always() }}
-        run: pwsh -NoLogo -File scripts/win/30-services.ps1 -Action Cleanup -Mode Docker -ComposeFile docker-compose.dev.yml
+      - name: Parse installer markers
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          Set-Location $env:GITHUB_WORKSPACE
+          python .\tools\ci\parse_markers.py reports\ci\installer.log --json reports\ci\markers-summary.json
+
+      - name: Verify probe expectations
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          Set-Location $env:GITHUB_WORKSPACE
+          if (-not (Test-Path 'reports\ci\probes.json')) { throw 'probes.json missing' }
+          $data = Get-Content -Raw -Path 'reports\ci\probes.json' | ConvertFrom-Json
+          if (-not $data) { throw 'No probe entries recorded' }
+          $lookup = @{}
+          foreach ($entry in $data) { $lookup[$entry.label] = $entry.status }
+          if (-not ($lookup.ContainsKey('/readyz') -and $lookup['/readyz'] -eq 200) -and -not ($lookup.ContainsKey('/healthz') -and $lookup['/healthz'] -eq 200) -and -not ($lookup.ContainsKey('/health') -and $lookup['/health'] -eq 200)) {
+              throw 'Readiness probe did not return HTTP 200'
+          }
+          if (-not $lookup.ContainsKey('/docs') -or $lookup['/docs'] -ne 200) {
+              throw '/docs did not return HTTP 200'
+          }
+          if (-not $lookup.ContainsKey('/metrics (no token)') -or $lookup['/metrics (no token)'] -ne 403) {
+              throw '/metrics without token expected HTTP 403'
+          }
+          if (-not $lookup.ContainsKey('/metrics (with token)') -or $lookup['/metrics (with token)'] -ne 200) {
+              throw '/metrics with token expected HTTP 200'
+          }
+
+      - name: Run middleware order test
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          Set-Location $env:GITHUB_WORKSPACE
+          $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
+          pytest -q tests/middleware/test_order.py
+
+      - name: Run Excel export safety test
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          Set-Location $env:GITHUB_WORKSPACE
+          $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
+          pytest -q tests/excel/test_safe_export.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke-artifacts
+          path: |
+            reports/**
+            tmp/win-run/uvicorn.log

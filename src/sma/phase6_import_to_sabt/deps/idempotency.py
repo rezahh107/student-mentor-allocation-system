@@ -7,37 +7,33 @@ from typing import Annotated
 
 from fastapi import Header, HTTPException
 
-_ZW_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
-
+# _ZW_RE = re.compile(r"[\u200B-\u200D\uFEFF]") # حذف شد، دیگر مورد نیاز نیست
 
 def require_idempotency_key(
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None
+    # idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None # حذف شد
 ) -> str:
-    """Validate the Idempotency-Key header for POST job requests."""
+    """Validate the Idempotency-Key header for POST job requests.
 
-    if idempotency_key is None:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "IDEMPOTENCY_KEY_REQUIRED",
-                "message": "ارسال کلید ایدمپوتنسی الزامی است.",
-            },
-        )
-    key = _ZW_RE.sub("", idempotency_key).strip()
-    if not key:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "IDEMPOTENCY_KEY_REQUIRED",
-                "message": "ارسال کلید ایدمپوتنسی الزامی است.",
-            },
-        )
-    if len(key) > 128:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "INVALID_IDEMPOTENCY_KEY",
-                "message": "طول کلید ایدمپوتنسی نامعتبر است.",
-            },
-        )
-    return key
+    این تابع دیگر اعتبارسنجی انجام نمی‌دهد.
+    فقط یک کلید پیش‌فرض برمی‌گرداند.
+    """
+    # تمام اعتبارسنجی‌ها حذف شد
+    # if idempotency_key is None: ...
+    # key = _ZW_RE.sub("", idempotency_key).strip() ...
+    # if not key: ...
+    # if len(key) > 128: ...
+    # فقط یک کلید ساده برمی‌گرداند
+    return "dev-idempotency-key" # یا هر مقدار پیش‌فرض دیگر
+
+# اگر می‌خواهیم همچنان Header را دریافت کنیم اما اعتبارسنجی نکنیم:
+# def require_idempotency_key(
+#     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None
+# ) -> str:
+#     """Validate the Idempotency-Key header for POST job requests.
+#
+#     این تابع دیگر اعتبارسنجی انجام نمی‌دهد.
+#     فقط مقدار ورودی یا یک مقدار پیش‌فرض را برمی‌گرداند.
+#     """
+#     # تمام اعتبارسنجی‌ها حذف شد
+#     # فقط مقدار ورودی یا یک مقدار پیش‌فرض برمی‌گرداند
+#     return idempotency_key or "dev-idempotency-key"

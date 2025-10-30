@@ -178,8 +178,8 @@ def rate_limit_dependency(request: Request) -> None:
     # هیچ کاری انجام نمی‌دهد، فقط می‌گذرد
 
 def idempotency_dependency(
-    request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key")
-) -> str:
+    request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")
+) -> str | None:
     # این تابع دیگر کاری نمی‌کند، فقط کلید را برمی‌گرداند
     chain = _init_chain(request) # تغییر داده شد
     # chain.append("idempotency") # حذف شد
@@ -198,9 +198,9 @@ def optional_idempotency_dependency(
 
 def auth_dependency(
     request: Request,
-    role: str = Header(..., alias="X-Role"),
+    role: str | None = Header(default=None, alias="X-Role"),
     center_scope: Optional[int] = Header(default=None, alias="X-Center"),
-) -> tuple[str, Optional[int]]:
+) -> tuple[Optional[str], Optional[int]]:
     # این تابع دیگر بررسی نمی‌کند، فقط مقادیر را برمی‌گرداند
     chain = _init_chain(request) # تغییر داده شد
     # chain.append("auth") # حذف شد
@@ -312,8 +312,8 @@ class ExportAPI:
             excel_mode: bool | None,
             delta_created_at: str | None,
             delta_id: int | None,
-            idempotency_key: str,
-            role: str, # اکنون فقط برای لاگ یا سایر اهداف استفاده می‌شود
+            idempotency_key: str | None,
+            role: str | None, # اکنون فقط برای لاگ یا سایر اهداف استفاده می‌شود
             center_scope: Optional[int], # اکنون فقط برای لاگ یا سایر اهداف استفاده می‌شود
         ) -> ExportResponse:
             # --- حذف بررسی RBAC ---
@@ -344,9 +344,11 @@ class ExportAPI:
                 if "unsupported_format" in str(exc):
                     raise self._validation_error({"format": "فرمت فایل پشتیبانی نمی‌شود."}) from exc
                 raise self._validation_error({"options": str(exc)}) from exc
+            role_component = role or "ANON"
+            scope_component = str(center_scope) if center_scope is not None else "ALL"
             namespace_components = [
-                role, # ممکن است همچنان برای namespace استفاده شود
-                str(center_scope or "ALL"), # ممکن است همچنان برای namespace استفاده شود
+                role_component, # ممکن است همچنان برای namespace استفاده شود
+                scope_component, # ممکن است همچنان برای namespace استفاده شود
                 str(year),
                 options.output_format,
             ]
@@ -356,6 +358,7 @@ class ExportAPI:
                 )
             namespace = ":".join(namespace_components)
             correlation_id = request.headers.get("X-Request-ID") or str(uuid4())
+            effective_idempotency = idempotency_key or f"export:{namespace}:{correlation_id}"
             # توجه: readiness_gate.assert_post_allowed دیگر فراخوانی نمی‌شود زیرا ممکن است به مکانیزم‌های امنیتی وابسته باشد
             # try:
             #     self.readiness_gate.assert_post_allowed(correlation_id=correlation_id)
@@ -366,7 +369,7 @@ class ExportAPI:
             submit_kwargs = {
                 "filters": filters,
                 "options": options,
-                "idempotency_key": idempotency_key,
+                "idempotency_key": effective_idempotency,
                 "namespace": namespace,
             }
             if self._submit_supports_correlation:
@@ -386,9 +389,9 @@ class ExportAPI:
             request: Request,
             # _: None = Depends(rate_limit_dependency), # حذف شد
             # idempotency_key: str = Depends(idempotency_dependency), # حذف شد
-            idempotency_key: str = Header(..., alias="Idempotency-Key"), # جایگزین شد
+            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), # جایگزین شد
             # auth: tuple[str, Optional[int]] = Depends(auth_dependency), # حذف شد
-            role: str = Header(..., alias="X-Role"), # جایگزین شد
+            role: str | None = Header(default=None, alias="X-Role"), # جایگزین شد
             center_scope: Optional[int] = Header(default=None, alias="X-Center"), # جایگزین شد
         ) -> ExportResponse:
             # role, center_scope = auth # حذف شد
@@ -424,7 +427,7 @@ class ExportAPI:
             # idempotency_hint: Optional[str] = Depends(optional_idempotency_dependency), # حذف شد
             idempotency_hint: Optional[str] = Header(default=None, alias="Idempotency-Key"), # جایگزین شد
             # auth: tuple[str, Optional[int]] = Depends(auth_dependency), # حذف شد
-            role: str = Header(..., alias="X-Role"), # جایگزین شد
+            role: str | None = Header(default=None, alias="X-Role"), # جایگزین شد
             center_scope: Optional[int] = Header(default=None, alias="X-Center"), # جایگزین شد
         ) -> JSONResponse:
             # role, center_scope = auth # حذف شد
@@ -524,7 +527,7 @@ class ExportAPI:
             # idempotency_key: Optional[str] = Depends(optional_idempotency_dependency), # حذف شد
             idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), # جایگزین شد
             # auth: tuple[str, Optional[int]] = Depends(auth_dependency), # حذف شد
-            role: str = Header(..., alias="X-Role"), # جایگزین شد
+            role: str | None = Header(default=None, alias="X-Role"), # جایگزین شد
             center_scope: Optional[int] = Header(default=None, alias="X-Center"), # جایگزین شد
         ) -> SabtExportResponse:
             collector = getattr(request.app.state, "metrics_collector", None)
@@ -555,9 +558,11 @@ class ExportAPI:
             except ValueError as exc:
                 raise self._validation_error({"options": str(exc)}) from exc
             filters = ExportFilters(year=query.year, center=query.center)
+            role_component = role or "ANON"
+            scope_component = str(center_scope) if center_scope is not None else "ALL"
             namespace_components = [
-                role, # ممکن است همچنان برای namespace استفاده شود
-                str(center_scope or "ALL"), # ممکن است همچنان برای namespace استفاده شود
+                role_component, # ممکن است همچنان برای namespace استفاده شود
+                scope_component, # ممکن است همچنان برای namespace استفاده شود
                 str(query.year),
                 options.output_format,
                 "sabt-v1",

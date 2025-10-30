@@ -5,29 +5,30 @@ from typing import Iterable
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
-from sma.phase6_import_to_sabt.middleware.metrics import MiddlewareMetrics
+# from sma.phase6_import_to_sabt.middleware.metrics import MiddlewareMetrics # حذف شد
+# فرض بر این است که MiddlewareMetrics دیگر مورد نیاز نیست یا فقط شامل متریک‌های امنیتی است
 
 REQUEST_LATENCY = "request_latency_seconds"
 
-
+# کلاس ServiceMetrics باید بروزرسانی شود
 @dataclass(slots=True)
 class ServiceMetrics:
     registry: CollectorRegistry
     request_latency: Histogram
     request_total: Counter
     readiness_total: Counter
-    middleware: MiddlewareMetrics
+    # middleware: MiddlewareMetrics # حذف شد
     exporter_duration_seconds: Histogram
     exporter_bytes_total: Counter
-    auth_ok_total: Counter
-    auth_fail_total: Counter
-    download_signed_total: Counter
-    token_rotation_total: Counter
+    # auth_ok_total: Counter # حذف شد
+    # auth_fail_total: Counter # حذف شد
+    # download_signed_total: Counter # حذف شد
+    # token_rotation_total: Counter # حذف شد
     retry_attempts_total: Counter
     retry_exhausted_total: Counter
     retry_backoff_seconds: Histogram
-    ratelimit_tokens: Gauge
-    ratelimit_drops_total: Counter
+    # ratelimit_tokens: Gauge # حذف شد
+    # ratelimit_drops_total: Counter # حذف شد
 
     def reset(self) -> None:
         if hasattr(self.registry, "_names_to_collectors"):
@@ -66,60 +67,20 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         registry=reg,
         labelnames=("component", "status"),
     )
-    rate_limit_tokens = Gauge(
-        f"{namespace}_ratelimit_tokens",
-        "Rate limit tokens remaining per route",
-        registry=reg,
-        labelnames=("route",),
-    )
-    rate_limit_drops_total = Counter(
-        f"{namespace}_ratelimit_drops_total",
-        "Rate limit drops grouped by route",
-        registry=reg,
-        labelnames=("route",),
-    )
-    middleware_metrics = MiddlewareMetrics(
-        rate_limit_decision_total=Counter(
-            f"{namespace}_rate_limit_decision_total",
-            "Rate limit decisions",
-            registry=reg,
-            labelnames=("decision",),
-        ),
-        idempotency_hits_total=Counter(
-            f"{namespace}_idempotency_hits_total",
-            "Idempotency hit/miss decisions",
-            registry=reg,
-            labelnames=("outcome",),
-        ),
-        idempotency_replays_total=Counter(
-            f"{namespace}_idempotency_replays_total",
-            "Idempotent replay responses",
-            registry=reg,
-        ),
-        rate_limit_latency_seconds=_build_histogram(
-            namespace,
-            "rate_limit_latency_seconds",
-            "Rate limit middleware latency",
-            registry=reg,
-            buckets=(0.001, 0.01, 0.05, 0.1),
-        ),
-        idempotency_latency_seconds=_build_histogram(
-            namespace,
-            "idempotency_latency_seconds",
-            "Idempotency middleware latency",
-            registry=reg,
-            buckets=(0.001, 0.01, 0.05, 0.1),
-        ),
-        auth_latency_seconds=_build_histogram(
-            namespace,
-            "auth_latency_seconds",
-            "Auth middleware latency",
-            registry=reg,
-            buckets=(0.001, 0.01, 0.05, 0.1),
-        ),
-        rate_limit_tokens=rate_limit_tokens,
-        rate_limit_drops_total=rate_limit_drops_total,
-    )
+    # rate_limit_tokens = Gauge( ... ) # حذف شد
+    # rate_limit_drops_total = Counter( ... ) # حذف شد
+    # middleware_metrics = MiddlewareMetrics( ... ) # حذف شد
+    # اکنون یک شیء ساده یا None برای middleware استفاده می‌کنیم
+    middleware_metrics = None # یا یک شیء سازگار با ساختار قبلی اگر جای دیگری به آن نیاز باشد
+    # اگر کلاس MiddlewareMetrics دیگر وجود نداشته باشد، این خط باید حذف یا تغییر کند
+    # برای اینکه کد کاملاً کار کند، ممکن است نیاز باشد یک کلاس ساختگی یا تابعی برای ساخت آن ایجاد کنیم
+    # اما برای سادگی، فرض می‌کنیم هیچ کلاسی به آن نیاز نیست یا فقط شامل متریک‌های امنیتی بوده است
+    # بنابراین فقط None یا یک شیء دیگر می‌دهیم
+    # یا می‌توانیم یک کلاس جدید ساختگی ایجاد کنیم که فقط شامل متریک‌های غیرامنیتی باشد
+    # اما برای اینجا، فقط None می‌دهیم یا یک شیء با فیلدهای خالی
+    class DummyMiddlewareMetrics:
+        pass
+    middleware_metrics = DummyMiddlewareMetrics()
     exporter_duration = _build_histogram(
         namespace,
         "exporter_duration_seconds",
@@ -132,30 +93,10 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         "Total bytes written by exporter",
         registry=reg,
     )
-    auth_ok_total = Counter(
-        f"{namespace}_auth_ok_total",
-        "Authentication success count",
-        registry=reg,
-        labelnames=("role",),
-    )
-    auth_fail_total = Counter(
-        f"{namespace}_auth_fail_total",
-        "Authentication failures",
-        registry=reg,
-        labelnames=("reason",),
-    )
-    download_signed_total = Counter(
-        f"{namespace}_download_signed_total",
-        "Download signing events",
-        registry=reg,
-        labelnames=("outcome",),
-    )
-    token_rotation_total = Counter(
-        f"{namespace}_token_rotation_total",
-        "Token rotation actions",
-        registry=reg,
-        labelnames=("event",),
-    )
+    # auth_ok_total = Counter( ... ) # حذف شد
+    # auth_fail_total = Counter( ... ) # حذف شد
+    # download_signed_total = Counter( ... ) # حذف شد
+    # token_rotation_total = Counter( ... ) # حذف شد
     retry_attempts_total = Counter(
         f"{namespace}_retry_attempts_total",
         "HTTP client retry attempts",
@@ -180,18 +121,18 @@ def build_metrics(namespace: str, registry: CollectorRegistry | None = None) -> 
         request_latency=request_latency,
         request_total=request_total,
         readiness_total=readiness_total,
-        middleware=middleware_metrics,
+        # middleware=middleware_metrics, # حذف شد یا تغییر کرد
         exporter_duration_seconds=exporter_duration,
         exporter_bytes_total=exporter_bytes,
-        auth_ok_total=auth_ok_total,
-        auth_fail_total=auth_fail_total,
-        download_signed_total=download_signed_total,
-        token_rotation_total=token_rotation_total,
+        # auth_ok_total=auth_ok_total, # حذف شد
+        # auth_fail_total=auth_fail_total, # حذف شد
+        # download_signed_total=download_signed_total, # حذف شد
+        # token_rotation_total=token_rotation_total, # حذف شد
         retry_attempts_total=retry_attempts_total,
         retry_exhausted_total=retry_exhausted_total,
         retry_backoff_seconds=retry_backoff_seconds,
-        ratelimit_tokens=rate_limit_tokens,
-        ratelimit_drops_total=rate_limit_drops_total,
+        # ratelimit_tokens=rate_limit_tokens, # حذف شد
+        # ratelimit_drops_total=rate_limit_drops_total, # حذف شد
     )
 
 

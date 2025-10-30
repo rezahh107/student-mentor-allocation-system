@@ -3,7 +3,7 @@
 import pytest
 from fastapi import HTTPException
 
-from src.api.deps.idempotency import require_idempotency_key
+from sma.phase6_import_to_sabt.deps import require_idempotency_key
 
 
 def test_missing_header_raises_required() -> None:

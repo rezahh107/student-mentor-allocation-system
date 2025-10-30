@@ -4,13 +4,28 @@ from __future__ import annotations
 
 import platform
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 _SUPPORTED_MINOR = 11
 _REQUIRED_MAJOR = 3
-_SUPPORTED_MAX_PATCH = 99
+_REQUIRED_PATCH = 9
+_MIN_UNSUPPORTED_MINOR = 13
+
+_PATCH_MESSAGE = (
+    "نسخهٔ پایتون پشتیبانی نمی‌شود؛ لطفاً دقیقاً Python 3.11.9 را فعال کنید."
+)
+_UNSUPPORTED_MINOR_MESSAGE = (
+    "نسخهٔ پایتون پشتیبانی نمی‌شود؛ لطفاً Python 3.11 نصب/فعال کنید."
+)
+_UNSUPPORTED_MINOR_NEWER_MESSAGE = (
+    "نسخهٔ پایتون پشتیبانی نمی‌شود؛ لطفاً Python 3.11 نصب/فعال کنید. "
+    "بسته‌های وابسته برای این نسخه منتشر نشده‌اند."
+)
+_TZDATA_MESSAGE = (
+    "منطقهٔ زمانی در دسترس نیست؛ بستهٔ tzdata را مطابق constraints نصب کنید."
+)
 
 
 class RuntimeConfigurationError(RuntimeError):
@@ -32,17 +47,12 @@ def ensure_python_311() -> None:
 
     version = sys.version_info
     if version.major != _REQUIRED_MAJOR or version.minor != _SUPPORTED_MINOR:
-        message = "نسخهٔ پایتون پشتیبانی نمی‌شود؛ لطفاً Python 3.11 نصب/فعال کنید."
-        if version.minor >= 13:
-            message = (
-                "نسخهٔ پایتون پشتیبانی نمی‌شود؛ لطفاً Python 3.11 نصب/فعال کنید. "
-                "بسته‌های وابسته برای این نسخه منتشر نشده‌اند."
-            )
+        message = _UNSUPPORTED_MINOR_MESSAGE
+        if version.minor >= _MIN_UNSUPPORTED_MINOR:
+            message = _UNSUPPORTED_MINOR_NEWER_MESSAGE
         raise RuntimeConfigurationError(message)
-    if version.micro > _SUPPORTED_MAX_PATCH:
-        raise RuntimeConfigurationError(
-            "نسخهٔ پایتون پشتیبانی نمی‌شود؛ لطفاً نسخهٔ پایدار 3.11 را استفاده کنید."
-        )
+    if version.micro != _REQUIRED_PATCH:
+        raise RuntimeConfigurationError(_PATCH_MESSAGE)
 
 
 def is_uvloop_supported() -> bool:
@@ -69,9 +79,7 @@ def ensure_tehran_tz() -> ZoneInfo:
     try:
         return ZoneInfo("Asia/Tehran")
     except ZoneInfoNotFoundError as exc:  # pragma: no cover - fatal path
-        raise RuntimeConfigurationError(
-            "منطقهٔ زمانی در دسترس نیست؛ بستهٔ tzdata را مطابق constraints نصب کنید."
-        ) from exc
+        raise RuntimeConfigurationError(_TZDATA_MESSAGE) from exc
 
 
 def _default_search_roots() -> list[Path]:

@@ -155,7 +155,9 @@ def _scan_wall_clock(repo_root: pathlib.Path) -> tuple[list[tuple[str, str]], li
 
 
 def _ensure_pytest_asyncio_loaded(config: pytest.Config) -> None:
-    if config.pluginmanager.hasplugin("pytest_asyncio"):
+    if config.pluginmanager.hasplugin("pytest_asyncio") or config.pluginmanager.hasplugin(
+        "pytest_asyncio.plugin"
+    ):
         return
     try:
         config.pluginmanager.import_plugin("pytest_asyncio")

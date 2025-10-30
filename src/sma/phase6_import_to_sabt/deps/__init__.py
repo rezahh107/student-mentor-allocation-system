@@ -1,4 +1,4 @@
-"""Dependency helpers for API routes."""
+"""Dependency helpers for the SABT import phase."""
 
 from .idempotency import require_idempotency_key
 

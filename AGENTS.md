@@ -125,9 +125,6 @@ python scripts\hooks\no_src_main_check.py
 
 * **Metrics (examples):** `export_jobs_total`, `export_duration_seconds`, `uploads_total`, `db_query_latency_seconds`, `cache_hit_ratio`.
 * **Logs:** structured JSON; include `correlation_id`, operation context, retry counts, **query durations**, **cache hit/miss**; **no raw PII**.
-* **Security (maintenance‑only):** keep `/metrics` token‑guard and signed‑URL downloads; default TTL 3600s.
-* **Evidence (Token Guard):** `src/middleware/auth.py::metrics_token_guard`
-* **Evidence (Security Tests):** `tests/security/test_metrics_token_guard.py`
 
 ---
 

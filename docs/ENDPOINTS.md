@@ -1,10 +1,12 @@
 # API Endpoints
 
 این مستند از OpenAPI تولید شده است و نمونه‌ها قابل اجرا هستند.
+
+> ⚠️ **بیلد لوکال:** تمام لایه‌های امنیتی (Auth، RateLimit و RBAC) غیرفعال شده‌اند؛ درخواست‌های زیر بدون هدر احراز هویت نیز پاسخ می‌دهند. هنگام آماده‌سازی برای تولید، پیش از استفاده از این مثال‌ها باید گاردها را دوباره فعال و هدرهای `Authorization` را تنظیم کنید.
 ## `POST /__lint`
  Lint Echo
 ```
-curl -X POST http://localhost:8000/__lint -H 'Authorization: Bearer cli-admin-token-1234567890' -H 'Content-Type: application/json' -d '{"نمونه": "نمونه"}'
+curl -X POST http://localhost:8000/__lint -H 'Content-Type: application/json' -d '{"نمونه": "نمونه"}'
 ```
 **Request Example**
 ```json
@@ -22,7 +24,7 @@ curl -X POST http://localhost:8000/__lint -H 'Authorization: Bearer cli-admin-to
 ## `GET /api/exports/csv`
 Exporter Stub
 ```
-curl -X GET http://localhost:8000/api/exports/csv -H 'Authorization: Bearer cli-admin-token-1234567890'
+curl -X GET http://localhost:8000/api/exports/csv
 ```
 **Response Example (200)**
 ```json
@@ -34,7 +36,7 @@ curl -X GET http://localhost:8000/api/exports/csv -H 'Authorization: Bearer cli-
 ## `GET /api/jobs`
 List Jobs
 ```
-curl -X GET http://localhost:8000/api/jobs -H 'Authorization: Bearer cli-admin-token-1234567890'
+curl -X GET http://localhost:8000/api/jobs
 ```
 **Response Example (200)**
 ```json

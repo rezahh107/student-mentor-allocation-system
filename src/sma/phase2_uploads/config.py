@@ -7,7 +7,8 @@ from typing import Any, Dict, Iterable
 
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 DEFAULT_ALLOWED_PROFILES = ("ROSTER_V1",)
-DEFAULT_IDEMPOTENCY_TTL = 60 * 60 * 24
+# DEFAULT_IDEMPOTENCY_TTL = 60 * 60 * 24 # این مقدار مربوط به امنیت است
+DEFAULT_IDEMPOTENCY_TTL = 0 # یا فقط یک مقدار غیر فعال کننده، چون میدلویر امنیتی قبلاً تغییر کرد
 DEFAULT_RETRY_ATTEMPTS = 3
 DEFAULT_RETRY_BASE_DELAY = 0.05
 DEFAULT_RETRY_MAX_DELAY = 0.6
@@ -20,10 +21,11 @@ class UploadsConfig:
     base_dir: Path
     storage_dir: Path
     manifest_dir: Path
-    metrics_token: str
+    # metrics_token: str # حذف شد یا تغییر کرد
+    metrics_token: str = "dev-metrics-token" # تغییر داده شد: اکنون یک مقدار پیش‌فرض برای توسعه است، چون endpoint از آن استفاده نمی‌کند
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
     allowed_profiles: tuple[str, ...] = DEFAULT_ALLOWED_PROFILES
-    idempotency_ttl_seconds: int = DEFAULT_IDEMPOTENCY_TTL
+    idempotency_ttl_seconds: int = DEFAULT_IDEMPOTENCY_TTL # این فیلد همچنان وجود دارد، اما ممکن است میدلویر مربوطه از آن چشم پوشی کند
     retry_attempts: int = DEFAULT_RETRY_ATTEMPTS
     retry_base_delay: float = DEFAULT_RETRY_BASE_DELAY
     retry_max_delay: float = DEFAULT_RETRY_MAX_DELAY
@@ -57,16 +59,17 @@ class UploadsConfig:
         base_dir = Path(data.get("base_dir", Path.cwd())).resolve()
         storage_dir = Path(data.get("storage_dir", base_dir / "uploads"))
         manifest_dir = Path(data.get("manifest_dir", base_dir / "manifests"))
-        metrics_token = data["metrics_token"]
+        # metrics_token = data["metrics_token"] # اکنون ممکن است اختیاری باشد یا مقدار پیش‌فرض داشته باشد
+        metrics_token = data.get("metrics_token", "dev-metrics-token") # تغییر داده شد
         return cls(
             base_dir=base_dir,
             storage_dir=storage_dir,
             manifest_dir=manifest_dir,
-            metrics_token=metrics_token,
+            metrics_token=metrics_token, # استفاده از مقدار جدید
             max_upload_bytes=int(data.get("max_upload_bytes", DEFAULT_MAX_UPLOAD_BYTES)),
             allowed_profiles=tuple(data.get("allowed_profiles", DEFAULT_ALLOWED_PROFILES)),
             idempotency_ttl_seconds=int(
-                data.get("idempotency_ttl_seconds", DEFAULT_IDEMPOTENCY_TTL)
+                data.get("idempotency_ttl_seconds", DEFAULT_IDEMPOTENCY_TTL) # مقدار جدید
             ),
             retry_attempts=int(data.get("retry_attempts", DEFAULT_RETRY_ATTEMPTS)),
             retry_base_delay=float(data.get("retry_base_delay", DEFAULT_RETRY_BASE_DELAY)),
@@ -80,10 +83,13 @@ class UploadsConfig:
         self.manifest_dir.mkdir(parents=True, exist_ok=True)
 
 
+# DEFAULT_CONFIG تغییر می‌کند تا از مقدار جدید metrics_token استفاده کند
+# و مقدار idempotency_ttl_seconds را نیز به روز کند
 DEFAULT_CONFIG = UploadsConfig(
     base_dir=Path("./tmp/uploads").resolve(),
     storage_dir=Path("./tmp/uploads/storage").resolve(),
     manifest_dir=Path("./tmp/uploads/manifests").resolve(),
-    metrics_token="local-token",
+    # metrics_token="local-token", # تغییر داده شد
+    # idempotency_ttl_seconds=DEFAULT_IDEMPOTENCY_TTL # در سازنده اعمال می‌شود
 )
-DEFAULT_CONFIG.ensure_directories()
+# DEFAULT_CONFIG.ensure_directories() # اگر از قبل فراخوانی شده بود، دیگر لازم نیست

@@ -1,25 +1,17 @@
-"""Deterministic rate-limit helper tailored for ImportToSabt exports."""
+"""Stub rate limiter that always allows requests."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-# import hashlib # دیگر مورد نیاز نیست
-# from typing import Dict, Tuple # دیگر مورد نیاز نیست
-# from sma.phase6_import_to_sabt.clock import Clock, ensure_clock # دیگر مورد نیاز نیست
 
 
 @dataclass(frozen=True)
 class RateLimitSettings:
-    """User-configurable rate-limit knobs with deterministic cloning support.
-
-    این کلاس دیگر مورد استفاده قرار نمی‌گیرد، اما برای جلوگیری از خطا در فایل‌های دیگر ممکن است نگه داشته شود.
-    """
-
     requests: int = 30
     window_seconds: int = 60
     penalty_seconds: int = 120
 
-    def snapshot(self) -> "RateLimitSettings":
+    def snapshot(self) -> RateLimitSettings:
         return RateLimitSettings(
             requests=self.requests,
             window_seconds=self.window_seconds,
@@ -35,43 +27,25 @@ class RateLimitDecision:
 
 
 class ExportRateLimiter:
-    """Minimal in-memory limiter with deterministic hashing and cloning.
+    """Development-friendly rate limiter that never throttles."""
 
-    این کلاس دیگر محدودیتی اعمال نمی‌کند.
-    همیشه اجازه می‌دهد.
-    """
-
-    def __init__(
-        self,
-        *,
-        settings: RateLimitSettings | None = None,
-        clock: Clock | None = None,
-    ) -> None:
-        # self._settings = (settings or RateLimitSettings()).snapshot() # دیگر مورد نیاز نیست
-        # self._clock = ensure_clock(clock, timezone="Asia/Tehran") # دیگر مورد نیاز نیست
-        # self._counters: Dict[Tuple[str, int], int] = {} # دیگر مورد نیاز نیست
-        pass # هیچ کاری نمی‌کند
+    def __init__(self, *args: object, **kwargs: object) -> None:  # noqa: D401 - no-op
+        return None
 
     @property
     def settings(self) -> RateLimitSettings:
-        # فقط یک نمونه پیش‌فرض برمی‌گرداند
         return RateLimitSettings()
 
     def snapshot(self) -> RateLimitSettings:
-        # فقط یک نمونه پیش‌فرض برمی‌گرداند
         return RateLimitSettings()
 
-    def restore(self, settings: RateLimitSettings) -> None:
-        # هیچ کاری نمی‌کند
-        pass
+    def restore(self, settings: RateLimitSettings) -> None:  # pragma: no cover - noop
+        return None
 
-    def configure(self, settings: RateLimitSettings) -> None:
-        # هیچ کاری نمی‌کند
-        pass
+    def configure(self, settings: RateLimitSettings) -> None:  # pragma: no cover - noop
+        return None
 
-    def check(self, identifier: str) -> RateLimitDecision:
-        """تابع بررسی دیگر محدودیتی اعمال نمی‌کند."""
-        # همیشه اجازه می‌دهد
+    def check(self, identifier: str) -> RateLimitDecision:  # noqa: D401 - always allow
         return RateLimitDecision(allowed=True, retry_after=0, remaining=999999)
 
 

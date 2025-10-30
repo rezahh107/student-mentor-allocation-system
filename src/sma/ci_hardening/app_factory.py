@@ -12,7 +12,6 @@ from .clock import Clock
 from .middleware import (
     AuthConfig,
     AuthMiddleware,
-    IdempotencyMiddleware,
     RateLimitConfig,
     RateLimitMiddleware,
     RateLimitRule,
@@ -71,7 +70,6 @@ def _build_middleware(app: FastAPI, settings: AppSettings) -> None:
         AuthMiddleware,
         config=AuthConfig(allowed_tokens=tuple(allowed_tokens)),
     )
-    app.add_middleware(IdempotencyMiddleware, store=idem_store)
     app.add_middleware(
         RateLimitMiddleware,
         store=rate_store,

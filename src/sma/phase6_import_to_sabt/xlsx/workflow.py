@@ -13,8 +13,6 @@ import sma.core.clock as core_clock
 
 from sma.phase6_import_to_sabt.sanitization import sanitize_text
 from sma.phase6_import_to_sabt.models import SignedURLProvider
-from sma.phase6_import_to_sabt.security.signer import DualKeySigner, SigningKeySet
-from sma.phase6_import_to_sabt.security.config import SigningKeyDefinition
 from sma.phase6_import_to_sabt.xlsx.constants import DEFAULT_CHUNK_SIZE, SENSITIVE_COLUMNS
 from sma.phase6_import_to_sabt.xlsx.job_store import ExportJobStore, InMemoryExportJobStore
 from sma.phase6_import_to_sabt.xlsx.metrics import ImportExportMetrics
@@ -77,15 +75,7 @@ class ImportToSabtWorkflow:
         self._uploads: dict[str, UploadRecord] = {}
         self._exports: dict[str, ExportRecord] = {}
         self._sleeper = sleeper
-        if signed_url_provider is None:
-            signing_keys = SigningKeySet([SigningKeyDefinition(signed_url_kid, signed_url_secret, "active")])
-            signed_url_provider = DualKeySigner(
-                keys=signing_keys,
-                clock=self.clock,
-                metrics=metrics,
-                default_ttl_seconds=signed_url_ttl_seconds,
-            )
-        self._signed_urls = signed_url_provider
+        self._signed_urls = signed_url_provider or SignedURLProvider()
         self._signed_url_ttl = signed_url_ttl_seconds
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         cleanup_partials(self.storage_dir)

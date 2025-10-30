@@ -2,6 +2,8 @@
 
 این نسخهٔ به‌روزشدهٔ راهنما مسیر **خودترمیم‌شونده** برای کاربران Windows 10/11 (PowerShell 7+) فراهم می‌کند تا سامانهٔ ImportToSabt را بدون خطا اجرا کنند. تمام مراحل از پیش‌نیازها تا تست پایانی در اسکریپت `scripts/win/install_and_run.ps1` مجتمع شده است و هر فرمان خروجی **[PASS]/[FIXED]/[SKIP]/[FAIL]** چاپ می‌کند تا خطاها زود تشخیص داده شوند.
 
+> ⚠️ **هشدار بیلد لوکال:** نسخهٔ فعلی فقط برای توسعه است؛ میان‌افزارهای امنیتی Auth و RateLimit و همچنین RBAC از برنامه حذف شده‌اند. برای استقرار تولیدی باید این مؤلفه‌ها را از شاخهٔ اصلی بازگردانی کنید.
+
 ## 1. پیش‌نیازهای سیستم
 
 1. **PowerShell 7+** را با [Microsoft Store](https://apps.microsoft.com) نصب یا به‌روزرسانی کنید.
@@ -34,7 +36,7 @@ pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1
 | اعتبارسنجی env | `[PASS] dotenv::AppConfig instantiated successfully` | تصحیح کلیدهای تو در تو (`IMPORT_TO_SABT_*__*`) |
 | سرویس‌ها | `[FIXED] services::Started container 'sma-dev-redis-<RUN_ID>'...` یا `[SKIP] services::Docker CLI not available...` | رفع خطاهای اتصال Redis/PostgreSQL |
 | اجرا | `[PASS] uvicorn::Uvicorn listening on port ...` سپس `/readyz → HTTP 200` | تضمین سلامتی endpoint صحیح |
-| امنیت | `/metrics (no token) → HTTP 403`, `/metrics (with token) → HTTP 200` | تأیید توکن و جلوگیری از دسترسی عمومی |
+| امنیت | **در بیلد محلی انتظار می‌رود `/metrics` بدون توکن در دسترس باشد؛** پس از بازگردانی امنیت باید `/metrics (no token) → HTTP 403` و `/metrics (with token) → HTTP 200` شود. | تأیید توکن و جلوگیری از دسترسی عمومی |
 
 > **توجه:** اگر `ENVIRONMENT=production` در `.env` تنظیم شده باشد و `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` باشد، اسکریپت با پیام فارسی/انگلیسی متوقف می‌شود تا از انتشار اسناد در محیط تولید جلوگیری شود.
 
@@ -64,14 +66,14 @@ pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1
 | «missing/invalid signing keys» | مقادیر قبلی `IMPORT_TO_SABT_*` در محیط فرآیند باقی می‌ماند و گارد امضا را خراب می‌کرد | `Clear-StaleImportEnv` تمام متغیرهای فرآیند را پاک می‌کند تا فقط `.env` مرجع باشد؛ مقداردهی پیش‌فرض توکن/سرویس نیز انجام می‌شود |
 | `/health` → 401 | آدرس اشتباه استفاده می‌شد | حلقهٔ پروب ابتدا `/readyz`، سپس `/healthz` و در نهایت `/health` را بررسی می‌کند تا از کد 200 مطمئن شود |
 | `/docs` → 401 | `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS` تنظیم نشده بود | مقدار پیش‌فرض `true` تزریق می‌شود و اسکریپت وضعیت 200 را بررسی می‌کند |
-| `/metrics` بدون توکن | توکن نادرست یا غیرفعال | اسکریپت یکبار بدون توکن (403) و یکبار با `IMPORT_TO_SABT_AUTH__METRICS_TOKEN` (200) تست می‌کند |
+| `/metrics` بدون توکن | توکن نادرست یا غیرفعال | در بیلد محلی پاسخ 200 است؛ پس از بازگردانی امنیت، اسکریپت باید بدون توکن 403 و با `IMPORT_TO_SABT_AUTH__METRICS_TOKEN` وضعیت 200 گزارش کند |
 
 > اجرای مجدد اسکریپت باید فقط `[PASS]`‌ها را چاپ کند؛ اگر `[FIXED]` ظاهر شود یعنی مشکلی برطرف شده است و می‌توانید فرمان را دوباره برای اطمینان اجرا کنید.
 
 ## 5. پس از اجرا
 
 1. مرورگر را به `http://127.0.0.1:8000/docs` باز کنید (فقط اگر در `.env` مقدار `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` است).
-2. برای `/metrics` از هدر `Authorization: Bearer <METRICS_TOKEN>` استفاده کنید که مقدار آن در `.env` ذخیره شده است.
+2. در بیلد محلی `/metrics` بدون هدر هم پاسخ می‌دهد؛ برای تست تولیدی باید از هدر `Authorization: Bearer <METRICS_TOKEN>` استفاده کنید که مقدار آن در `.env` ذخیره شده است.
 3. برای توقف برنامه، از همان پنجرهٔ PowerShell که اسکریپت را اجرا کرده‌اید استفاده کنید؛ اسکریپت uvicorn را در انتها متوقف می‌کند و فایل لاگ در `tmp\win-run\uvicorn.log` ذخیره می‌شود.
 
 ## 6. اشکال‌زدایی
@@ -103,7 +105,7 @@ pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1
    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/excel/test_safe_export.py
    ```
 
-   * تست `tests/middleware/test_order.py::test_middleware_order_chain` آرایهٔ `app.user_middleware` را بررسی می‌کند تا ترتیب `RateLimit → Idempotency → Auth` حفظ شود؛ اگر یکی از کلاس‌ها وجود نداشته باشد نتیجه به صورت `xfail` گزارش می‌شود تا توسعه‌دهنده به کمبود آگاه شود.
+  * تست `tests/middleware/test_order.py::test_middleware_order_chain` در نسخهٔ تولید آرایهٔ `app.user_middleware` را بررسی می‌کند تا ترتیب `RateLimit → Idempotency → Auth` حفظ شود؛ در بیلد محلی میان‌افزارها حذف شده‌اند و این تست باید پس از بازگردانی امنیت فعال شود.
    * تست `tests/excel/test_safe_export.py::test_excel_export_guards_formula_and_utf8` دادهٔ فارسی و مقادیر خطرناک را خروجی می‌گیرد و مطمئن می‌شود که نگهبان فرمول (`'`)، حذف نویسه‌های صفرعرض و نرمال‌سازی اعداد/نقل‌قول‌ها برقرار است.
 
 4. آرتیفکت‌های زیر در پایان Job آپلود می‌شوند:

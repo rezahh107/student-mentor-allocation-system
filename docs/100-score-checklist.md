@@ -1,10 +1,12 @@
 # 100/100 Score Checklist
 
+> ⚠️ **تنها برای بیلد محلی:** لایه‌های امنیتی شامل RateLimit و Auth در این نسخه غیرفعال هستند؛ موارد مربوط به آن‌ها باید پس از بازگردانی کد تولید دوباره بررسی شوند.
+
 ## Performance (49/49) ✅
 - [x] Integration fixtures with state cleanup
 - [x] Retry mechanisms with deterministic backoff
 - [x] Debug context helpers for failures
-- [x] Middleware order validation (RateLimit → Idempotency → Auth)
+- [ ] Middleware order validation (RateLimit → Idempotency → Auth) *(در بیلد محلی غیرفعال؛ پس از بازگردانی امنیت باید دوباره تیک بخورد)*
 - [x] Concurrent safety tests for Redis/DB
 - [x] Performance benchmarks under load (Excel + throughput)
 - [x] Throughput tests with percentile assertions

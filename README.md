@@ -6,7 +6,7 @@
 ### TL;DR
 - `./quick_start.bat` یا `pwsh -ExecutionPolicy Bypass -File ./Start-App.ps1`
 - `python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload`
-- Set `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` and `METRICS_TOKEN=<token>` in dev/CI before running server checks; docs stay locked otherwise and `/metrics` always requires `Authorization: Bearer <token>`.
+- Set `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` and `METRICS_TOKEN=<token>` in dev/CI before running server checks; **در نسخهٔ لوکال فعلی، تمام گاردهای امنیتی شامل RateLimit و Auth به‌طور کامل غیرفعال شده‌اند** و این متغیرها تنها برای آماده‌سازی محیط تولید ثبت شده‌اند.
 - Run `python setup.py` to install dependencies, set `PYTHONPATH`, configure VS Code, and generate `activate` scripts.
 - Use `activate.bat` (Windows) or `source ./activate.sh` (macOS/Linux) before working in a new shell.
 - Launch diagnostics with `python scripts/environment_doctor.py` to validate the environment and apply optional fixes.
@@ -28,7 +28,9 @@ pwsh -NoLogo -File scripts/win/50-smoke.ps1 -StateDir tmp\win-app
 pwsh -NoLogo -File scripts/win/30-services.ps1 -Action Cleanup -Mode Docker -ComposeFile docker-compose.dev.yml
 ```
 
-> نتیجه: اجرای کامل ImportToSabt با RBAC، گارد متریک، اسموک‌تست و پاک‌سازی سرویس‌ها؛ گزارش‌ها در `reports/win-smoke/` ذخیره می‌شوند (`smoke-log.jsonl`, `smoke-summary.json`, `http-responses.json`).
+> نتیجه: اجرای کامل ImportToSabt با RBAC، گارد متریک، اسموک‌تست و پاک‌سازی سرویس‌ها؛ گزارش‌ها در `reports/win-smoke/` ذخیره می‌شوند (`smoke-log.jsonl`, `smoke-summary.json`, `http-responses.json`). **این قابلیت‌ها در بیلد محلی غیرفعال هستند و فقط پس از بازگردانی لایه‌های امنیتی باید انتظار عملکرد کامل را داشت.**
+
+> ⚠️ **توجه مهم:** این ریلیز صرفاً برای اجرا در محیط‌های توسعه/لوکال منتشر شده است. تمامی مؤلفه‌های امنیتی (RateLimit، Auth، RBAC و گارد متریک) از مسیر برنامه حذف شده‌اند تا راه‌اندازی ساده‌تر شود. پیش از استقرار در محیط تولید، لازم است همین ویژگی‌ها از شاخهٔ اصلی یا آخرین انتشار امن دوباره ادغام و فعال شوند.
 
 <!--dev-quick-start:start-->
 
@@ -111,7 +113,7 @@ METRICS_TOKEN=dev-metrics scripts/smoke.sh
   ```
   این پرچم همان متغیر محیطی است که در CI جهت فعال‌سازی شغل اختیاری استفاده می‌شود (`Settings → Variables → RUN_INTEGRATION`).
 - وابستگی `pytest-asyncio>=0.23` در بخش dev نصب می‌شود و به کمک `pytest.min.ini` و `tests/conftest.py` حتی با غیرفعال بودن autoload به صورت صریح لود می‌گردد؛ در صورت نبود پلاگین، پیغام skip مشخصی مشاهده خواهید کرد.
-- تست `tests/integration/test_middleware_order.py` تضمین می‌کند ترتیب میان‌افزارها همواره «RateLimit → Idempotency → Auth» باقی بماند.
+- تست `tests/integration/test_middleware_order.py` در نسخهٔ تولیدی تضمین می‌کند ترتیب میان‌افزارها «RateLimit → Idempotency → Auth» باقی بماند؛ در بیلد محلی این میان‌افزارها حذف شده‌اند و تست باید پس از بازگردانی امنیت مجدداً فعال شود.
 - تست‌های `tests/integration/test_redis_dirty_state.py` و `tests/integration/test_rate_limit_smoke.py` بدون نیاز به سرویس خارجی، رفتار پاک‌سازی Redis و کنترل نرخ را شبیه‌سازی می‌کنند.
 
 <!--dev-quick-start:end-->
@@ -136,8 +138,7 @@ METRICS_TOKEN=dev-metrics scripts/smoke.sh
    ```
 5. خروجی انتظار می‌رود:
    - `/openapi.json`, `/docs`, `/redoc` → وضعیت 200 زمانی که `PUBLIC_DOCS=1`.
-   - `/metrics` بدون هدر → وضعیت 403.
-   - `/metrics` با `Authorization: Bearer dev-metrics` → وضعیت 200 و نتایج در فایل‌های JSON/LOG ثبت می‌شود.
+   - در بیلد محلی جاری، مسیر `/metrics` بدون گارد Auth و RateLimit در دسترس است. پس از بازیابی امنیت برای تولید، انتظار می‌رود `/metrics` بدون هدر → وضعیت 403 و `/metrics` با `Authorization: Bearer dev-metrics` → وضعیت 200 باشد.
 
 ### 🔁 CI Integration (Windows Smoke)
 
@@ -195,9 +196,9 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -c pytest.min.ini tests/refactor -q
 ## FastAPI Hardened Service Configuration
 - `REDIS_NAMESPACE` و `REDIS_URL` برای تفکیک فضای کلید و اتصال به Redis استفاده می‌شوند؛ در CI مقدار `REDIS_URL` از سرویس `redis:7` تزریق می‌گردد.
 - سیاست Retry Redis از طریق متغیرهای `REDIS_MAX_RETRIES` (پیش‌فرض ۳)، `REDIS_BASE_DELAY_MS`، `REDIS_MAX_DELAY_MS` و `REDIS_JITTER_MS` قابل تنظیم است.
-- برای فعال‌سازی Fail-Open عمومی می‌توانید `RATE_LIMIT_FAIL_OPEN=1` را تنظیم کنید؛ GET ها در صورت خطا همیشه Fail-Open می‌شوند و `POST /allocations` تنها در صورت تنظیم صریح Fail-Open آزاد می‌ماند.
-- مسیر `/metrics` نیازمند تعیین یکی از `METRICS_TOKEN` یا قرار گرفتن IP در `METRICS_IP_ALLOWLIST` است و در حالت توکن باید هدر `Authorization: Bearer <token>` ارسال شود؛ خروجی شامل متریک‌های `redis_retry_attempts_total` و `redis_retry_exhausted_total` است که برای پایش پایداری Redis ضروری‌اند.
-- مقداردهی متغیر سراسری `METRICS_TOKEN` بر مقدار JSON `IMPORT_TO_SABT_AUTH` (کلید `metrics_token`) اولویت دارد؛ در صورت خالی بودن هر دو، پاسخ `/metrics` با خطای فارسی «متغیر METRICS_TOKEN یا مقدار `metrics_token` داخل JSON `IMPORT_TO_SABT_AUTH` را مقداردهی کنید» قطع می‌شود.
+- برای فعال‌سازی Fail-Open عمومی می‌توانید `RATE_LIMIT_FAIL_OPEN=1` را تنظیم کنید؛ **این گزینه در بیلد محلی حاضر غیرفعال است** و تنها پس از بازگردانی میان‌افزار RateLimit در محیط تولید معنی پیدا می‌کند. در نسخهٔ تولید، GET ها در صورت خطا همیشه Fail-Open می‌شوند و `POST /allocations` تنها در صورت تنظیم صریح Fail-Open آزاد می‌ماند.
+- در توزیع لوکال فعلی، مسیر `/metrics` بدون نیاز به `METRICS_TOKEN` یا IP allowlist در دسترس است و صرفاً برای توسعه استفاده می‌شود. هنگام آماده‌سازی برای تولید باید گارد Auth بازگردانده شود تا مسیر `/metrics` نیازمند تعیین یکی از `METRICS_TOKEN` یا قرار گرفتن IP در `METRICS_IP_ALLOWLIST` باشد و در حالت توکن هدر `Authorization: Bearer <token>` ارسال شود؛ خروجی شامل متریک‌های `redis_retry_attempts_total` و `redis_retry_exhausted_total` است که برای پایش پایداری Redis ضروری‌اند.
+- مقداردهی متغیر سراسری `METRICS_TOKEN` بر مقدار JSON `IMPORT_TO_SABT_AUTH` (کلید `metrics_token`) اولویت دارد؛ در نسخهٔ لوکال هر دو بدون اثر هستند اما پس از فعال‌سازی مجدد امنیت، در صورت خالی بودنشان پاسخ `/metrics` با خطای فارسی «متغیر METRICS_TOKEN یا مقدار `metrics_token` داخل JSON `IMPORT_TO_SABT_AUTH` را مقداردهی کنید» قطع می‌شود.
 - مسیر پیش‌فرض ذخیرهٔ خروجی‌ها `<ریشهٔ پروژه>/storage/exports` است و در اولین اجرا ساخته می‌شود؛ در صورت نیاز می‌توانید `EXPORT_STORAGE_DIR` را روی مسیر مطمئن دیگری تنظیم کنید.
 - برای کوتاه‌کردن زمان تست استریم بزرگ در CI، متغیر `EXPORT_STRESS_ROWS` تعداد ردیف‌های تولیدی را کنترل می‌کند (پیش‌فرض ۱۲٬۰۰۰).
 - برای اجرای آزمون یکپارچه‌ی ردیس واقعی، متغیر `LIVE_REDIS_URL` را روی DSN محیط زنده/لوکال تنظیم کنید؛ در غیر این صورت این مسیر جمع‌آوری نمی‌شود.

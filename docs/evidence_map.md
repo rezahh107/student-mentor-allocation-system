@@ -1,5 +1,7 @@
 # ImportToSabt Evidence Map
 
+> ⚠️ **هشدار بیلد لوکال:** رفرنس‌های مربوط به RateLimit، Auth و RBAC به نسخهٔ تولید اشاره دارند. در توزیع فعلی این لایه‌ها حذف شده‌اند و باید پیش از استقرار دوباره ادغام شوند.
+
 | Spec Reference | Implementation Evidence |
 | -------------- | ----------------------- |
 | AGENTS.md::3 Absolute Guardrails | src/phase6_import_to_sabt/api.py::create_export_api |

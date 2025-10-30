@@ -19,3 +19,14 @@ def test_python_version_guard(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(RuntimeConfigurationError) as exc:
         ensure_python_311()
     assert "نسخهٔ پایتون پشتیبانی نمی‌شود" in str(exc.value)
+
+
+def test_python_patch_version_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch versions other than 3.11.9 must be rejected."""
+
+    monkeypatch.setattr(
+        sys, "version_info", SimpleNamespace(major=3, minor=11, micro=10)
+    )
+    with pytest.raises(RuntimeConfigurationError) as exc:
+        ensure_python_311()
+    assert "3.11.9" in str(exc.value)

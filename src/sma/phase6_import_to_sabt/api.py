@@ -17,7 +17,7 @@ from dateutil import parser
 from prometheus_client import generate_latest
 from uuid import uuid4
 
-from src.api.deps.idempotency import require_idempotency_key
+from sma.phase6_import_to_sabt.deps import require_idempotency_key
 
 from sma.phase7_release.deploy import CircuitBreaker, ReadinessGate, get_debug_context
 

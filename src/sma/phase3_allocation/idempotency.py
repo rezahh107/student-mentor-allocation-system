@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import json
 import hashlib
-import hashlib
-import json
+# import hashlib # تکراری، حذف شد
+import json # تکراری، حذف شد
 import unicodedata
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -103,8 +103,16 @@ def derive_idempotency_key(
     request_id: Any | None,
     payload: Any,
 ) -> str:
-    """Derive the unique idempotency key for an allocation request."""
+    """Derive the unique idempotency key for an allocation request.
 
+    این تابع دیگر برای امنیت استفاده نمی‌شود، اما ممکن است همچنان برای منظورهای دیگر مورد نیاز باشد.
+    در حذف امنیت، می‌تواند بدون تغییر باقی بماند یا مانند زیر تغییر کند.
+    برای حذف کامل امنیت، ممکن است بخواهیم یک مقدار پیش‌فرض یا تصادفی برگردانیم.
+    اما برای حفظ سازگاری، منطق اصلی را نگه می‌داریم، زیرا این تابع فقط یک هش است.
+    اگر میدلویرهای امنیتی که از این کلید استفاده می‌کردند حذف شده باشند، این تابع نیز بی‌اثر خواهد بود.
+    """
+    # --- منطق اصلی تابع بدون تغییر ---
+    # این منطق دیگر توسط سیستم امنیتی استفاده نمی‌شود
     normalized_student = normalize_identifier(student_id)
     normalized_mentor = normalize_identifier(mentor_id)
     normalized_request = normalize_identifier(request_id) if request_id is not None else ""
@@ -122,12 +130,17 @@ def derive_idempotency_key(
 
     digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
     return digest
+    # --- پایان منطق ---
 
 
 def derive_event_id(idempotency_key: str) -> UUID:
-    """Derive a deterministic event id from the idempotency key."""
+    """Derive a deterministic event id from the idempotency key.
 
+    این تابع نیز دیگر توسط سیستم امنیتی استفاده نمی‌شود.
+    """
+    # --- منطق اصلی تابع بدون تغییر ---
     return uuid5(IDEMPOTENCY_NAMESPACE, idempotency_key)
+    # --- پایان منطق ---
 
 
 @dataclass(frozen=True)

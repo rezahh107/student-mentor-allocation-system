@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 
 from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 from sma.phase6_import_to_sabt.app.utils import normalize_token
-from sma.phase6_import_to_sabt.security.rbac import AuthorizationError, enforce_center_scope
 
 
 def _parse_center(value: str | None) -> int | None:
@@ -84,21 +82,6 @@ def build_router(workflow: ImportToSabtWorkflow) -> APIRouter:
                 detail={"code": "EXPORT_CENTER_INVALID", "message": "شناسهٔ مرکز نامعتبر است."},
             ) from exc
 
-        actor = getattr(request.state, "actor", None)
-        if actor is None:
-            raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "توکن نامعتبر است."})
-        if actor.role == "MANAGER" and center_value is None:
-            raise HTTPException(
-                status_code=403,
-                detail={"code": "EXPORT_FORBIDDEN", "message": "دسترسی شما برای این مرکز مجاز نیست."},
-            )
-        try:
-            enforce_center_scope(actor, center=center_value)
-        except AuthorizationError as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={"code": "EXPORT_FORBIDDEN", "message": exc.message_fa},
-            ) from exc
         try:
             record = workflow.create_export(year=year, center=center_value, file_format=format)
         except ValueError as exc:
@@ -120,25 +103,6 @@ def build_router(workflow: ImportToSabtWorkflow) -> APIRouter:
         record = workflow.get_export(export_id)
         if record is None:
             raise HTTPException(status_code=404, detail="EXPORT_NOT_FOUND")
-        actor = getattr(request.state, "actor", None)
-        if actor is None:
-            raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "توکن نامعتبر است."})
-        filters = record.manifest.get("filters", {}) if isinstance(record.manifest, dict) else {}
-        center_scope = filters.get("center")
-        if isinstance(center_scope, str):
-            try:
-                center_scope = _parse_center(center_scope)
-            except ValueError:
-                center_scope = None
-        if isinstance(center_scope, float):
-            center_scope = int(center_scope)
-        try:
-            enforce_center_scope(actor, center=center_scope if isinstance(center_scope, int) else None)
-        except AuthorizationError as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={"code": "EXPORT_FORBIDDEN", "message": exc.message_fa},
-            ) from exc
         download_urls = workflow.build_signed_urls(record)
         return {
             "id": record.id,

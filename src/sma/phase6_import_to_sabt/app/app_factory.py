@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from importlib import resources
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
@@ -41,6 +41,13 @@ from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
 from sma.phase6_import_to_sabt.xlsx.router import build_router as create_xlsx_router
 from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 from sma.phase6_import_to_sabt.models import ExportFilters, ExportSnapshot
+from sma.phase6_import_to_sabt.app.security import (
+    AuthMiddleware,
+    IdempotencyMiddleware,
+    RateLimitMiddleware,
+)
+from sma.phase6_import_to_sabt.app.stores import InMemoryKeyValueStore, KeyValueStore
+from sma.phase6_import_to_sabt.models import SignedURLProvider
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +184,13 @@ def _build_default_workflow(
     )
 
 
-def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
+def configure_middleware(
+    app: FastAPI,
+    container: ApplicationContainer,
+    *,
+    rate_limit_store: KeyValueStore,
+    idempotency_store: KeyValueStore,
+) -> None:
     app.add_middleware(CorrelationIdMiddleware, clock=container.clock)
     app.add_middleware(
         MetricsMiddleware,
@@ -187,6 +200,20 @@ def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
     app.add_middleware(
         RequestLoggingMiddleware,
         diagnostics=lambda: getattr(app.state, "diagnostics", None),
+    )
+    app.add_middleware(
+        AuthMiddleware,
+        config=container.config.auth,
+    )
+    app.add_middleware(
+        IdempotencyMiddleware,
+        store=idempotency_store,
+    )
+    app.add_middleware(
+        RateLimitMiddleware,
+        store=rate_limit_store,
+        config=container.config.ratelimit,
+        clock=container.clock,
     )
 
 
@@ -202,6 +229,9 @@ def create_application(  # noqa: PLR0913, PLR0915
     export_runner: ExportJobRunner | None = None,
     export_metrics: ExporterMetrics | None = None,
     export_logger: ExportLogger | None = None,
+    rate_limit_store: KeyValueStore | None = None,
+    idempotency_store: KeyValueStore | None = None,
+    export_signer: SignedURLProvider | None = None,
 ) -> FastAPI:
     config = config or AppConfig.from_env()
     clock = clock or build_system_clock(config.timezone)
@@ -251,6 +281,15 @@ def create_application(  # noqa: PLR0913, PLR0915
     redoc_url = "/redoc"
     openapi_url = "/openapi.json"
 
+    rate_limit_store = rate_limit_store or InMemoryKeyValueStore(
+        namespace=f"{config.ratelimit.namespace}:ratelimit",
+        clock=clock,
+    )
+    idempotency_store = idempotency_store or InMemoryKeyValueStore(
+        namespace=f"{config.ratelimit.namespace}:idempotency",
+        clock=clock,
+    )
+
     app = FastAPI(
         title="ImportToSabt",
         docs_url=docs_url,
@@ -264,14 +303,19 @@ def create_application(  # noqa: PLR0913, PLR0915
     app.state.diagnostics = {
         "enabled": config.enable_diagnostics,
         "last_chain": [],
+        "last_rate_limit": None,
+        "last_idempotency": None,
+        "last_auth": None,
     }
     app.state.storage_root = storage_root
     app.state.metrics_collector = metrics_collector
     app.state.service_metrics = metrics
+    app.state.rate_limit_store = rate_limit_store
+    app.state.idempotency_store = idempotency_store
 
     export_api = ExportAPI(
         runner=export_runner,
-        signer=None,
+        signer=export_signer,
         metrics=export_metrics,
         logger=export_logger,
     )
@@ -285,7 +329,12 @@ def create_application(  # noqa: PLR0913, PLR0915
     app.state.xlsx_workflow = workflow
 
     install_error_handlers(app)
-    configure_middleware(app, container)
+    configure_middleware(
+        app,
+        container,
+        rate_limit_store=rate_limit_store,
+        idempotency_store=idempotency_store,
+    )
 
     @app.get("/healthz")
     async def healthz() -> dict[str, object]:
@@ -324,7 +373,20 @@ def create_application(  # noqa: PLR0913, PLR0915
         return JSONResponse(status_code=status_code, content=payload)
 
     @app.get("/metrics")
-    async def metrics_endpoint() -> PlainTextResponse:
+    async def metrics_endpoint(request: Request) -> PlainTextResponse:
+        header = request.headers.get("Authorization", "")
+        token = header.removeprefix("Bearer ").strip()
+        expected = container.config.auth.metrics_token
+        if expected and token != expected:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "fa_error_envelope": {
+                        "code": "METRICS_TOKEN_INVALID",
+                        "message": "دسترسی به متریک بدون توکن معتبر مجاز نیست.",
+                    }
+                },
+            )
         return PlainTextResponse(render_metrics(container.metrics).decode("utf-8"))
 
     if config.enable_diagnostics:

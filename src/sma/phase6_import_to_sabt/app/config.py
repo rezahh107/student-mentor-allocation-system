@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unicodedata
 from functools import lru_cache
+import unicodedata
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,6 +42,25 @@ class ObservabilityConfig(BaseModel):
     metrics_namespace: str = Field(default="import_to_sabt")
 
 
+class AuthConfig(BaseModel):
+    """Authentication tokens for service and metrics endpoints."""
+
+    metrics_token: str = Field(default="", description="Bearer token for /metrics endpoint")
+    service_token: str = Field(default="", description="Primary service bearer token")
+    tokens_env_var: str = Field(default="TOKENS")
+    download_signing_keys_env_var: str = Field(default="DOWNLOAD_SIGNING_KEYS")
+    download_url_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+
+
+class RateLimitConfig(BaseModel):
+    """Deterministic rate limit configuration for CI environments."""
+
+    namespace: str = Field(default="import-to-sabt-rate")
+    requests: int = Field(default=5, ge=1, le=1000)
+    window_seconds: int = Field(default=60, ge=1, le=3600)
+    penalty_seconds: int = Field(default=120, ge=1, le=3600)
+
+
 class AppConfig(BaseSettings):
     """Application settings with all security knobs disabled for local dev."""
 
@@ -53,6 +73,8 @@ class AppConfig(BaseSettings):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
+    ratelimit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     timezone: str = Field(default="Asia/Tehran")
     readiness_timeout_seconds: float = Field(default=0.5, ge=0.1, le=5.0)
     health_timeout_seconds: float = Field(default=0.2, ge=0.1, le=5.0)
@@ -100,6 +122,8 @@ __all__ = [
     "AppConfig",
     "DatabaseConfig",
     "ObservabilityConfig",
+    "AuthConfig",
+    "RateLimitConfig",
     "RedisConfig",
     "get_config",
 ]

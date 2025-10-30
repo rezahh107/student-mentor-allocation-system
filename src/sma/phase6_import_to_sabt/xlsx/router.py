@@ -16,8 +16,15 @@ def _parse_center(value: str | None) -> int | None:
         raise ValueError("center-format")
     number = int(normalized)
     if number <= 0:
-        raise ValueError("center-range")
+        return None
     return number
+
+
+def _with_chain(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    chain = getattr(request.state, "middleware_chain", None)
+    if chain:
+        payload["middleware_chain"] = list(chain)
+    return payload
 
 
 def build_router(workflow: ImportToSabtWorkflow) -> APIRouter:
@@ -36,11 +43,14 @@ def build_router(workflow: ImportToSabtWorkflow) -> APIRouter:
                 handle.write(chunk)
         record = workflow.create_upload(profile=profile, year=year, file_path=temp_path)
         temp_path.unlink(missing_ok=True)
-        return {
-            "id": record.id,
-            "status": record.status,
-            "manifest": record.manifest,
-        }
+        return _with_chain(
+            request,
+            {
+                "id": record.id,
+                "status": record.status,
+                "manifest": record.manifest,
+            },
+        )
 
     @router.get("/uploads/{upload_id}")
     async def get_upload(upload_id: str) -> dict[str, object]:
@@ -99,13 +109,16 @@ def build_router(workflow: ImportToSabtWorkflow) -> APIRouter:
                 "message": str(exc),
             }
             raise HTTPException(status_code=500, detail=detail) from exc
-        return {
-            "id": record.id,
-            "status": record.status,
-            "format": record.format,
-            "manifest": record.manifest,
-            "metadata": record.metadata,
-        }
+        return _with_chain(
+            request,
+            {
+                "id": record.id,
+                "status": record.status,
+                "format": record.format,
+                "manifest": record.manifest,
+                "metadata": record.metadata,
+            },
+        )
 
     @router.get("/exports/{export_id}")
     async def get_export(request: Request, export_id: str) -> dict[str, object]:
@@ -113,15 +126,18 @@ def build_router(workflow: ImportToSabtWorkflow) -> APIRouter:
         if record is None:
             raise HTTPException(status_code=404, detail="EXPORT_NOT_FOUND")
         download_urls = workflow.build_signed_urls(record)
-        return {
-            "id": record.id,
-            "status": record.status,
-            "format": record.format,
-            "files": record.files,
-            "download_urls": download_urls,
-            "manifest": record.manifest,
-            "metadata": record.metadata,
-        }
+        return _with_chain(
+            request,
+            {
+                "id": record.id,
+                "status": record.status,
+                "format": record.format,
+                "files": record.files,
+                "download_urls": download_urls,
+                "manifest": record.manifest,
+                "metadata": record.metadata,
+            },
+        )
 
     return router
 

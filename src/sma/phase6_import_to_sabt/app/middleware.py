@@ -72,6 +72,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         response = await call_next(request)
+        chain = list(getattr(request.state, "middleware_chain", []))
+        response.headers.setdefault("X-Middleware-Chain", ",".join(chain))
         logger.info(
             "request.completed",
             extra={
@@ -82,7 +84,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         )
         diagnostics = self._diagnostics_factory()
         if diagnostics and diagnostics.get("enabled"):
-            diagnostics["last_chain"] = []
+            diagnostics["last_chain"] = chain
+            diagnostics["last_rate_limit"] = getattr(request.state, "rate_limit_state", None)
+            diagnostics["last_idempotency"] = getattr(request.state, "idempotency_state", None)
+            diagnostics["last_auth"] = getattr(request.state, "auth_state", None)
         return response
 
 

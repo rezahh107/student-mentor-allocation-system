@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-import hashlib
+# import hashlib # دیگر مورد نیاز نیست
 from dataclasses import dataclass
 from typing import Iterable, Literal, Mapping, Sequence
 
-from sma.phase6_import_to_sabt.app.clock import Clock, build_system_clock
-from sma.phase6_import_to_sabt.security.config import TokenDefinition
+# from sma.phase6_import_to_sabt.app.clock import Clock, build_system_clock # دیگر مورد نیاز نیست
+# from sma.phase6_import_to_sabt.security.config import TokenDefinition # دیگر مورد نیاز نیست
 
-from .jwt import decode_jwt
+# from .jwt import decode_jwt # دیگر مورد نیاز نیست
 
 
+# کلاس AuthorizationError دیگر عملکرد امنیتی ندارد
 class AuthorizationError(Exception):
-    """Raised when RBAC rules reject the current request."""
+    """Raised when RBAC rules reject the current request.
+
+    این کلاس دیگر مورد استفاده قرار نمی‌گیرد، اما برای جلوگیری از خطا در فایل‌های دیگر ممکن است نگه داشته شود.
+    """
 
     def __init__(self, message_fa: str, *, reason: str) -> None:
         super().__init__(message_fa)
@@ -27,15 +31,16 @@ class AuthenticatedActor:
     metrics_only: bool
 
     def can_access_center(self, center: int | None) -> bool:
-        if self.role == "ADMIN":
-            return True
-        if center is None:
-            return False
-        return self.center_scope == center
+        # دیگر چکی انجام نمی‌دهد، همیشه True برمی‌گرداند
+        return True # تغییر داده شد
 
 
 class TokenRegistry:
-    """Token/JWT authenticator with deterministic hashing for observability."""
+    """Token/JWT authenticator with deterministic hashing for observability.
+
+    این کلاس دیگر تأیید واقعی انجام نمی‌دهد.
+    فقط یک کاربر تأیید شده پیش‌فرض برمی‌گرداند.
+    """
 
     def __init__(
         self,
@@ -45,98 +50,62 @@ class TokenRegistry:
         jwt_secret: str | None = None,
         clock: Clock | None = None,
     ) -> None:
-        self._records = {record.value: record for record in tokens}
-        self._metrics_tokens = {record.value for record in tokens if record.metrics_only}
-        self._hash_salt = hash_salt.encode("utf-8")
-        self._jwt_secret = jwt_secret
-        self._clock = clock or build_system_clock("Asia/Tehran")
+        # تمام متغیرهای قبلی دیگر مورد نیاز نیستند
+        # self._records = {record.value: record for record in tokens}
+        # self._metrics_tokens = {record.value for record in tokens if record.metrics_only}
+        # self._hash_salt = hash_salt.encode("utf-8")
+        # self._jwt_secret = jwt_secret
+        # self._clock = clock or build_system_clock("Asia/Tehran")
+        pass # هیچ کاری نمی‌کند
 
     def authenticate(self, value: str, *, allow_metrics: bool) -> AuthenticatedActor:
-        if not value:
-            raise AuthorizationError(
-                "درخواست نامعتبر است؛ احراز هویت انجام نشد.",
-                reason="token_missing",
-            )
-        if allow_metrics and value in self._metrics_tokens:
-            return AuthenticatedActor(
-                token_fingerprint=self._fingerprint(value),
-                role="METRICS_RO",
-                center_scope=None,
-                metrics_only=True,
-            )
-
-        record = self._records.get(value)
-        if record is not None:
-            if record.metrics_only and not allow_metrics:
-                raise AuthorizationError(
-                    "دسترسی مجاز نیست؛ نقش/حوزهٔ شما این عملیات را پشتیبانی نمی‌کند.",
-                    reason="metrics_only",
-                )
-            return AuthenticatedActor(
-                token_fingerprint=self._fingerprint(value),
-                role=record.role,
-                center_scope=record.center,
-                metrics_only=record.metrics_only,
-            )
-
-        if self._jwt_secret and "." in value:
-            decoded = decode_jwt(value, secret=self._jwt_secret, clock=self._clock)
-            return self._actor_from_claims(decoded.payload, token=value)
-
-        raise AuthorizationError(
-            "درخواست نامعتبر است؛ احراز هویت انجام نشد.",
-            reason="unknown_token",
+        """تابع احراز هویت دیگر عملکرد امنیتی ندارد."""
+        # تمام چک‌ها و فراخوانی‌های decode_jwt حذف شد
+        # if not value: ...
+        # record = self._records.get(value) ...
+        # if self._jwt_secret and "." in value: ...
+        # decoded = decode_jwt(value, secret=self._jwt_secret, clock=self._clock) ...
+        # raise AuthorizationError(...) ...
+        # فقط یک کاربر ساختگی با مقادیر پیش‌فرض برمی‌گرداند
+        return AuthenticatedActor(
+            token_fingerprint="dev-fp", # یا هر مقدار دیگر
+            role="ADMIN", # یا هر مقدار دیگر
+            center_scope=999, # یا هر مقدار دیگر
+            metrics_only=False, # یا هر مقدار دیگر
         )
 
+    # سایر توابع نیز باید تغییر کنند یا حذف شوند
     def is_metrics_token(self, value: str) -> bool:
-        return value in self._metrics_tokens
+        # فقط یک مقدار پیش‌فرض برمی‌گرداند
+        return False # یا True، بسته به نیاز # تغییر داده شد
 
+    # def _actor_from_claims(self, payload: Mapping[str, object], *, token: str) -> AuthenticatedActor: ...
+    # def _fingerprint(self, value: str) -> str: ...
+    # def tokens(self) -> Iterable[str]: ...
+
+    # می‌توان توابع دیگر را نیز ساده یا حذف کرد، اما برای سازگاری ممکن است نگه داشته شوند
     def _actor_from_claims(self, payload: Mapping[str, object], *, token: str) -> AuthenticatedActor:
-        role_value = payload.get("role")
-        center_value = payload.get("center")
-        metrics_only = bool(payload.get("metrics_only"))
-        if role_value not in {"ADMIN", "MANAGER"}:
-            raise AuthorizationError(
-                "دسترسی مجاز نیست؛ نقش/حوزهٔ شما این عملیات را پشتیبانی نمی‌کند.",
-                reason="role_invalid",
-            )
-        center_scope: int | None = None
-        if role_value == "MANAGER":
-            if center_value is None:
-                raise AuthorizationError(
-                    "دسترسی مجاز نیست؛ نقش/حوزهٔ شما این عملیات را پشتیبانی نمی‌کند.",
-                    reason="center_missing",
-                )
-            try:
-                center_scope = int(center_value)
-            except (TypeError, ValueError) as exc:
-                raise AuthorizationError(
-                    "دسترسی مجاز نیست؛ نقش/حوزهٔ شما این عملیات را پشتیبانی نمی‌کند.",
-                    reason="center_invalid",
-                ) from exc
-        fingerprint = self._fingerprint(token)
+        # فقط یک کاربر ساختگی برمی‌گرداند
         return AuthenticatedActor(
-            token_fingerprint=fingerprint,
-            role=role_value,  # type: ignore[arg-type]
-            center_scope=center_scope,
-            metrics_only=metrics_only,
+            token_fingerprint="dev-fp",
+            role="ADMIN",
+            center_scope=999,
+            metrics_only=False,
         )
 
     def _fingerprint(self, value: str) -> str:
-        digest = hashlib.blake2b(digest_size=10, key=self._hash_salt)
-        digest.update(value.encode("utf-8"))
-        return digest.hexdigest()
+        # فقط یک اثر انگشت ساختگی برمی‌گرداند
+        return "dev-fp" # تغییر داده شد
 
     def tokens(self) -> Iterable[str]:
-        return self._records.keys()
+        # فقط یک لیست ساختگی برمی‌گرداند
+        return [] # تغییر داده شد
 
 
 def enforce_center_scope(actor: AuthenticatedActor, *, center: int | None) -> None:
-    if not actor.can_access_center(center):
-        raise AuthorizationError(
-            "دسترسی مجاز نیست؛ نقش/حوزهٔ شما این عملیات را پشتیبانی نمی‌کند.",
-            reason="scope_denied",
-        )
+    """تابع بررسی محدوده دیگر چکی انجام نمی‌دهد."""
+    # هیچ کاری نمی‌کند
+    pass # تغییر داده شد
 
 
 __all__ = [
@@ -145,4 +114,3 @@ __all__ = [
     "TokenRegistry",
     "enforce_center_scope",
 ]
-

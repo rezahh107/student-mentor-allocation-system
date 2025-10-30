@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import asdict, dataclass
 from importlib import resources
 from pathlib import Path
 
@@ -37,7 +37,10 @@ from sma.phase6_import_to_sabt.obs.metrics import (
 )
 from sma.phase6_import_to_sabt.observability import MetricsCollector
 from sma.phase6_import_to_sabt.roster import InMemoryRoster
+from sma.phase6_import_to_sabt.xlsx.metrics import build_import_export_metrics
+from sma.phase6_import_to_sabt.xlsx.router import build_router as create_xlsx_router
 from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
+from sma.phase6_import_to_sabt.models import ExportFilters, ExportSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +138,45 @@ def _build_default_export_runner(
     )
 
 
+def _build_default_data_provider(
+    *,
+    export_runner: ExportJobRunner,
+    clock: Clock,
+) -> Callable[[int, int | None], list[dict[str, object]]]:
+    exporter = getattr(export_runner, "exporter", None)
+    if exporter is None:
+        return lambda year, center: []
+    data_source = getattr(exporter, "data_source", None)
+    if data_source is None:
+        return lambda year, center: []
+
+    def _provide(year: int, center: int | None) -> list[dict[str, object]]:
+        filters = ExportFilters(year=year, center=center)
+        snapshot = ExportSnapshot(marker=f"xlsx:{year}:{center or 'all'}", created_at=clock.now())
+        rows = data_source.fetch_rows(filters, snapshot)
+        return [asdict(row) for row in rows]
+
+    return _provide
+
+
+def _build_default_workflow(
+    *,
+    storage_root: Path,
+    clock: Clock,
+    export_runner: ExportJobRunner,
+) -> ImportToSabtWorkflow:
+    workflow_metrics = build_import_export_metrics()
+    workflow_storage = storage_root / "xlsx"
+    workflow_storage.mkdir(parents=True, exist_ok=True)
+    data_provider = _build_default_data_provider(export_runner=export_runner, clock=clock)
+    return ImportToSabtWorkflow(
+        storage_dir=workflow_storage,
+        clock=clock,
+        metrics=workflow_metrics,
+        data_provider=data_provider,
+    )
+
+
 def configure_middleware(app: FastAPI, container: ApplicationContainer) -> None:
     app.add_middleware(CorrelationIdMiddleware, clock=container.clock)
     app.add_middleware(
@@ -182,6 +224,13 @@ def create_application(  # noqa: PLR0913, PLR0915
             logger=export_logger,
         )
 
+    if workflow is None:
+        workflow = _build_default_workflow(
+            storage_root=storage_root,
+            clock=clock,
+            export_runner=export_runner,
+        )
+
     metrics_collector = MetricsCollector(metrics.registry)
 
     container = ApplicationContainer(
@@ -227,10 +276,13 @@ def create_application(  # noqa: PLR0913, PLR0915
         logger=export_logger,
     )
     app.include_router(export_api.create_router(), prefix="/api")
+    xlsx_router = create_xlsx_router(workflow)
+    app.include_router(xlsx_router, prefix="/api/xlsx")
     app.state.export_runner = export_runner
     app.state.export_metrics = export_metrics
     app.state.export_logger = export_logger
     app.state.export_readiness_gate = export_api.readiness_gate
+    app.state.xlsx_workflow = workflow
 
     install_error_handlers(app)
     configure_middleware(app, container)

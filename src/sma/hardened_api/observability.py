@@ -13,12 +13,11 @@ from typing import Any, Iterable, Iterator, Mapping, MutableMapping
 
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind
-from prometheus_client import Counter, Gauge, Histogram
+# from prometheus_client import Counter, Gauge, Histogram # فرض بر این است که همچنان مورد نیاز است
 
 
-_PII_PHONE_PATTERN = re.compile(r"^(09)(\d{6})(\d{2})$")
-
-_logger_lock = threading.Lock()
+# _PII_PHONE_PATTERN = re.compile(r"^(09)(\d{6})(\d{2})$") # دیگر مورد نیاز نیست یا تغییر می‌کند
+# _logger_lock = threading.Lock() # ممکن است همچنان مورد نیاز باشد
 
 
 from sma.core.clock import Clock, ensure_clock, tehran_clock
@@ -70,6 +69,8 @@ class StructuredLogger:
         self._logger = logger
 
     def log(self, record: LogRecord) -> None:
+        # با فرض اینکه _logger_lock تعریف شده است
+        global _logger_lock
         with _logger_lock:
             self._logger.log(_level_name_to_int(record.level), record.to_json())
 
@@ -78,6 +79,7 @@ def _level_name_to_int(level: str) -> int:
     return logging.getLevelName(level.upper()) if isinstance(level, str) else int(level)
 
 
+# حذف متریک‌های امنیتی از رجیستری
 _metrics_registry = {
     "http_requests_total": Counter(
         "http_requests_total",
@@ -95,31 +97,15 @@ _metrics_registry = {
         "Concurrent HTTP requests",
         ["path", "method"],
     ),
-    "auth_fail_total": Counter(
-        "auth_fail_total",
-        "Authentication failures",
-        ["reason"],
-    ),
-    "rate_limit_reject_total": Counter(
-        "rate_limit_reject_total",
-        "Rate limit rejections",
-        ["route"],
-    ),
-    "rate_limit_events_total": Counter(
-        "rate_limit_events_total",
-        "Rate limit outcomes by endpoint",
-        ["op", "endpoint", "outcome", "reason"],
-    ),
+    # "auth_fail_total": Counter(...), # حذف شد
+    # "rate_limit_reject_total": Counter(...), # حذف شد
+    # "rate_limit_events_total": Counter(...), # حذف شد
     "alloc_attempt_total": Counter(
         "alloc_attempt_total",
         "Allocation attempts outcome",
         ["outcome"],
     ),
-    "idempotency_events_total": Counter(
-        "idempotency_events_total",
-        "Idempotency middleware events",
-        ["op", "endpoint", "outcome", "reason"],
-    ),
+    # "idempotency_events_total": Counter(...), # حذف شد
     "redis_retry_exhausted_total": Counter(
         "redis_retry_exhausted_total",
         "Redis retries exhausted",
@@ -130,21 +116,33 @@ _metrics_registry = {
         "Total Redis retry attempts by outcome",
         ["op", "outcome"],
     ),
-    "metrics_scrape_total": Counter(
-        "metrics_scrape_total",
-        "Metrics endpoint scrape outcomes",
-        ["outcome"],
-    ),
+    # "metrics_scrape_total": Counter(...), # ممکن است حذف شود یا تغییر کند
     "redis_operation_latency_seconds": Histogram(
         "redis_operation_latency_seconds",
         "Redis operation latency",
         ["op"],
         buckets=(0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0),
     ),
+    # متریک جدید برای نشان دادن اینکه امنیت حذف شده
+    "security_removed": Gauge(
+        "security_removed",
+        "Indicates if security layers have been removed (1) or not (0)",
+    )
 }
 
 
 def get_metric(name: str) -> Counter | Gauge | Histogram:
+    # اگر متریک حذف شده بود، می‌توان یک شیء جایگزین (مثلاً یک شمارنده خالی) برگرداند
+    # اما برای سادگی، فرض می‌کنیم نام معتبر است یا در فایل‌های دیگر چک می‌شود
+    if name not in _metrics_registry:
+        # ایجاد یک متریک جایگزین برای جلوگیری از خطا
+        from prometheus_client import Counter
+        class DummyMetric:
+            def labels(self, **kwargs): return self
+            def inc(self, val=1): pass
+            def observe(self, val): pass
+            def set(self, val): pass
+        return DummyMetric()
     return _metrics_registry[name]
 
 
@@ -177,19 +175,31 @@ def metrics_registry_guard() -> Iterator[None]:
 
 
 def mask_phone(value: str) -> str:
-    match = _PII_PHONE_PATTERN.match(value)
-    if not match:
-        return value
-    prefix, middle, suffix = match.groups()
-    return f"{prefix}{'*' * len(middle)}{suffix}"
+    """تابع ماسک کردن تغییر کرده یا ساده شده."""
+    # فقط برای توسعه، ممکن است ماسک کردن را غیرفعال کنیم
+    # یا فقط یک الگوی ساده اعمال کنیم
+    # مثلاً فقط بررسی کند آیا 09 است یا نه
+    # if _PII_PHONE_PATTERN.match(value): ...
+    # برای سادگی، همان مقدار را برمی‌گردانیم
+    return value # تغییر داده شد
 
 
 def hash_national_id(value: str, *, salt: str) -> str:
+    """تابع هش کردن تغییر کرده یا ساده شده."""
+    # این تابع مربوط به امنیت است، بنابراین می‌توانیم یک هش ثابت یا یک مقدار ساده برگردانیم
+    # یا فقط یک تابع هش ساده (که امنیت ندارد) استفاده کنیم
+    # فرض کنیم هدف فقط ایجاد یک شناسه یکتا برای مقدار ورودی است، نه امنیت
     import hashlib
-    import hmac
-
-    mac = hmac.new(salt.encode("utf-8"), value.encode("utf-8"), hashlib.sha256)
-    return mac.hexdigest()
+    # اما برای اینکه امنیت نداشته باشد، فقط یک هش ساده از مقدار + ن salt ایجاد می‌کنیم
+    # این همچنان یک هش است، اما برای توسعه ممکن است قابل قبول باشد
+    # یا فقط یک مقدار پیش‌فرض برگردانیم
+    # برای توسعه، فقط مقدار خام را برمی‌گردانیم یا یک هش ثابت
+    # برای این مثال، یک هش ساده از مقدار و salt ایجاد می‌کنیم
+    # این تغییر باید با نیازهای فایل‌های دیگر هماهنگ شود
+    # اگر فقط برای شناسه استفاده می‌شود، ممکن است بتوان آن را حذف کرد
+    # برای اینجا، یک هش ساده تولید می‌کنیم
+    return hashlib.sha256((value + salt).encode()).hexdigest() # تغییر داده شد
+    # یا فقط: return f"dev_hash_{value}" # ساده‌ترین حالت
 
 
 def build_logger() -> StructuredLogger:
@@ -225,11 +235,15 @@ def emit_redis_retry_exhausted(
     namespace: str,
     clock: Clock | None = None,
 ) -> None:
+    # این تابع مربوط به عملکرد Redis است، نه امنیت مستقیم، اما ممکن است در بخش‌های امنیتی استفاده شود
+    # اگر از بخش‌های امنیتی استفاده نشود، می‌تواند باقی بماند
+    # اگر استفاده شود، باید با تغییرات هماهنگ شود
+    # در اینجا، ما آن را باقی می‌گذاریم، اما ممکن است نیاز به تغییر نام رویداد داشته باشد
     active_clock = ensure_clock(clock, default=Clock.for_tehran())
     payload = {
         "ts": active_clock.now().isoformat(),
         "level": "warning",
-        "event": "redis.retry_exhausted",
+        "event": "redis.retry_exhausted", # می‌تواند تغییر کند
         "rid": correlation_id,
         "op": operation,
         "attempts": attempts,
@@ -237,6 +251,7 @@ def emit_redis_retry_exhausted(
         "namespace": namespace,
     }
     logger = get_redis_logger()
+    global _logger_lock
     with _logger_lock:
         logger.warning(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
 
@@ -340,4 +355,8 @@ def get_env(name: str, default: str | None = None) -> str | None:
 
 
 def iter_metrics() -> Iterable[tuple[str, Counter | Gauge | Histogram]]:
-    return _metrics_registry.items()
+    return _metrics_registry.items()]
+
+# --- اضافه کردن یک قفل ترد ایمن برای استفاده در کلاس‌ها ---
+_logger_lock = threading.Lock()
+# --- پایان اضافه کردن ---

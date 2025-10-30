@@ -281,12 +281,14 @@ class ExportAPI:
     def _derive_legacy_idempotency_key(self, request: Request, candidate: str | None) -> str:
         if candidate:
             return candidate
-        correlation_id = (
-            getattr(request.state, "correlation_id", None)
-            or request.headers.get("X-Request-ID")
-            or "legacy-export"
+        correlation_id = getattr(request.state, "correlation_id", None) or request.headers.get(
+            "X-Request-ID"
         )
-        digest = blake2b(correlation_id.encode("utf-8"), digest_size=16).hexdigest()
+        if correlation_id:
+            source = correlation_id
+        else:
+            source = f"legacy-export:{uuid4()}"
+        digest = blake2b(source.encode("utf-8"), digest_size=16).hexdigest()
         return f"legacy-{digest}"
 
     @staticmethod
@@ -387,14 +389,11 @@ class ExportAPI:
         async def create_export(
             payload: ExportRequest,
             request: Request,
-            # _: None = Depends(rate_limit_dependency), # حذف شد
-            # idempotency_key: str = Depends(idempotency_dependency), # حذف شد
-            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), # جایگزین شد
-            # auth: tuple[str, Optional[int]] = Depends(auth_dependency), # حذف شد
-            role: str | None = Header(default=None, alias="X-Role"), # جایگزین شد
-            center_scope: Optional[int] = Header(default=None, alias="X-Center"), # جایگزین شد
+            _: None = Depends(rate_limit_dependency),
+            idempotency_key: str | None = Depends(idempotency_dependency),
+            auth: tuple[Optional[str], Optional[int]] = Depends(auth_dependency),
         ) -> ExportResponse:
-            # role, center_scope = auth # حذف شد
+            role, center_scope = auth
             return _submit_export_request(
                 request,
                 year=payload.year,
@@ -423,14 +422,11 @@ class ExportAPI:
             chunk_size: int | None = Query(default=None),
             bom: bool | None = Query(default=None),
             excel_mode: bool | None = Query(default=None),
-            # _: None = Depends(rate_limit_dependency), # حذف شد
-            # idempotency_hint: Optional[str] = Depends(optional_idempotency_dependency), # حذف شد
-            idempotency_hint: Optional[str] = Header(default=None, alias="Idempotency-Key"), # جایگزین شد
-            # auth: tuple[str, Optional[int]] = Depends(auth_dependency), # حذف شد
-            role: str | None = Header(default=None, alias="X-Role"), # جایگزین شد
-            center_scope: Optional[int] = Header(default=None, alias="X-Center"), # جایگزین شد
+            _: None = Depends(rate_limit_dependency),
+            idempotency_hint: Optional[str] = Depends(optional_idempotency_dependency),
+            auth: tuple[Optional[str], Optional[int]] = Depends(auth_dependency),
         ) -> JSONResponse:
-            # role, center_scope = auth # حذف شد
+            role, center_scope = auth
             derived_key = self._derive_legacy_idempotency_key(request, idempotency_hint)
             export_response = _submit_export_request(
                 request,

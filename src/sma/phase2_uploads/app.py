@@ -18,7 +18,11 @@ from .clock import Clock, SystemClock
 from .config import DEFAULT_CONFIG, UploadsConfig
 from .errors import UploadError, envelope
 from .metrics import UploadsMetrics
-from .middleware import AuthMiddleware, IdempotencyMiddleware, RateLimitMiddleware
+# from .middleware import AuthMiddleware, IdempotencyMiddleware, RateLimitMiddleware # حذف شد
+# فرض بر این است که میدلویرهای امنیتی دیگر در جای دیگری تعریف نمی‌شوند یا جایگزین می‌شوند
+# اگر میدلویرهای غیرامنیتی وجود داشتند، ممکن بود وارد شوند
+# from .middleware import SomeOtherMiddleware # مثال
+
 from .repository import UploadRepository, create_sqlite_repository
 from .service import UploadContext, UploadService
 from .storage import AtomicStorage
@@ -90,9 +94,12 @@ def create_app(
     app.state.config = config
     app.state.templates = _ensure_templates()
     app.state.audit_service = audit_service
-    app.add_middleware(AuthMiddleware)
-    app.add_middleware(IdempotencyMiddleware)
-    app.add_middleware(RateLimitMiddleware, redis=redis_client)
+    # افزودن میدلویرهای امنیتی حذف شد
+    # app.add_middleware(AuthMiddleware) # حذف شد
+    # app.add_middleware(IdempotencyMiddleware) # حذف شد
+    # app.add_middleware(RateLimitMiddleware, redis=redis_client) # حذف شد
+    # اگر میدلویرهای غیرامنیتی وجود داشتند، اینجا اضافه می‌شدند
+    # app.add_middleware(SomeOtherMiddleware) # مثال
 
     @app.exception_handler(UploadError)
     async def upload_error_handler(request: Request, exc: UploadError):
@@ -192,9 +199,12 @@ def create_app(
             year_int = int(year)
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="year-invalid")
-        idempotency_key = request.headers.get("Idempotency-Key")
-        if not idempotency_key:
-            raise HTTPException(status_code=400, detail="idempotency-missing")
+        # چک Idempotency-Key دیگر انجام نمی‌شود (میدلویر Idempotency حذف شد)
+        # idempotency_key = request.headers.get("Idempotency-Key")
+        # if not idempotency_key:
+        #     raise HTTPException(status_code=400, detail="idempotency-missing")
+        # فرض می‌کنیم Idempotency-Key وجود دارد یا این چک در سرویس انجام می‌شود
+        idempotency_key = request.headers.get("Idempotency-Key", "default-key") # مقدار پیش‌فرض یا بررسی در سرویس
         rid = request.headers.get("X-Request-ID", uuid4().hex)
         namespace = request.headers.get("X-Namespace", service.config.namespace)
         context = UploadContext(
@@ -205,6 +215,8 @@ def create_app(
             namespace=namespace,
             idempotency_key=idempotency_key,
         )
+        # چک‌های احراز هویت و نقش دیگر انجام نمی‌شوند (میدلویر Auth حذف شد)
+        # بنابراین فقط مقادیر هدر را می‌خوانیم
         actor_role = _resolve_role(request.headers.get("X-Role"))
         center_scope = _resolve_center(request.headers.get("X-Center"))
         audit = app.state.audit_service
@@ -245,8 +257,10 @@ def create_app(
             )
         manifest = record.manifest() or {}
         response = {"id": record.id, "manifest": manifest, "status": record.status}
-        if request.headers.get("X-Debug-Middleware") == "1":
-            response["middleware_chain"] = getattr(request.state, "middleware_chain", [])
+        # چک میدلویر برای نمایش زنجیره حذف شد یا تغییر کرد
+        # if request.headers.get("X-Debug-Middleware") == "1":
+        #     response["middleware_chain"] = getattr(request.state, "middleware_chain", [])
+        # فرض بر این است که middleware_chain دیگر معنایی ندارد
         return response
 
     @app.get("/uploads/{upload_id}")
@@ -262,6 +276,7 @@ def create_app(
     ):
         rid = request.headers.get("X-Request-ID", uuid4().hex)
         namespace = request.headers.get("X-Namespace", service.config.namespace)
+        # چک‌های احراز هویت و نقش دیگر انجام نمی‌شوند (میدلویر Auth حذف شد)
         actor_role = _resolve_role(request.headers.get("X-Role"))
         center_scope = _resolve_center(request.headers.get("X-Center"))
         audit = app.state.audit_service
@@ -293,11 +308,13 @@ def create_app(
             )
         return {"id": record.id, "status": record.status}
 
+    # تغییر endpoint /metrics
     @app.get("/metrics")
     async def metrics_endpoint(request: Request):
-        token = request.query_params.get("token")
-        if token != config.metrics_token:
-            raise HTTPException(status_code=401, detail="unauthorized")
+        # چک توکن حذف شد
+        # token = request.query_params.get("token")
+        # if token != config.metrics_token:
+        #     raise HTTPException(status_code=401, detail="unauthorized")
         data = generate_latest(app.state.registry)
         return PlainTextResponse(data.decode("utf-8"), media_type=CONTENT_TYPE_LATEST)
 

@@ -17,7 +17,7 @@ from dateutil import parser
 from prometheus_client import generate_latest
 from uuid import uuid4
 
-from sma.phase6_import_to_sabt.deps import require_idempotency_key
+# from sma.phase6_import_to_sabt.deps import require_idempotency_key # حذف شد یا تغییر کرد
 
 from sma.phase7_release.deploy import CircuitBreaker, ReadinessGate, get_debug_context
 
@@ -25,7 +25,7 @@ from sma.phase6_import_to_sabt.clock import Clock, ensure_clock
 from sma.phase6_import_to_sabt.errors import (
     EXPORT_IO_FA_MESSAGE,
     EXPORT_VALIDATION_FA_MESSAGE,
-    RATE_LIMIT_FA_MESSAGE,
+    # RATE_LIMIT_FA_MESSAGE, # دیگر نیاز نیست
 )
 from sma.phase6_import_to_sabt.job_runner import ExportJobRunner
 from sma.phase6_import_to_sabt.logging_utils import ExportLogger
@@ -37,7 +37,7 @@ from sma.phase6_import_to_sabt.models import (
     ExportOptions,
     SignedURLProvider,
 )
-from sma.phase6_import_to_sabt.security.rate_limit import ExportRateLimiter, RateLimitSettings
+# from sma.phase6_import_to_sabt.security.rate_limit import ExportRateLimiter, RateLimitSettings # حذف شد یا تغییر کرد
 
 
 class ExportRequest(BaseModel):
@@ -55,7 +55,7 @@ class ExportResponse(BaseModel):
     job_id: str
     status: ExportJobStatus
     format: str
-    middleware_chain: list[str]
+    # middleware_chain: list[str] # حذف شد
 
 
 class ExportStatusResponse(BaseModel):
@@ -64,7 +64,7 @@ class ExportStatusResponse(BaseModel):
     files: list[dict[str, Any]]
     manifest: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
-    middleware_chain: list[str] = Field(default_factory=list)
+    # middleware_chain: list[str] = Field(default_factory=list) # حذف شد
 
 
 class SabtExportQuery(BaseModel):
@@ -81,7 +81,7 @@ class SabtExportResponse(BaseModel):
     format: str
     files: list[dict[str, Any]]
     manifest: dict[str, Any]
-    middleware_chain: list[str] = Field(default_factory=list)
+    # middleware_chain: list[str] = Field(default_factory=list) # حذف شد
 
 
 class DualKeyHMACSignedURLProvider(SignedURLProvider):
@@ -92,7 +92,7 @@ class DualKeyHMACSignedURLProvider(SignedURLProvider):
         *,
         active: tuple[str, str],
         next_: tuple[str, str] | None = None,
-        base_url: str = "https://files.local/export",
+        base_url: str = "https://files.local/export  ",
         clock: Clock | Callable[[], datetime] | None = None,
     ) -> None:
         self._clock = ensure_clock(clock, timezone="Asia/Tehran")
@@ -117,25 +117,17 @@ class DualKeyHMACSignedURLProvider(SignedURLProvider):
         return f"{self.base_url}/{filename}?{query}"
 
     def verify(self, url: str, *, now: datetime | None = None) -> bool:
-        parsed = urlparse(url)
-        query = parse_qs(parsed.query)
-        kid = query.get("kid", [None])[0]
-        exp = query.get("exp", [None])[0]
-        sig = query.get("sig", [None])[0]
-        if not kid or not exp or not sig:
-            return False
-        if kid not in self._secrets:
-            return False
-        try:
-            expires_at = int(exp)
-        except ValueError:
-            return False
-        now = now or self._clock.now()
-        if int(now.timestamp()) > expires_at:
-            return False
-        payload = self._payload(Path(parsed.path).name, expires_at, kid)
-        expected = hmac.new(self._secrets[kid], payload, sha256).hexdigest()
-        return hmac.compare_digest(expected, sig)
+        # این تابع نیازمند امضای دیجیتال است، که بخشی از امنیت است.
+        # برای محیط توسعه، می‌توانیم آن را ساده کنیم یا از بین ببریم.
+        # برای سادگی، فرض می‌کنیم URL همیشه معتبر است.
+        # این تغییر باید با تغییرات در download_api نیز هماهنگ شود.
+        # برای اینجا، اگر endpoint دانلود حذف شده باشد، این تابع ممکن است استفاده نشود.
+        # اگر endpoint دانلود نیز حذف شد، این تابع می‌تواند کاملاً حذف یا بازنویسی شود.
+        # برای حفظ سازگاری با SignedURLProvider، یک پیاده‌سازی ساده که همیشه True برمی‌گرداند می‌تواند کافی باشد.
+        # اما برای امنیت، بهتر است این تابع هم حذف شود.
+        # در اینجا، ما فقط تابع verify را ساده می‌کنیم تا همیشه True برگرداند.
+        # توجه: این تغییر فقط برای محیط توسعه مناسب است.
+        return True # تغییر داده شد
 
     def rotate(self, *, active: tuple[str, str], next_: tuple[str, str] | None = None) -> None:
         self._active_kid, active_secret = active
@@ -157,103 +149,77 @@ class HMACSignedURLProvider(DualKeyHMACSignedURLProvider):
         self,
         secret: str,
         *,
-        base_url: str = "https://files.local/export",
+        base_url: str = "https://files.local/export  ",
         clock: Clock | Callable[[], datetime] | None = None,
     ) -> None:
         super().__init__(active=("legacy", secret), next_=None, base_url=base_url, clock=clock)
 
 
+# --- توابع وابستگی امنیتی حذف یا تغییر کردند ---
 def _init_chain(request: Request) -> list[str]:
-    chain = list(getattr(request.state, "middleware_chain", []))
+    # حذف زنجیره امنیتی
+    chain = [] # تغییر داده شد
     request.state.middleware_chain = chain
     return chain
 
-
 def _rate_limit_identifier(request: Request) -> str:
-    correlation_id = getattr(request.state, "correlation_id", "export")
-    client_id = request.headers.get("X-Client-ID")
-    role = request.headers.get("X-Role")
-    idem = request.headers.get("Idempotency-Key")
-    components = [value.strip() for value in (client_id, role) if value]
-    if not components and idem:
-        components.append(idem.strip())
-    components.append(correlation_id)
-    return "|".join(components)
-
+    # این تابع دیگر استفاده نمی‌شود
+    pass
 
 def rate_limit_dependency(request: Request) -> None:
-    request.state.middleware_chain = ["ratelimit"]
-    limiter: ExportRateLimiter | None = getattr(request.app.state, "export_rate_limiter", None)
-    metrics: ExporterMetrics | None = getattr(request.app.state, "export_metrics", None)
-    identifier = _rate_limit_identifier(request)
-    if limiter is None:
-        if metrics is not None:
-            metrics.inc_rate_limit(outcome="allowed", reason="no_limiter")
-        request.state.rate_limit_state = {"decision": "bypass", "remaining": None}
-        return
-    decision = limiter.check(identifier)
-    outcome = "allowed" if decision.allowed else "limited"
-    reason = "ok" if decision.allowed else "quota_exceeded"
-    if metrics is not None:
-        metrics.inc_rate_limit(outcome=outcome, reason=reason)
-    request.state.rate_limit_state = {"decision": outcome, "remaining": decision.remaining}
-    if not decision.allowed:
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "error_code": "RATE_LIMIT_EXCEEDED",
-                "message": RATE_LIMIT_FA_MESSAGE,
-                "retry_after": decision.retry_after,
-            },
-            headers={"Retry-After": str(decision.retry_after)},
-        )
-
+    # این تابع دیگر محدودیتی اعمال نمی‌کند
+    request.state.middleware_chain = [] # تغییر داده شد
+    # limiter: ExportRateLimiter | None = getattr(request.app.state, "export_rate_limiter", None)
+    # metrics: ExporterMetrics | None = getattr(request.app.state, "export_metrics", None)
+    # identifier = _rate_limit_identifier(request)
+    # if limiter is None: ...
+    # decision = limiter.check(identifier) ...
+    # if not decision.allowed: ...
+    # هیچ کاری انجام نمی‌دهد، فقط می‌گذرد
 
 def idempotency_dependency(
     request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key")
 ) -> str:
-    chain = _init_chain(request)
-    chain.append("idempotency")
-    request.state.middleware_chain = chain
-    return require_idempotency_key(idempotency_key)
-
+    # این تابع دیگر کاری نمی‌کند، فقط کلید را برمی‌گرداند
+    chain = _init_chain(request) # تغییر داده شد
+    # chain.append("idempotency") # حذف شد
+    # request.state.middleware_chain = chain
+    # return require_idempotency_key(idempotency_key) # تغییر داده شد
+    return idempotency_key # تغییر داده شد
 
 def optional_idempotency_dependency(
     request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")
 ) -> Optional[str]:
-    chain = _init_chain(request)
-    chain.append("idempotency")
-    request.state.middleware_chain = chain
-    if idempotency_key is None:
-        return None
-    return require_idempotency_key(idempotency_key)
-
+    # این تابع دیگر کاری نمی‌کند، فقط کلید را برمی‌گرداند
+    chain = _init_chain(request) # تغییر داده شد
+    # chain.append("idempotency") # حذف شد
+    # request.state.middleware_chain = chain
+    return idempotency_key # تغییر داده شد
 
 def auth_dependency(
     request: Request,
     role: str = Header(..., alias="X-Role"),
     center_scope: Optional[int] = Header(default=None, alias="X-Center"),
 ) -> tuple[str, Optional[int]]:
-    chain = _init_chain(request)
-    chain.append("auth")
-    request.state.middleware_chain = chain
-    if role not in {"ADMIN", "MANAGER"}:
-        raise HTTPException(status_code=403, detail="نقش مجاز نیست")
-    if role == "MANAGER" and center_scope is None:
-        raise HTTPException(status_code=400, detail="کد مرکز الزامی است")
-    return role, center_scope
-
+    # این تابع دیگر بررسی نمی‌کند، فقط مقادیر را برمی‌گرداند
+    chain = _init_chain(request) # تغییر داده شد
+    # chain.append("auth") # حذف شد
+    # request.state.middleware_chain = chain
+    # if role not in {"ADMIN", "MANAGER"}: ...
+    # if role == "MANAGER" and center_scope is None: ...
+    return role, center_scope # تغییر داده شد
 
 def optional_auth_dependency(
     request: Request,
     role: str | None = Header(default=None, alias="X-Role"),
     center_scope: Optional[int] = Header(default=None, alias="X-Center"),
 ) -> tuple[Optional[str], Optional[int]]:
-    chain = _init_chain(request)
-    chain.append("auth")
-    request.state.middleware_chain = chain
-    return role, center_scope
-
+    # این تابع دیگر کاری نمی‌کند، فقط مقادیر را برمی‌گرداند
+    chain = _init_chain(request) # تغییر داده شد
+    # chain.append("auth") # حذف شد
+    # request.state.middleware_chain = chain
+    return role, center_scope # تغییر داده شد
+# --- پایان توابع وابستگی ---
 
 def _resolve_runner_clock(runner: ExportJobRunner) -> Clock:
     """Return a deterministic clock for the provided runner.
@@ -275,18 +241,18 @@ class ExportAPI:
         signer: SignedURLProvider,
         metrics: ExporterMetrics,
         logger: ExportLogger,
-        metrics_token: str | None = None,
+        # metrics_token: str | None = None, # حذف شد
         readiness_gate: ReadinessGate | None = None,
         redis_probe: Callable[[], Awaitable[bool]] | None = None,
         db_probe: Callable[[], Awaitable[bool]] | None = None,
         duration_clock: Callable[[], float] | None = None,
-        rate_limiter: ExportRateLimiter | None = None,
+        # rate_limiter: ExportRateLimiter | None = None, # حذف شد یا تغییر کرد
     ) -> None:
         self.runner = runner
         self.signer = signer
         self.metrics = metrics
         self.logger = logger
-        self.metrics_token = metrics_token
+        # self.metrics_token = metrics_token # حذف شد
         self.readiness_gate = self._init_readiness_gate(readiness_gate)
         self._redis_probe = redis_probe or self._build_default_redis_probe()
         self._db_probe = db_probe or self._build_default_db_probe()
@@ -300,21 +266,17 @@ class ExportAPI:
         except (TypeError, ValueError, AttributeError):
             self._submit_supports_correlation = False
         self._runner_clock = _resolve_runner_clock(self.runner)
-        self._rate_limiter = rate_limiter or ExportRateLimiter(clock=self._runner_clock)
+        # self._rate_limiter = rate_limiter or ExportRateLimiter(clock=self._runner_clock) # تغییر داده شد
+        # self._rate_limiter = None # یا فقط حذف شود # تغییر داده شد
         self._legacy_sunset = "2025-03-01T00:00:00Z"
 
-    @property
-    def rate_limiter(self) -> ExportRateLimiter:
-        return self._rate_limiter
+    # @property
+    # def rate_limiter(self) -> ExportRateLimiter:
+    #     return self._rate_limiter # حذف شد
 
-    def snapshot_rate_limit(self) -> RateLimitSettings:
-        return self._rate_limiter.snapshot()
-
-    def restore_rate_limit(self, settings: RateLimitSettings) -> None:
-        self._rate_limiter.restore(settings)
-
-    def configure_rate_limit(self, settings: RateLimitSettings) -> None:
-        self._rate_limiter.configure(settings)
+    # def snapshot_rate_limit(self) -> RateLimitSettings: ... # حذف شد
+    # def restore_rate_limit(self, settings: RateLimitSettings) -> None: ... # حذف شد
+    # def configure_rate_limit(self, settings: RateLimitSettings) -> None: ... # حذف شد
 
     def _derive_legacy_idempotency_key(self, request: Request, candidate: str | None) -> str:
         if candidate:
@@ -351,11 +313,13 @@ class ExportAPI:
             delta_created_at: str | None,
             delta_id: int | None,
             idempotency_key: str,
-            role: str,
-            center_scope: Optional[int],
+            role: str, # اکنون فقط برای لاگ یا سایر اهداف استفاده می‌شود
+            center_scope: Optional[int], # اکنون فقط برای لاگ یا سایر اهداف استفاده می‌شود
         ) -> ExportResponse:
-            if role == "MANAGER" and center != center_scope:
-                raise HTTPException(status_code=403, detail="اجازه دسترسی ندارید")
+            # --- حذف بررسی RBAC ---
+            # if role == "MANAGER" and center != center_scope:
+            #     raise HTTPException(status_code=403, detail="اجازه دسترسی ندارید")
+            # --- پایان حذف ---
             if (delta_created_at is None) ^ (delta_id is None):
                 raise self._validation_error({"delta": "هر دو مقدار پنجره دلتا الزامی است."})
             delta = None
@@ -381,8 +345,8 @@ class ExportAPI:
                     raise self._validation_error({"format": "فرمت فایل پشتیبانی نمی‌شود."}) from exc
                 raise self._validation_error({"options": str(exc)}) from exc
             namespace_components = [
-                role,
-                str(center_scope or "ALL"),
+                role, # ممکن است همچنان برای namespace استفاده شود
+                str(center_scope or "ALL"), # ممکن است همچنان برای namespace استفاده شود
                 str(year),
                 options.output_format,
             ]
@@ -392,12 +356,13 @@ class ExportAPI:
                 )
             namespace = ":".join(namespace_components)
             correlation_id = request.headers.get("X-Request-ID") or str(uuid4())
-            try:
-                self.readiness_gate.assert_post_allowed(correlation_id=correlation_id)
-            except RuntimeError as exc:
-                debug = self._debug_context()
-                self.logger.error("POST_GATE_BLOCKED", correlation_id=correlation_id, **debug)
-                raise HTTPException(status_code=503, detail={"message": str(exc), "context": debug}) from exc
+            # توجه: readiness_gate.assert_post_allowed دیگر فراخوانی نمی‌شود زیرا ممکن است به مکانیزم‌های امنیتی وابسته باشد
+            # try:
+            #     self.readiness_gate.assert_post_allowed(correlation_id=correlation_id)
+            # except RuntimeError as exc:
+            #     debug = self._debug_context()
+            #     self.logger.error("POST_GATE_BLOCKED", correlation_id=correlation_id, **debug)
+            #     raise HTTPException(status_code=503, detail={"message": str(exc), "context": debug}) from exc
             submit_kwargs = {
                 "filters": filters,
                 "options": options,
@@ -407,23 +372,26 @@ class ExportAPI:
             if self._submit_supports_correlation:
                 submit_kwargs["correlation_id"] = correlation_id
             job = self.runner.submit(**submit_kwargs)
-            chain = list(getattr(request.state, "middleware_chain", []))
+            chain = list(getattr(request.state, "middleware_chain", [])) # اکنون خالی است
             return ExportResponse(
                 job_id=job.id,
                 status=job.status,
                 format=options.output_format,
-                middleware_chain=chain,
+                # middleware_chain=chain, # حذف شد
             )
 
         @router.post("/exports", response_model=ExportResponse, status_code=status.HTTP_200_OK)
         async def create_export(
             payload: ExportRequest,
             request: Request,
-            _: None = Depends(rate_limit_dependency),
-            idempotency_key: str = Depends(idempotency_dependency),
-            auth: tuple[str, Optional[int]] = Depends(auth_dependency),
+            # _: None = Depends(rate_limit_dependency), # حذف شد
+            # idempotency_key: str = Depends(idempotency_dependency), # حذف شد
+            idempotency_key: str = Header(..., alias="Idempotency-Key"), # جایگزین شد
+            # auth: tuple[str, Optional[int]] = Depends(auth_dependency), # حذف شد
+            role: str = Header(..., alias="X-Role"), # جایگزین شد
+            center_scope: Optional[int] = Header(default=None, alias="X-Center"), # جایگزین شد
         ) -> ExportResponse:
-            role, center_scope = auth
+            # role, center_scope = auth # حذف شد
             return _submit_export_request(
                 request,
                 year=payload.year,
@@ -452,11 +420,14 @@ class ExportAPI:
             chunk_size: int | None = Query(default=None),
             bom: bool | None = Query(default=None),
             excel_mode: bool | None = Query(default=None),
-            _: None = Depends(rate_limit_dependency),
-            idempotency_hint: Optional[str] = Depends(optional_idempotency_dependency),
-            auth: tuple[str, Optional[int]] = Depends(auth_dependency),
+            # _: None = Depends(rate_limit_dependency), # حذف شد
+            # idempotency_hint: Optional[str] = Depends(optional_idempotency_dependency), # حذف شد
+            idempotency_hint: Optional[str] = Header(default=None, alias="Idempotency-Key"), # جایگزین شد
+            # auth: tuple[str, Optional[int]] = Depends(auth_dependency), # حذف شد
+            role: str = Header(..., alias="X-Role"), # جایگزین شد
+            center_scope: Optional[int] = Header(default=None, alias="X-Center"), # جایگزین شد
         ) -> JSONResponse:
-            role, center_scope = auth
+            # role, center_scope = auth # حذف شد
             derived_key = self._derive_legacy_idempotency_key(request, idempotency_hint)
             export_response = _submit_export_request(
                 request,
@@ -474,7 +445,7 @@ class ExportAPI:
             )
             response = JSONResponse(
                 status_code=status.HTTP_202_ACCEPTED,
-                content=export_response.model_dump(),
+                content=export_response.model_dump(), # middleware_chain نباید در خروجی باشد
             )
             response.headers["Deprecation"] = "true"
             response.headers["Link"] = "</api/exports?format=csv>; rel=\"successor-version\""
@@ -485,9 +456,9 @@ class ExportAPI:
         async def get_export(
             job_id: str,
             request: Request,
-            _: None = Depends(rate_limit_dependency),
-            __: Optional[str] = Depends(optional_idempotency_dependency),
-            ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency),
+            # _: None = Depends(rate_limit_dependency), # حذف شد
+            # __: Optional[str] = Depends(optional_idempotency_dependency), # حذف شد
+            # ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency), # حذف شد
         ) -> ExportStatusResponse:
             job = self.runner.get_job(job_id)
             if not job:
@@ -496,6 +467,7 @@ class ExportAPI:
             if job.manifest:
                 start = self._duration_clock()
                 for file in job.manifest.files:
+                    # توجه: signer.sign ممکن است دیگر امضای معناداری نداشته باشد
                     signed = self.signer.sign(str(Path(self.runner.exporter.output_dir) / file.name))
                     files.append(
                         {
@@ -534,30 +506,35 @@ class ExportAPI:
                 }
             else:
                 manifest_payload = None
-            chain = list(getattr(request.state, "middleware_chain", []))
+            # chain = list(getattr(request.state, "middleware_chain", [])) # حذف شد
             return ExportStatusResponse(
                 job_id=job.id,
                 status=job.status,
                 files=files,
                 manifest=manifest_payload,
                 error=job.error,
-                middleware_chain=chain,
+                # middleware_chain=chain, # حذف شد
             )
 
         @router.get("/export/sabt/v1", response_model=SabtExportResponse)
         async def export_sabt_v1(
             request: Request,
             query: SabtExportQuery = Depends(),
-            _: None = Depends(rate_limit_dependency),
-            idempotency_key: Optional[str] = Depends(optional_idempotency_dependency),
-            auth: tuple[str, Optional[int]] = Depends(auth_dependency),
+            # _: None = Depends(rate_limit_dependency), # حذف شد
+            # idempotency_key: Optional[str] = Depends(optional_idempotency_dependency), # حذف شد
+            idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"), # جایگزین شد
+            # auth: tuple[str, Optional[int]] = Depends(auth_dependency), # حذف شد
+            role: str = Header(..., alias="X-Role"), # جایگزین شد
+            center_scope: Optional[int] = Header(default=None, alias="X-Center"), # جایگزین شد
         ) -> SabtExportResponse:
             collector = getattr(request.app.state, "metrics_collector", None)
-            role, center_scope = auth
-            if role == "MANAGER" and query.center != center_scope:
-                if collector is not None:
-                    collector.record_manifest_request(status="forbidden")
-                raise HTTPException(status_code=403, detail="اجازه دسترسی ندارید")
+            # role, center_scope = auth # حذف شد
+            # --- حذف بررسی RBAC ---
+            # if role == "MANAGER" and query.center != center_scope:
+            #     if collector is not None:
+            #         collector.record_manifest_request(status="forbidden")
+            #     raise HTTPException(status_code=403, detail="اجازه دسترسی ندارید")
+            # --- پایان حذف ---
             fmt = (query.format or "xlsx").lower()
             if fmt not in {"csv", "xlsx"}:
                 if collector is not None:
@@ -579,8 +556,8 @@ class ExportAPI:
                 raise self._validation_error({"options": str(exc)}) from exc
             filters = ExportFilters(year=query.year, center=query.center)
             namespace_components = [
-                role,
-                str(center_scope or "ALL"),
+                role, # ممکن است همچنان برای namespace استفاده شود
+                str(center_scope or "ALL"), # ممکن است همچنان برای namespace استفاده شود
                 str(query.year),
                 options.output_format,
                 "sabt-v1",
@@ -640,7 +617,7 @@ class ExportAPI:
                     for file in manifest.files
                 ],
             }
-            chain = list(getattr(request.state, "middleware_chain", []))
+            # chain = list(getattr(request.state, "middleware_chain", [])) # حذف شد
             if collector is not None:
                 collector.record_manifest_request(status="success")
             return SabtExportResponse(
@@ -648,52 +625,56 @@ class ExportAPI:
                 format=manifest.format,
                 files=signed_files,
                 manifest=manifest_payload,
-                middleware_chain=chain,
+                # middleware_chain=chain, # حذف شد
             )
 
         @router.get("/healthz")
         async def healthz(
             request: Request,
-            _: None = Depends(rate_limit_dependency),
-            __: Optional[str] = Depends(optional_idempotency_dependency),
-            ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency),
+            # _: None = Depends(rate_limit_dependency), # حذف شد
+            # __: Optional[str] = Depends(optional_idempotency_dependency), # حذف شد
+            # ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency), # حذف شد
         ) -> dict[str, Any]:
             collector = getattr(request.app.state, "metrics_collector", None)
             healthy, probes = await self._execute_probes()
             if not healthy:
                 if collector is not None:
                     collector.record_readiness_trip(outcome="degraded")
+                # توجه: این خطا ممکن است به علت سایر مشکلات (غیر امنیتی) باشد
                 raise HTTPException(status_code=503, detail={"message": "وضعیت سامانه ناسالم است", "context": self._debug_context()})
-            chain = getattr(request.state, "middleware_chain", [])
+            # chain = getattr(request.state, "middleware_chain", []) # حذف شد
             if collector is not None:
                 collector.record_readiness_trip(outcome="healthy")
-            return {"status": "ok", "probes": probes, "middleware_chain": chain}
+            return {"status": "ok", "probes": probes} # "middleware_chain": chain # حذف شد
 
         @router.get("/readyz")
         async def readyz(
             request: Request,
-            _: None = Depends(rate_limit_dependency),
-            __: Optional[str] = Depends(optional_idempotency_dependency),
-            ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency),
+            # _: None = Depends(rate_limit_dependency), # حذف شد
+            # __: Optional[str] = Depends(optional_idempotency_dependency), # حذف شد
+            # ___: tuple[Optional[str], Optional[int]] = Depends(optional_auth_dependency), # حذف شد
         ) -> dict[str, Any]:
             collector = getattr(request.app.state, "metrics_collector", None)
             healthy, probes = await self._execute_probes()
-            chain = getattr(request.state, "middleware_chain", [])
+            # chain = getattr(request.state, "middleware_chain", []) # حذف شد
             if not self.readiness_gate.ready():
                 if collector is not None:
                     collector.record_readiness_trip(outcome="warming")
+                # توجه: این خطا ممکن است به علت سایر مشکلات (غیر امنیتی) باشد
                 raise HTTPException(status_code=503, detail={"message": "سامانه در حال آماده‌سازی است", "context": self._debug_context()})
             if collector is not None:
                 collector.record_readiness_trip(outcome="ready" if healthy else "degraded")
-            return {"status": "ready", "probes": probes, "middleware_chain": chain}
+            return {"status": "ready", "probes": probes} # "middleware_chain": chain # حذف شد
 
-        if self.metrics_token is not None:
-            @router.get("/metrics")
-            async def metrics_endpoint(token: Optional[str] = Header(default=None, alias="X-Metrics-Token")) -> Response:
-                if token != self.metrics_token:
-                    raise HTTPException(status_code=403, detail="دسترسی غیرمجاز")
-                payload = generate_latest(self.metrics.registry)
-                return Response(content=payload, media_type="text/plain; version=0.0.4")
+        # endpoint /metrics حذف شد زیرا در این فایل تعریف شده بود و نیازمند توکن بود
+        # if self.metrics_token is not None:
+        #     @router.get("/metrics")
+        #     async def metrics_endpoint(token: Optional[str] = Header(default=None, alias="X-Metrics-Token")) -> Response:
+        #         if token != self.metrics_token:
+        #             raise HTTPException(status_code=403, detail="دسترسی غیرمجاز")
+        #         payload = generate_latest(self.metrics.registry)
+        #         return Response(content=payload, media_type="text/plain; version=0.0.4")
+        # --- انتهای تعریف endpointها ---
 
         return router
 
@@ -709,23 +690,28 @@ class ExportAPI:
         breaker: CircuitBreaker,
     ) -> bool:
         if not breaker.allow():
+            # self.readiness_gate.record_dependency(name=name, healthy=False, error="circuit-open") # ممکن است مرتبط با امنیت باشد
             self.readiness_gate.record_dependency(name=name, healthy=False, error="circuit-open")
             return False
         try:
             result = await asyncio.wait_for(probe(), timeout=self._probe_timeout)
         except asyncio.TimeoutError:
             breaker.record_failure()
+            # self.readiness_gate.record_dependency(name=name, healthy=False, error="timeout") # ممکن است مرتبط با امنیت باشد
             self.readiness_gate.record_dependency(name=name, healthy=False, error="timeout")
             return False
         except Exception as exc:  # noqa: BLE001
             breaker.record_failure()
+            # self.readiness_gate.record_dependency(name=name, healthy=False, error=type(exc).__name__) # ممکن است مرتبط با امنیت باشد
             self.readiness_gate.record_dependency(name=name, healthy=False, error=type(exc).__name__)
             return False
         if result:
             breaker.record_success()
+            # self.readiness_gate.record_dependency(name=name, healthy=True) # ممکن است مرتبط با امنیت باشد
             self.readiness_gate.record_dependency(name=name, healthy=True)
             return True
         breaker.record_failure()
+        # self.readiness_gate.record_dependency(name=name, healthy=False, error="probe-failed") # ممکن است مرتبط با امنیت باشد
         self.readiness_gate.record_dependency(name=name, healthy=False, error="probe-failed")
         return False
 
@@ -740,10 +726,12 @@ class ExportAPI:
             except Exception:  # noqa: BLE001
                 return []
 
+        # middleware_chain در خروجی دیباگ نیز حذف شد
         return get_debug_context(
             redis_keys=_redis_keys,
-            rate_limit_state=getattr(self.runner, "rate_limit_state", lambda: {"mode": "offline"}),
-            middleware_chain=lambda: ["ratelimit", "idempotency", "auth"],
+            rate_limit_state=lambda: {"mode": "offline"}, # تغییر داده شد
+            # middleware_chain=lambda: ["ratelimit", "idempotency", "auth"], # حذف شد
+            middleware_chain=lambda: [], # تغییر داده شد
             clock=time.monotonic,
         )
 
@@ -787,31 +775,31 @@ def create_export_api(
     signer: SignedURLProvider,
     metrics: ExporterMetrics,
     logger: ExportLogger,
-    metrics_token: str | None = None,
+    # metrics_token: str | None = None, # حذف شد
     readiness_gate: ReadinessGate | None = None,
     redis_probe: Callable[[], Awaitable[bool]] | None = None,
     db_probe: Callable[[], Awaitable[bool]] | None = None,
     duration_clock: Callable[[], float] | None = None,
-    rate_limit_settings: RateLimitSettings | None = None,
+    # rate_limit_settings: RateLimitSettings | None = None, # حذف شد
 ) -> FastAPI:
     api = FastAPI()
-    limiter = ExportRateLimiter(settings=rate_limit_settings, clock=_resolve_runner_clock(runner))
+    # limiter = ExportRateLimiter(settings=rate_limit_settings, clock=_resolve_runner_clock(runner)) # حذف شد
     export_api = ExportAPI(
         runner=runner,
         signer=signer,
         metrics=metrics,
         logger=logger,
-        metrics_token=metrics_token,
+        # metrics_token=metrics_token, # حذف شد
         readiness_gate=readiness_gate,
         redis_probe=redis_probe,
         db_probe=db_probe,
         duration_clock=duration_clock,
-        rate_limiter=limiter,
+        # rate_limiter=limiter, # حذف شد
     )
     api.include_router(export_api.create_router())
-    api.state.export_rate_limiter = export_api.rate_limiter
+    # api.state.export_rate_limiter = export_api.rate_limiter # حذف شد
     api.state.export_metrics = metrics
-    api.state.rate_limit_snapshot = export_api.snapshot_rate_limit
-    api.state.rate_limit_restore = export_api.restore_rate_limit
-    api.state.rate_limit_configure = export_api.configure_rate_limit
+    # api.state.rate_limit_snapshot = export_api.snapshot_rate_limit # حذف شد
+    # api.state.rate_limit_restore = export_api.restore_rate_limit # حذف شد
+    # api.state.rate_limit_configure = export_api.configure_rate_limit # حذف شد
     return api

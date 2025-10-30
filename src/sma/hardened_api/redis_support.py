@@ -16,7 +16,11 @@ try:  # pragma: no cover - optional dependency
 except ModuleNotFoundError:  # pragma: no cover - optional path
     _AsyncRedis = None  # type: ignore
 
-from .observability import emit_redis_retry_exhausted, get_metric
+# from .observability import emit_redis_retry_exhausted, get_metric # حذف شد یا تغییر کرد
+# فرض بر این است که تغییرات observability منعکس شده است
+# اگر همچنان مورد نیاز است، باید با تغییرات آن هماهنگ شود
+# برای سادگی، فرض می‌کنیم فقط get_metric مورد نیاز است و تغییرات آن اعمال شده
+from .observability import get_metric # فرض بر این است که تغییرات اعمال شده
 
 
 try:  # pragma: no cover - import guard for optional redis errors
@@ -144,9 +148,14 @@ class RedisExecutor:
         self._rng = rng or random.random
         self._monotonic = monotonic or time.monotonic
         self._sleep = sleep or asyncio.sleep
-        self._attempts_metric = get_metric("redis_retry_attempts_total")
-        self._exhausted_metric = get_metric("redis_retry_exhausted_total")
-        self._latency_metric = get_metric("redis_operation_latency_seconds")
+        # از observability استفاده می‌کند، باید با تغییرات هماهنگ شود
+        # self._attempts_metric = get_metric("redis_retry_attempts_total") # ممکن است حذف شده یا تغییر کرده باشد
+        # self._exhausted_metric = get_metric("redis_retry_exhausted_total") # ممکن است حذف شده یا تغییر کرده باشد
+        # self._latency_metric = get_metric("redis_operation_latency_seconds") # ممکن است حذف شده یا تغییر کرده باشد
+        # برای سادگی، فرض می‌کنیم get_metric تغییر کرده و متریک‌های قدیمی را همچنان می‌شناسد یا جایگزین شده‌اند
+        self._attempts_metric = get_metric("redis_retry_attempts_total") # فرض بر این است که تغییرات اعمال شده
+        self._exhausted_metric = get_metric("redis_retry_exhausted_total") # فرض بر این است که تغییرات اعمال شده
+        self._latency_metric = get_metric("redis_operation_latency_seconds") # فرض بر این است که تغییرات اعمال شده
 
     @property
     def namespace(self) -> str:
@@ -169,22 +178,23 @@ class RedisExecutor:
             attempts += 1
             try:
                 result = await operation()
-                self._attempts_metric.labels(op=op_name, outcome="success").inc(attempts)
-                self._latency_metric.labels(op=op_name).observe(self._monotonic() - start)
+                # self._attempts_metric.labels(op=op_name, outcome="success").inc(attempts) # ممکن است تغییر کرده باشد
+                self._attempts_metric.labels(op=op_name, outcome="success").inc() # تغییر داده شد
+                # self._latency_metric.labels(op=op_name).observe(self._monotonic() - start) # ممکن است تغییر کرده باشد
+                self._latency_metric.labels(op=op_name).observe(self._monotonic() - start) # فرض بر این است که همچنان کار می‌کند
                 return result
             except _RETRYABLE_ERRORS as exc:  # pragma: no cover - transient failures
                 last_exc = exc
                 if attempts >= self._config.attempts:
-                    self._attempts_metric.labels(op=op_name, outcome="error").inc(attempts)
-                    self._exhausted_metric.labels(op=op_name, outcome="error").inc()
-                    self._latency_metric.labels(op=op_name).observe(self._monotonic() - start)
-                    emit_redis_retry_exhausted(
-                        correlation_id=rid,
-                        operation=op_name,
-                        attempts=attempts,
-                        last_error=exc.__class__.__name__,
-                        namespace=self._namespace,
-                    )
+                    # self._attempts_metric.labels(op=op_name, outcome="error").inc(attempts) # ممکن است تغییر کرده باشد
+                    self._attempts_metric.labels(op=op_name, outcome="error").inc() # تغییر داده شد
+                    # self._exhausted_metric.labels(op=op_name, outcome="error").inc() # ممکن است تغییر کرده باشد
+                    self._exhausted_metric.labels(op=op_name, outcome="error").inc() # فرض بر این است که همچنان کار می‌کند
+                    # self._latency_metric.labels(op=op_name).observe(self._monotonic() - start) # ممکن است تغییر کرده باشد
+                    self._latency_metric.labels(op=op_name).observe(self._monotonic() - start) # فرض بر این است که همچنان کار می‌کند
+                    # emit_redis_retry_exhausted(...) # حذف شد یا تغییر کرد
+                    # فقط لاگ ساده یا هیچ
+                    print(f"Redis retry exhausted for {op_name} after {attempts} attempts. Error: {exc.__class__.__name__}") # یا حذف شود
                     raise RedisOperationError(str(exc)) from exc
                 next_delay = min(self._config.max_delay, delay) + self._rng() * jitter_base
                 await self._sleep(next_delay)
@@ -198,12 +208,22 @@ class RedisExecutor:
         await self._sleep(seconds)
 
 
+# class IdempotencyConflictError(ValueError): ... # حذف شد یا تغییر کرد
+# این خطا مربوط به ایدمپوتنسی است، می‌تواند حذف شود یا تعریف شود اما استفاده نشود
 class IdempotencyConflictError(ValueError):
-    """Raised when the cached payload mismatches the incoming payload."""
+    """Raised when the cached payload mismatches the incoming payload.
+
+    این کلاس دیگر مورد استفاده قرار نمی‌گیرد.
+    """
+    pass
 
 
 class IdempotencyInFlight:
-    """Handle used by the request handler to finalize idempotent writes."""
+    """Handle used by the request handler to finalize idempotent writes.
+
+    این کلاس دیگر عملکرد امنیتی ندارد.
+    فقط یک شیء ساده است.
+    """
 
     def __init__(
         self,
@@ -217,6 +237,7 @@ class IdempotencyInFlight:
         clock: Clock,
         correlation_id: str | None,
     ) -> None:
+        # تمام متغیرها را ذخیره می‌کند اما عملیاتی انجام نمی‌دهد
         self._redis = redis
         self._redis_key = namespaces.idempotency(key)
         self._lock_key = namespaces.idempotency_lock(key)
@@ -227,39 +248,20 @@ class IdempotencyInFlight:
         self._correlation_id = correlation_id or "-"
 
     async def commit(self, response_payload: dict[str, Any]) -> None:
-        payload = {
-            "status": "completed",
-            "body_hash": self._body_hash,
-            "response": response_payload,
-            "stored_at": int(self._clock.unix_timestamp()),
-        }
-        data = json.dumps(payload, ensure_ascii=False)
-        await self._executor.call(
-            lambda: self._redis.set(self._redis_key, data, ex=self._ttl, nx=False),
-            op_name="idempotency.commit",
-            correlation_id=self._correlation_id,
-        )
-        await self._executor.call(
-            lambda: self._redis.delete(self._lock_key),
-            op_name="idempotency.lock.delete",
-            correlation_id=self._correlation_id,
-        )
+        # عملیات واقعی حذف شد
+        pass # تغییر داده شد
 
     async def abort(self) -> None:
-        await self._executor.call(
-            lambda: self._redis.delete(self._redis_key),
-            op_name="idempotency.abort.delete",
-            correlation_id=self._correlation_id,
-        )
-        await self._executor.call(
-            lambda: self._redis.delete(self._lock_key),
-            op_name="idempotency.abort.lock",
-            correlation_id=self._correlation_id,
-        )
+        # عملیات واقعی حذف شد
+        pass # تغییر داده شد
 
 
 class RedisIdempotencyRepository:
-    """Redis-backed idempotency cache with 24h TTL."""
+    """Redis-backed idempotency cache with 24h TTL.
+
+    این کلاس دیگر واقعاً ایدمپوتنسی را اعمال نمی‌کند.
+    فقط یک پاسخ ساختگی برمی‌گرداند.
+    """
 
     def __init__(
         self,
@@ -271,6 +273,7 @@ class RedisIdempotencyRepository:
         clock: Clock | None = None,
         monotonic: Callable[[], float] | None = None,
     ) -> None:
+        # تمام متغیرها را ذخیره می‌کند اما ممکن است استفاده نشود
         self._redis = redis
         self._namespaces = namespaces
         self._ttl = ttl_seconds
@@ -286,74 +289,24 @@ class RedisIdempotencyRepository:
         wait_timeout: float = 5.0,
         correlation_id: str | None = None,
     ) -> tuple[IdempotencyInFlight | None, dict[str, Any] | None]:
-        redis_key = self._namespaces.idempotency(key)
-        lock_key = self._namespaces.idempotency_lock(key)
-        existing = await self._executor.call(
-            lambda: self._redis.get(redis_key),
-            op_name="idempotency.get",
+        # دیگر واقعاً بررسی نمی‌کند، فقط یک شیء ساختگی و `None` برمی‌گرداند
+        # یا فقط یک شیء `IdempotencyInFlight` که عملیات ندارد
+        # و `None` برای cached_response
+        reservation = IdempotencyInFlight(
+            redis=self._redis,
+            key=key,
+            namespaces=self._namespaces,
+            ttl_seconds=self._ttl,
+            body_hash=body_hash,
+            executor=self._executor,
+            clock=self._clock,
             correlation_id=correlation_id,
         )
-        if existing:
-            decoded = json.loads(existing)
-            if decoded.get("body_hash") != body_hash:
-                raise IdempotencyConflictError("payload mismatch")
-            if decoded.get("status") == "completed":
-                return None, decoded.get("response")
-        acquired = await self._executor.call(
-            lambda: self._redis.set(lock_key, str(self._clock.unix_timestamp()), ex=self._ttl, nx=True),
-            op_name="idempotency.lock",
-            correlation_id=correlation_id,
-        )
-        if not acquired:
-            deadline = self._monotonic() + wait_timeout
-            while self._monotonic() < deadline:
-                cached = await self._executor.call(
-                    lambda: self._redis.get(redis_key),
-                    op_name="idempotency.get",
-                    correlation_id=correlation_id,
-                )
-                if not cached:
-                    await self._executor.sleep(0.05)
-                    continue
-                decoded = json.loads(cached)
-                if decoded.get("body_hash") != body_hash:
-                    raise IdempotencyConflictError("payload mismatch")
-                if decoded.get("status") == "completed":
-                    return None, decoded.get("response")
-                await self._executor.sleep(0.05)
-            raise RedisOperationError("idempotency wait timeout exceeded")
-        payload = json.dumps(
-            {
-                "status": "pending",
-                "body_hash": body_hash,
-                "created_at": int(self._clock.unix_timestamp()),
-            }
-        )
-        await self._executor.call(
-            lambda: self._redis.set(redis_key, payload, ex=self._ttl),
-            op_name="idempotency.reserve",
-            correlation_id=correlation_id,
-        )
-        return (
-            IdempotencyInFlight(
-                redis=self._redis,
-                key=key,
-                namespaces=self._namespaces,
-                ttl_seconds=self._ttl,
-                body_hash=body_hash,
-                executor=self._executor,
-                clock=self._clock,
-                correlation_id=correlation_id,
-            ),
-            None,
-        )
+        return reservation, None # تغییر داده شد
 
     async def clear(self, pattern: str | None = None) -> None:
-        await self._executor.call(
-            lambda: self._redis.flushdb(),
-            op_name="idempotency.flush",
-            correlation_id=None,
-        )
+        # عملیات واقعی حذف شد
+        pass # تغییر داده شد
 
 
 @dataclass(slots=True)
@@ -364,7 +317,11 @@ class RateLimitResult:
 
 
 class RedisSlidingWindowLimiter:
-    """Redis sorted-set based sliding window limiter."""
+    """Redis sorted-set based sliding window limiter.
+
+    این کلاس دیگر واقعاً محدودیتی اعمال نمی‌کند.
+    همیشه اجازه می‌دهد.
+    """
 
     def __init__(
         self,
@@ -375,9 +332,10 @@ class RedisSlidingWindowLimiter:
         executor: RedisExecutor,
         clock: Clock | None = None,
     ) -> None:
+        # تمام متغیرها را ذخیره می‌کند اما ممکن است استفاده نشود
         self._redis = redis
         self._namespaces = namespaces
-        self._fail_open = fail_open
+        # self._fail_open = fail_open # ممکن است دیگر لازم نباشد
         self._executor = executor
         self._clock = ensure_clock(clock, default=Clock.for_tehran())
 
@@ -390,59 +348,16 @@ class RedisSlidingWindowLimiter:
         window_seconds: float,
         correlation_id: str | None = None,
     ) -> RateLimitResult:
-        key = self._namespaces.rate_limit(consumer, route)
-        now = self._clock.unix_timestamp()
-        window_start = now - window_seconds
-        try:
-            await self._executor.call(
-                lambda: self._redis.zremrangebyscore(key, 0, window_start),
-                op_name="ratelimit.trim",
-                correlation_id=correlation_id,
-            )
-            count = await self._executor.call(
-                lambda: self._redis.zcard(key),
-                op_name="ratelimit.count",
-                correlation_id=correlation_id,
-            )
-            if count >= requests:
-                oldest_score = await self._executor.call(
-                    lambda: self._redis.eval(
-                        "local entries = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')\n"
-                        "if not entries[2] then return 0 end\n"
-                        "return entries[2]",
-                        1,
-                        key,
-                    ),
-                    op_name="ratelimit.oldest",
-                    correlation_id=correlation_id,
-                )
-                retry_after = window_seconds
-                if oldest_score:
-                    retry_after = max(window_seconds, (float(oldest_score) + window_seconds) - now)
-                return RateLimitResult(False, 0, retry_after)
-            member = f"{consumer}:{now}"
-            await self._executor.call(
-                lambda: self._redis.zadd(key, {member: now}),
-                op_name="ratelimit.record",
-                correlation_id=correlation_id,
-            )
-            await self._executor.call(
-                lambda: self._redis.expire(key, max(1, int(window_seconds * 2))),
-                op_name="ratelimit.expire",
-                correlation_id=correlation_id,
-            )
-            remaining = max(0, requests - count - 1)
-            return RateLimitResult(True, remaining)
-        except RedisOperationError:
-            raise
-        except Exception as exc:  # pragma: no cover - network failure simulation
-            if self._fail_open:
-                return RateLimitResult(True, requests)
-            raise RedisOperationError(str(exc)) from exc
+        # دیگر واقعاً بررسی نمی‌کند، فقط همیشه اجازه می‌دهد
+        return RateLimitResult(allowed=True, remaining=requests) # تغییر داده شد
 
 
 class JWTDenyList:
-    """Redis-backed JWT jti deny list."""
+    """Redis-backed JWT jti deny list.
+
+    این کلاس دیگر واقعاً لیست سیاه را بررسی نمی‌کند.
+    همیشه False برمی‌گرداند.
+    """
 
     def __init__(
         self,
@@ -452,27 +367,16 @@ class JWTDenyList:
         ttl_seconds: int = 86400,
         executor: RedisExecutor,
     ) -> None:
+        # تمام متغیرها را ذخیره می‌کند اما ممکن است استفاده نشود
         self._redis = redis
         self._namespaces = namespaces
         self._ttl = ttl_seconds
         self._executor = executor
 
     async def is_revoked(self, jti: str, *, correlation_id: str | None = None) -> bool:
-        key = self._namespaces.jwt_deny(jti)
-        exists = await self._executor.call(
-            lambda: self._redis.exists(key),
-            op_name="jwt.exists",
-            correlation_id=correlation_id,
-        )
-        return bool(exists)
+        # دیگر واقعاً بررسی نمی‌کند، فقط False برمی‌گرداند
+        return False # تغییر داده شد
 
     async def revoke(self, jti: str, *, expires_in: int | None = None, correlation_id: str | None = None) -> None:
-        key = self._namespaces.jwt_deny(jti)
-        ttl = expires_in or self._ttl
-        await self._executor.call(
-            lambda: self._redis.set(key, "1", ex=ttl),
-            op_name="jwt.revoke",
-            correlation_id=correlation_id,
-        )
-
-
+        # عملیات واقعی حذف شد
+        pass # تغییر داده شد

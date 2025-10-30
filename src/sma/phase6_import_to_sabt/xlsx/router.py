@@ -4,8 +4,8 @@ import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 
-from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 from sma.phase6_import_to_sabt.app.utils import normalize_token
+from sma.phase6_import_to_sabt.xlsx.workflow import ImportToSabtWorkflow
 
 
 def _parse_center(value: str | None) -> int | None:
@@ -28,7 +28,7 @@ def build_router(workflow: ImportToSabtWorkflow) -> APIRouter:
         request: Request,
         profile: str = Form(...),
         year: int = Form(...),
-        file: UploadFile = File(...),
+        file: UploadFile = File(...),  # noqa: B008
     ) -> dict[str, object]:
         temp_path = workflow.storage_dir / f"upload-{uuid.uuid4().hex}.tmp"
         with temp_path.open("wb") as handle:
@@ -36,12 +36,10 @@ def build_router(workflow: ImportToSabtWorkflow) -> APIRouter:
                 handle.write(chunk)
         record = workflow.create_upload(profile=profile, year=year, file_path=temp_path)
         temp_path.unlink(missing_ok=True)
-        chain = getattr(request.state, "middleware_chain", [])
         return {
             "id": record.id,
             "status": record.status,
             "manifest": record.manifest,
-            "middleware_chain": chain,
         }
 
     @router.get("/uploads/{upload_id}")
@@ -77,25 +75,36 @@ def build_router(workflow: ImportToSabtWorkflow) -> APIRouter:
         try:
             center_value = _parse_center(center)
         except ValueError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "EXPORT_CENTER_INVALID", "message": "شناسهٔ مرکز نامعتبر است."},
-            ) from exc
+            detail = {
+                "code": "EXPORT_CENTER_INVALID",
+                "message": "شناسهٔ مرکز نامعتبر است.",
+            }
+            raise HTTPException(status_code=400, detail=detail) from exc
 
         try:
-            record = workflow.create_export(year=year, center=center_value, file_format=format)
+            record = workflow.create_export(
+                year=year,
+                center=center_value,
+                file_format=format,
+            )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"code": "EXPORT_VALIDATION_ERROR", "message": str(exc)}) from exc
+            detail = {
+                "code": "EXPORT_VALIDATION_ERROR",
+                "message": str(exc),
+            }
+            raise HTTPException(status_code=400, detail=detail) from exc
         except RuntimeError as exc:
-            raise HTTPException(status_code=500, detail={"code": "EXPORT_IO_ERROR", "message": str(exc)}) from exc
-        chain = getattr(request.state, "middleware_chain", [])
+            detail = {
+                "code": "EXPORT_IO_ERROR",
+                "message": str(exc),
+            }
+            raise HTTPException(status_code=500, detail=detail) from exc
         return {
             "id": record.id,
             "status": record.status,
             "format": record.format,
             "manifest": record.manifest,
             "metadata": record.metadata,
-            "middleware_chain": chain,
         }
 
     @router.get("/exports/{export_id}")

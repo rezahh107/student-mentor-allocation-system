@@ -1,41 +1,38 @@
 from __future__ import annotations
 
-from functools import lru_cache
 import unicodedata
-from typing import Optional
+from functools import lru_cache
 
-import sma.core.clock as core_clock
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+import sma.core.clock as core_clock
 
 _PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
 _ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 _ZERO_WIDTH = ("\u200c", "\u200d", "\ufeff")
 _MAX_TZ_LENGTH = 255
-_TZ_ERROR = "CONFIG_TZ_INVALID: «مقدار TIMEZONE نامعتبر است؛ لطفاً یک ناحیهٔ زمانی IANA معتبر وارد کنید.»"
-
-
-class RateLimitConfig(BaseModel):
-    namespace: str = Field(default="imports")
-    requests: int = Field(default=30, ge=1)
-    window_seconds: int = Field(default=60, ge=1)
-    penalty_seconds: int = Field(default=120, ge=1)
-
-
-class AuthConfig(BaseModel):
-    tokens_env_var: str = Field(default="TOKENS", min_length=3)
-    download_signing_keys_env_var: str = Field(default="DOWNLOAD_SIGNING_KEYS", min_length=8)
-    download_url_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
+_TZ_ERROR = (
+    "CONFIG_TZ_INVALID: «مقدار TIMEZONE نامعتبر است؛ لطفاً یک ناحیهٔ زمانی "
+    "IANA معتبر وارد کنید.»"
+)
 
 
 class RedisConfig(BaseModel):
-    dsn: str = Field(..., description="Redis connection string")
+    """Minimal Redis settings for local development."""
+
+    dsn: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis connection string (optional in dev).",
+    )
     namespace: str = Field(default="import_to_sabt")
     operation_timeout: float = Field(default=0.2, ge=0.05, le=2.0)
 
 
 class DatabaseConfig(BaseModel):
-    dsn: str = Field(...)
+    """Database connection configuration."""
+
+    dsn: str = Field(default="postgresql://localhost:5432/import_to_sabt")
     statement_timeout_ms: int = Field(default=500, ge=100, le=10_000)
 
 
@@ -45,16 +42,16 @@ class ObservabilityConfig(BaseModel):
 
 
 class AppConfig(BaseSettings):
+    """Application settings with all security knobs disabled for local dev."""
+
     model_config = SettingsConfigDict(
         env_prefix="IMPORT_TO_SABT_",
-        env_nested_delimiter="__",  # برای پارس متغیرهای تودرتو به فرم SECTION__FIELD
+        env_nested_delimiter="__",
         extra="forbid",
     )
 
-    redis: RedisConfig
-    database: DatabaseConfig
-    auth: AuthConfig
-    ratelimit: RateLimitConfig = Field(default_factory=RateLimitConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     timezone: str = Field(default="Asia/Tehran")
     readiness_timeout_seconds: float = Field(default=0.5, ge=0.1, le=5.0)
@@ -87,9 +84,8 @@ class AppConfig(BaseSettings):
 
         return normalized
 
-
     @classmethod
-    def from_env(cls) -> "AppConfig":
+    def from_env(cls) -> AppConfig:
         """Load configuration from environment variables deterministically."""
 
         return cls()  # type: ignore[call-arg]
@@ -102,10 +98,8 @@ def get_config() -> AppConfig:
 
 __all__ = [
     "AppConfig",
-    "AuthConfig",
     "DatabaseConfig",
     "ObservabilityConfig",
-    "RateLimitConfig",
     "RedisConfig",
     "get_config",
 ]

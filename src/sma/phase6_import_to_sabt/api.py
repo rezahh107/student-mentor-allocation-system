@@ -17,6 +17,8 @@ from dateutil import parser
 from prometheus_client import generate_latest
 from uuid import uuid4
 
+from src.api.deps.idempotency import require_idempotency_key
+
 from sma.phase7_release.deploy import CircuitBreaker, ReadinessGate, get_debug_context
 
 from sma.phase6_import_to_sabt.clock import Clock, ensure_clock
@@ -207,11 +209,13 @@ def rate_limit_dependency(request: Request) -> None:
         )
 
 
-def idempotency_dependency(request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key")) -> str:
+def idempotency_dependency(
+    request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key")
+) -> str:
     chain = _init_chain(request)
     chain.append("idempotency")
     request.state.middleware_chain = chain
-    return idempotency_key
+    return require_idempotency_key(idempotency_key)
 
 
 def optional_idempotency_dependency(
@@ -220,7 +224,9 @@ def optional_idempotency_dependency(
     chain = _init_chain(request)
     chain.append("idempotency")
     request.state.middleware_chain = chain
-    return idempotency_key
+    if idempotency_key is None:
+        return None
+    return require_idempotency_key(idempotency_key)
 
 
 def auth_dependency(
@@ -409,7 +415,7 @@ class ExportAPI:
                 middleware_chain=chain,
             )
 
-        @router.post("/exports", response_model=ExportResponse, status_code=status.HTTP_202_ACCEPTED)
+        @router.post("/exports", response_model=ExportResponse, status_code=status.HTTP_200_OK)
         async def create_export(
             payload: ExportRequest,
             request: Request,

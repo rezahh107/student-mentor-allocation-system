@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
-from typing import Dict, Tuple
-
-from sma.phase6_import_to_sabt.clock import Clock, ensure_clock
+# import hashlib # دیگر مورد نیاز نیست
+# from typing import Dict, Tuple # دیگر مورد نیاز نیست
+# from sma.phase6_import_to_sabt.clock import Clock, ensure_clock # دیگر مورد نیاز نیست
 
 
 @dataclass(frozen=True)
 class RateLimitSettings:
-    """User-configurable rate-limit knobs with deterministic cloning support."""
+    """User-configurable rate-limit knobs with deterministic cloning support.
+
+    این کلاس دیگر مورد استفاده قرار نمی‌گیرد، اما برای جلوگیری از خطا در فایل‌های دیگر ممکن است نگه داشته شود.
+    """
 
     requests: int = 30
     window_seconds: int = 60
@@ -33,7 +35,11 @@ class RateLimitDecision:
 
 
 class ExportRateLimiter:
-    """Minimal in-memory limiter with deterministic hashing and cloning."""
+    """Minimal in-memory limiter with deterministic hashing and cloning.
+
+    این کلاس دیگر محدودیتی اعمال نمی‌کند.
+    همیشه اجازه می‌دهد.
+    """
 
     def __init__(
         self,
@@ -41,47 +47,32 @@ class ExportRateLimiter:
         settings: RateLimitSettings | None = None,
         clock: Clock | None = None,
     ) -> None:
-        self._settings = (settings or RateLimitSettings()).snapshot()
-        self._clock = ensure_clock(clock, timezone="Asia/Tehran")
-        self._counters: Dict[Tuple[str, int], int] = {}
+        # self._settings = (settings or RateLimitSettings()).snapshot() # دیگر مورد نیاز نیست
+        # self._clock = ensure_clock(clock, timezone="Asia/Tehran") # دیگر مورد نیاز نیست
+        # self._counters: Dict[Tuple[str, int], int] = {} # دیگر مورد نیاز نیست
+        pass # هیچ کاری نمی‌کند
 
     @property
     def settings(self) -> RateLimitSettings:
-        return self._settings
+        # فقط یک نمونه پیش‌فرض برمی‌گرداند
+        return RateLimitSettings()
 
     def snapshot(self) -> RateLimitSettings:
-        return self._settings.snapshot()
+        # فقط یک نمونه پیش‌فرض برمی‌گرداند
+        return RateLimitSettings()
 
     def restore(self, settings: RateLimitSettings) -> None:
-        self.configure(settings)
+        # هیچ کاری نمی‌کند
+        pass
 
     def configure(self, settings: RateLimitSettings) -> None:
-        if settings.requests < 1:
-            raise ValueError("requests must be positive")
-        if settings.window_seconds < 1:
-            raise ValueError("window_seconds must be positive")
-        if settings.penalty_seconds < 1:
-            raise ValueError("penalty_seconds must be positive")
-        self._settings = settings.snapshot()
-        self._counters.clear()
+        # هیچ کاری نمی‌کند
+        pass
 
     def check(self, identifier: str) -> RateLimitDecision:
-        now = int(self._clock.now().timestamp())
-        window = now // self._settings.window_seconds
-        hashed = hashlib.sha256(identifier.encode("utf-8")).hexdigest()
-        key = (hashed, window)
-        count = self._counters.get(key, 0) + 1
-        self._counters[key] = count
-        self._cleanup(window)
-        remaining = max(self._settings.requests - count, 0)
-        if count > self._settings.requests:
-            return RateLimitDecision(False, self._settings.penalty_seconds, remaining)
-        return RateLimitDecision(True, 0, remaining)
-
-    def _cleanup(self, current_window: int) -> None:
-        expired = [key for key in self._counters if key[1] < current_window]
-        for key in expired:
-            self._counters.pop(key, None)
+        """تابع بررسی دیگر محدودیتی اعمال نمی‌کند."""
+        # همیشه اجازه می‌دهد
+        return RateLimitDecision(allowed=True, retry_after=0, remaining=999999)
 
 
 __all__ = ["ExportRateLimiter", "RateLimitDecision", "RateLimitSettings"]

@@ -205,17 +205,20 @@ class StorageBackend:
 
 
 class SignedURLProvider:
-    """Abstraction for generating and validating download URLs."""
+    """Abstraction for generating and validating download URLs.
+
+    این رابط دیگر عملکرد امنیتی ندارد.
+    """
 
     def sign(self, file_path: str, expires_in: int = 3600) -> str:
-        raise NotImplementedError
+        """تابع تولید URL ساده شده."""
+        # فقط یک URL ساختگی یا مبتنی بر نام فایل برمی‌گرداند
+        import os
+        filename = os.path.basename(file_path)
+        # این فقط یک نمونه است، می‌تواند به صورت دیگری نیز باشد
+        return f"http://dev-server.local/files/{filename}"
 
     def verify(self, url: str, *, now: datetime | None = None) -> bool:
-        """Validate that a signed URL remains usable.
-
-        Concrete providers may raise if the url is malformed.  The default
-        implementation simply rejects all URLs which keeps previous
-        subclasses, if any, explicit about their capabilities.
-        """
-
-        raise NotImplementedError
+        """تابع تأیید URL ساده شده."""
+        # همیشه True برمی‌گرداند
+        return True

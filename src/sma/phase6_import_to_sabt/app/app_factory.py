@@ -341,7 +341,6 @@ def create_application(
         signer=None, # تغییر داده شد
         metrics=export_metrics,
         logger=export_logger,
-        metrics_token=None, # تغییر داده شد
     )
     app.include_router(export_api.create_router(), prefix="/api")
     app.state.export_runner = export_runner

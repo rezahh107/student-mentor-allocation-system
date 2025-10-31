@@ -287,7 +287,7 @@ class ExportAPI:
         if correlation_id:
             source = correlation_id
         else:
-            source = f"legacy-export:{uuid4()}"
+            source = "legacy-export"
         digest = blake2b(source.encode("utf-8"), digest_size=16).hexdigest()
         return f"legacy-{digest}"
 

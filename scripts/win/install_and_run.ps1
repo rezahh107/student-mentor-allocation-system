@@ -576,14 +576,9 @@ else {
 
 Ensure-Var -Path $envPath -Key 'IMPORT_TO_SABT_REDIS__DSN' -Value 'redis://127.0.0.1:6379/0' | Out-Null
 Ensure-Var -Path $envPath -Key 'IMPORT_TO_SABT_DATABASE__DSN' -Value 'postgresql+psycopg://postgres:postgres@127.0.0.1:5432/student_mentor' | Out-Null
-if ($MetricsToken) {
-    Ensure-Var -Path $envPath -Key 'IMPORT_TO_SABT_AUTH__METRICS_TOKEN' -Value $MetricsToken | Out-Null
-}
-else {
-    Ensure-Var -Path $envPath -Key 'IMPORT_TO_SABT_AUTH__METRICS_TOKEN' -Value 'dev-metrics-token' | Out-Null
-}
 Ensure-Var -Path $envPath -Key 'IMPORT_TO_SABT_AUTH__SERVICE_TOKEN' -Value 'dev-service-token' | Out-Null
 Ensure-Var -Path $envPath -Key 'IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS' -Value 'true' | Out-Null
+Ensure-Var -Path $envPath -Key 'METRICS_ENDPOINT_ENABLED' -Value 'true' | Out-Null
 
 Clear-StaleImportEnv
 
@@ -736,16 +731,19 @@ else {
     Invoke-Web -Uri "$baseUrl/docs" -Label '/docs (expected 401/403)' -ExpectedStatus 401 | Out-Null
 }
 
-Invoke-Web -Uri "$baseUrl/metrics" -Label '/metrics (no token)' -ExpectedStatus 403 | Out-Null
-$metricsTokenValue = Get-DotEnvValue -Path $envPath -Key 'IMPORT_TO_SABT_AUTH__METRICS_TOKEN'
-if (-not $metricsTokenValue) {
-    Write-Result -Status 'FAIL' -Message 'IMPORT_TO_SABT_AUTH__METRICS_TOKEN missing; cannot probe /metrics'
-    if ($job -and ($job.State -eq 'Running')) { Stop-Job -Job $job -Force }
-    Save-CiArtifacts
-    exit 1
+$metricsFlagValue = Get-DotEnvValue -Path $envPath -Key 'METRICS_ENDPOINT_ENABLED'
+$metricsFlagEnabled = $false
+if ($metricsFlagValue) {
+    $normalized = $metricsFlagValue.Trim().ToLower()
+    $metricsFlagEnabled = $normalized -in @('1','true','yes','on')
 }
-Invoke-Web -Uri "$baseUrl/metrics" -Label '/metrics (with token)' -ExpectedStatus 200 -Headers @{ 'Authorization' = "Bearer $metricsTokenValue" } | Out-Null
-Snapshot-EnvValue -Key 'IMPORT_TO_SABT_AUTH__METRICS_TOKEN' -Value $metricsTokenValue
+if ($metricsFlagEnabled) {
+    Invoke-Web -Uri "$baseUrl/metrics" -Label '/metrics (public)' -ExpectedStatus 200 | Out-Null
+    Snapshot-EnvValue -Key 'METRICS_ENDPOINT_ENABLED' -Value $metricsFlagValue
+}
+else {
+    Write-Result -Status 'SKIP' -Message 'METRICS_ENDPOINT_ENABLED not set; skipping /metrics probe' | Out-Null
+}
 
 if ($job) {
     if ($job.State -eq 'Running') {

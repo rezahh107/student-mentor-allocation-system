@@ -13,7 +13,7 @@ from sma.phase6_import_to_sabt.app.utils import get_debug_context
 from sma.phase6_import_to_sabt.obs.metrics import build_metrics
 
 
-def test_metrics_requires_token(tmp_path) -> None:
+def test_metrics_endpoint_is_public(tmp_path) -> None:
     unique = uuid.uuid4().hex
     config = AppConfig.model_validate(
         {
@@ -48,6 +48,5 @@ def test_metrics_requires_token(tmp_path) -> None:
             return await client.get("/metrics")
 
     response = asyncio.run(_invoke())
-    assert response.status_code == 401, get_debug_context(app)
-    body = response.json()
-    assert body["fa_error_envelope"]["code"] == "METRICS_TOKEN_INVALID"
+    assert response.status_code == 200, get_debug_context(app)
+    assert response.text.startswith("# HELP")

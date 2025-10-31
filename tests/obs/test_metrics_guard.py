@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 
 import pytest
-from prometheus_client import CollectorRegistry
 
 from tools.reqs_doctor.obs import DoctorMetrics, serve_metrics_guarded
 
@@ -19,28 +18,13 @@ def metrics_setup(monkeypatch):
         monkeypatch.setenv("METRICS_TOKEN", original)
 
 
-def test_metrics_requires_token_and_rejects_missing_or_wrong(monkeypatch, metrics_setup):
-    registry = CollectorRegistry()
-    metrics = DoctorMetrics(registry)
-
-    status, _, body = serve_metrics_guarded(metrics, headers={})
-    assert status == 503
-    assert "توکن" in body.decode("utf-8")
-
-    monkeypatch.setenv("METRICS_TOKEN", "token-123")
-
-    status, _, body = serve_metrics_guarded(metrics, headers={})
-    assert status == 401
-    assert "نیازمند" in body.decode("utf-8")
-
-    status, _, body = serve_metrics_guarded(metrics, headers={"X-Metrics-Token": "wrong"})
-    assert status == 403
-    assert "نامعتبر" in body.decode("utf-8")
+def test_metrics_endpoint_is_public(monkeypatch, metrics_setup):
+    metrics = DoctorMetrics.fresh()
 
     metrics.observe_plan()
     status, headers, payload = serve_metrics_guarded(
         metrics,
-        headers={"X-Metrics-Token": "token-123"},
+        headers={},
     )
     assert status == 200
     assert headers["Content-Type"].startswith("text/plain")

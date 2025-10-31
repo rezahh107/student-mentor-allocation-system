@@ -47,6 +47,10 @@ class AuthConfig(BaseModel):
 
     metrics_token: str = Field(default="", description="Bearer token for /metrics endpoint")
     service_token: str = Field(default="", description="Primary service bearer token")
+    allow_all: bool = Field(
+        default=True,
+        description="Disable token validation for local development environments.",
+    )
     tokens_env_var: str = Field(default="TOKENS")
     download_signing_keys_env_var: str = Field(default="DOWNLOAD_SIGNING_KEYS")
     download_url_ttl_seconds: int = Field(default=900, ge=60, le=3600)

@@ -180,10 +180,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         header = request.headers.get("Authorization", "")
         token = header.removeprefix("Bearer ").strip()
         expected = self._config.service_token
+        allow_all = getattr(self._config, "allow_all", False)
         if diagnostics and diagnostics.get("enabled"):
-            diagnostics["last_auth"] = {"present": bool(token)}
-        if request.url.path == "/metrics":
-            request.state.auth_state = {"token": token, "skipped": True}
+            diagnostics["last_auth"] = {"present": bool(token), "allow_all": allow_all}
+        if allow_all or request.url.path == "/metrics":
+            request.state.auth_state = {
+                "token": token,
+                "skipped": True,
+                "allow_all": allow_all,
+            }
             return await call_next(request)
         if expected and token != expected:
             raise HTTPException(

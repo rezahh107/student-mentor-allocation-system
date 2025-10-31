@@ -73,17 +73,9 @@ def test_metrics_token_guard(security_state: dict[str, str]) -> None:
     app = create_app()
     client = TestClient(app)
 
-    forbidden_status, forbidden_body = _request_with_retry(client, "GET", "/metrics")
-    assert forbidden_status in {401, 403}, forbidden_body
-
-    ok_status, ok_body = _request_with_retry(
-        client,
-        "GET",
-        "/metrics",
-        headers={"X-Metrics-Token": security_state["token"]},
-    )
-    assert ok_status == 200, ok_body
-    assert "HELP" in ok_body or "export_jobs_total" in ok_body
+    status, body = _request_with_retry(client, "GET", "/metrics")
+    assert status == 200, body
+    assert "HELP" in body or "export_jobs_total" in body
 
 
 @pytest.mark.integration

@@ -31,7 +31,8 @@ def _build_app(namespace: str):
     )
 
 
-def test_endpoint_docs_include_payload_examples() -> None:
+def test_endpoint_docs_include_payload_examples(monkeypatch) -> None:
+    monkeypatch.setenv("METRICS_ENDPOINT_ENABLED", "true")
     namespace = f"docs_{uuid4().hex}"
     app = _build_app(namespace)
     schema = app.openapi()

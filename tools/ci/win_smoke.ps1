@@ -57,11 +57,6 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot ".." "..")
 $python = Get-PythonInterpreter -Root $repoRoot
 
-if (-not $env:METRICS_TOKEN -or [string]::IsNullOrWhiteSpace($env:METRICS_TOKEN)) {
-    Write-Error "❌ توکن METRICS_TOKEN تعیین نشده است؛ بدون آن درخواست /metrics رد می‌شود."
-    exit 1
-}
-
 $server = $null
 Push-Location $repoRoot
 try {
@@ -88,8 +83,7 @@ try {
     $healthStatus = (Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8000/healthz" -TimeoutSec 3).StatusCode
     $healthStatus | Out-Host
 
-    $headers = @{ Authorization = "Bearer $env:METRICS_TOKEN" }
-    $metricsStatus = (Invoke-WebRequest -UseBasicParsing -Headers $headers -Uri "http://127.0.0.1:8000/metrics" -TimeoutSec 3).StatusCode
+    $metricsStatus = (Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:8000/metrics" -TimeoutSec 3).StatusCode
     $metricsStatus | Out-Host
 } catch {
     if ($server -and -not $server.HasExited) {

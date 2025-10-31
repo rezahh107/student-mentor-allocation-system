@@ -47,8 +47,8 @@ def _should_use_headless_controller() -> bool:
     return _flag_enabled(os.getenv("SMASM_HEADLESS_CONTROLLER")) or _flag_enabled(os.getenv("FAKE_WEBVIEW"))
 
 
-def _headless_controller_app(clock: Clock, port: int, *, metrics_token: str) -> "FastAPI":
-    from fastapi import FastAPI, Header, HTTPException, Response
+def _headless_controller_app(clock: Clock, port: int) -> "FastAPI":
+    from fastapi import FastAPI, Response
     from starlette.responses import PlainTextResponse
 
     app = FastAPI()
@@ -70,9 +70,7 @@ def _headless_controller_app(clock: Clock, port: int, *, metrics_token: str) -> 
         return Response(status_code=200)
 
     @app.get("/metrics")
-    def metrics(x_metrics_token: str = Header(default="", alias="X-Metrics-Token")):
-        if x_metrics_token != metrics_token:
-            raise HTTPException(status_code=403, detail="دسترسی غیرمجاز است.")
+    def metrics():
         body = "\n".join(
             (
                 "# HELP winsw_readyz Indicates readiness status of the Windows controller stub.",
@@ -85,10 +83,10 @@ def _headless_controller_app(clock: Clock, port: int, *, metrics_token: str) -> 
     return app
 
 
-def _run_headless_controller(clock: Clock, port: int, metrics_token: str) -> None:
+def _run_headless_controller(clock: Clock, port: int) -> None:
     import uvicorn  # type: ignore[import-not-found]
 
-    app = _headless_controller_app(clock, port, metrics_token=metrics_token)
+    app = _headless_controller_app(clock, port)
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_config=None, access_log=False)
     server = uvicorn.Server(config)
     server.run()
@@ -96,7 +94,6 @@ def _run_headless_controller(clock: Clock, port: int, metrics_token: str) -> Non
 REQUIRED_ENVS: dict[str, str] = {
     "DATABASE_URL": "پیکربندی ناقص است؛ متغیر DATABASE_URL خالی است.",
     "REDIS_URL": "پیکربندی ناقص است؛ متغیر REDIS_URL خالی است.",
-    "METRICS_TOKEN": "پیکربندی ناقص است؛ متغیر METRICS_TOKEN خالی است.",
 }
 
 EXIT_SUCCESS = 0
@@ -208,7 +205,7 @@ class ServiceController:
         if _should_use_headless_controller():
             logging.getLogger(__name__).info("service_run_headless_stub", extra={"port": port})
             if self.uvicorn_runner is _run_uvicorn:
-                _run_headless_controller(self.clock, port, env_values.get("METRICS_TOKEN", ""))
+                _run_headless_controller(self.clock, port)
             else:
                 self.uvicorn_runner(port)
             return EXIT_SUCCESS

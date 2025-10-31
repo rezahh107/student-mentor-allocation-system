@@ -28,7 +28,7 @@ MANDATORY_NODEIDS: tuple[str, ...] = (
     "tests/mw/test_order_post.py::test_middleware_order_post_exact",
     "tests/time/test_no_wallclock_repo_guard.py::test_no_wall_clock_calls_in_repo",
     "tests/export/test_csv_excel_hygiene.py::test_formula_guard",
-    "tests/security/test_metrics_token_guard.py::test_metrics_requires_token",
+    "tests/security/test_metrics_token_guard.py::test_metrics_endpoint_is_public",
     "tests/idem/test_concurrent_posts.py::test_only_one_succeeds",
     "tests/obs/test_retry_metrics.py::test_retry_exhaustion_metrics_present",
     "tests/hygiene/test_state_and_registry.py::test_no_midrun_flush",

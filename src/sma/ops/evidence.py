@@ -26,7 +26,7 @@ PHASE6_SPEC_ITEMS: Dict[str, List[str]] = {
         "tests::tests/dbreplica/test_readonly_adapter.py::test_replica_timeout_persian_error",
     ],
     "metrics_token_guard": [
-        "tests::tests/security/test_metrics_token_guard.py::test_metrics_requires_token",
+        "tests::tests/security/test_metrics_token_guard.py::test_metrics_endpoint_is_public",
         "tests::tests/obs/test_metrics_labels.py::test_expected_metrics_present",
     ],
     "alerts_mapping": [

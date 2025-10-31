@@ -62,7 +62,7 @@ $OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
    ```powershell
    docker compose -f docker-compose.dev.yml up -d
    ```
-3. اطمینان حاصل کنید متغیرهای `DATABASE_URL`، `REDIS_URL` و `METRICS_TOKEN` در `.env.dev` مقداردهی شده‌اند؛ در غیر این صورت `Start-App.ps1` خطای پیکربندی فارسی صادر می‌کند.【F:Start-App.ps1†L133-L139】
+3. اطمینان حاصل کنید متغیرهای `DATABASE_URL`، `REDIS_URL` و فلگ `METRICS_ENDPOINT_ENABLED=true` در `.env.dev` مقداردهی شده‌اند؛ در غیر این صورت `Start-App.ps1` مسیر `/metrics` را فعال نمی‌کند.【F:Start-App.ps1†L133-L139】
 
 ## ۴. اعتبارسنجی محیط
 
@@ -95,7 +95,7 @@ pwsh -File .\Start-App.ps1
 
 ### ۵.۲ دسترسی به متریک‌ها و لاگ‌ها
 
-- مسیر `/metrics` با توکن محافظت می‌شود؛ مقدار `METRICS_TOKEN` را در هدر `X-Metrics-Token` قرار دهید.【F:Start-App.ps1†L133-L139】
+- مسیر `/metrics` پس از تنظیم `METRICS_ENDPOINT_ENABLED=true` بدون نیاز به هدر توکن پاسخ می‌دهد؛ در سناریوهای تولیدی باید گارد احراز هویت بازگردانده شده و هدر `Authorization: Bearer <METRICS_TOKEN>` ارسال شود.【F:Start-App.ps1†L133-L139】
 - برای مشاهدهٔ جریان لاگ‌ها از دستور زیر استفاده کنید:
   ```powershell
   Get-Content .\logs\app-stdout.log -Wait
@@ -110,7 +110,7 @@ pwsh -File .\Start-App.ps1
 pwsh -File .\win-dev-setup.ps1 -Base 'http://127.0.0.1:25119'
 ```
 
-این اسکریپت در صورت توقف سرویس، ابتدا `Start-App.ps1` را فراخوانی کرده و سپس آماده بودن مسیرهای `/readyz`، `/ui/health` و `/metrics` را با هدر مناسب بررسی می‌کند. تمام پیام‌ها به صورت فارسی و قطعی ثبت می‌شوند.【F:win-dev-setup.ps1†L5-L327】
+این اسکریپت در صورت توقف سرویس، ابتدا `Start-App.ps1` را فراخوانی کرده و سپس آماده بودن مسیرهای `/readyz`، `/ui/health` و `/metrics` را (در صورت فعال بودن فلگ `METRICS_ENDPOINT_ENABLED`) بررسی می‌کند. تمام پیام‌ها به صورت فارسی و قطعی ثبت می‌شوند.【F:win-dev-setup.ps1†L5-L327】
 
 ### ۶.۲ اسموک‌تست‌های دستی با pytest
 

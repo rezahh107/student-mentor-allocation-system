@@ -19,5 +19,4 @@
   <env name="PYTHONPATH" value="E:\SMASM\src" />
   <env name="DATABASE_URL"  value="postgresql://postgres:postgres@localhost:5432/postgres" />
   <env name="REDIS_URL"     value="redis://localhost:6379/0" />
-  <env name="METRICS_TOKEN" value="dev-metrics" />
 </service>

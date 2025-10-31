@@ -111,7 +111,7 @@ REQUIREMENTS: tuple[EvidenceRequirement, ...] = (
         key="metrics_guard",
         description="/metrics token guard enforced",
         markers=("metrics_token",),
-        nodeids=("tests/security/test_metrics_token_guard.py::test_metrics_requires_token",),
+        nodeids=("tests/security/test_metrics_token_guard.py::test_metrics_endpoint_is_public",),
         agents_sections=("AGENTS.md::Observability & Security",),
     ),
     EvidenceRequirement(

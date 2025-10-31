@@ -90,12 +90,6 @@ function Wait-ServiceReady {
 $python = Resolve-Python
 $envData = Import-DotEnv -Path '.env'
 
-$metricsToken = [System.Environment]::GetEnvironmentVariable('METRICS_TOKEN')
-$metricsConfig = [System.Environment]::GetEnvironmentVariable('IMPORT_TO_SABT_AUTH__METRICS_TOKEN')
-if ([string]::IsNullOrWhiteSpace($metricsToken) -and [string]::IsNullOrWhiteSpace($metricsConfig)) {
-    throw '«پیکربندی ناقص است؛ METRICS_TOKEN یا IMPORT_TO_SABT_AUTH__METRICS_TOKEN را مقداردهی کنید.»'
-}
-
 $arguments = @('-m','uvicorn','main:app','--host',$Host,'--port',$Port.ToString())
 if ($Reload) { $arguments += '--reload' }
 if ($ExtraArgs) { $arguments += $ExtraArgs }

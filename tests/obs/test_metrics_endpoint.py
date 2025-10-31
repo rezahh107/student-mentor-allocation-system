@@ -1,14 +1,10 @@
-from __future__ import annotations
+from fastapi.testclient import TestClient
 
-import pytest
-
-pytestmark = pytest.mark.asyncio
+from sma.phase6_import_to_sabt.app.app_factory import create_application
 
 
-async def test_metrics_requires_token(async_client):
-    unauthorized = await async_client.get("/metrics")
-    assert unauthorized.status_code == 401
-    assert unauthorized.json()["fa_error_envelope"]["code"] == "METRICS_TOKEN_INVALID"
-    authorized = await async_client.get("/metrics", headers={"X-Metrics-Token": "token123"})
-    assert authorized.status_code == 200
-    assert "rate_limit_decision_total" in authorized.text
+def test_metrics_endpoint_is_public() -> None:
+    client = TestClient(create_application())
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert response.text.startswith("# HELP")

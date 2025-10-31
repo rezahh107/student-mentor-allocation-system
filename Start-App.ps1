@@ -135,7 +135,6 @@ if (-not $scriptRoot) {
 
     Ensure-RequiredEnv -Name 'DATABASE_URL'
     Ensure-RequiredEnv -Name 'REDIS_URL'
-    Ensure-RequiredEnv -Name 'METRICS_TOKEN'
 
         Set-Item -Path Env:PYTHONUTF8 -Value '1'
         Set-Item -Path Env:PYTHONUNBUFFERED -Value '1'

@@ -49,9 +49,9 @@ pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1
 3. **پیش‌نیازهای ویژوال C++:** بررسی/نصب `Microsoft.VisualStudio.2022.BuildTools` با `winget`.
 4. **Python 3.11.12:** جست‌وجوی `py -3.11`, مسیر `pyenv-win`, یا `python.exe` و رد هر نسخهٔ خارج از بازهٔ `>=3.11,<3.12`.
 5. **محیط مجازی + وابستگی‌ها:** ساخت `.venv`, ارتقای `pip`, نصب `pip install -e .[dev]`, حذف `uvloop` در صورت وجود، اجرای `pip check`، و اعتبارسنجی `import sma, jinja2`.
-6. **تنظیم فایل `.env`:** در صورت عدم وجود، کپی از `.env.example`, سپس تضمین کلیدهای تو در توی حیاتی (`IMPORT_TO_SABT_REDIS__DSN`, `...DATABASE__DSN`, `...AUTH__METRICS_TOKEN`, `...AUTH__SERVICE_TOKEN`, `...SECURITY__PUBLIC_DOCS`) و پاک‌سازی متغیرهای فرآیندی `IMPORT_TO_SABT_*` که ممکن است از تلاش‌های قبلی باقی مانده باشند.
+6. **تنظیم فایل `.env`:** در صورت عدم وجود، کپی از `.env.example`, سپس تضمین کلیدهای تو در توی حیاتی (`IMPORT_TO_SABT_REDIS__DSN`, `...DATABASE__DSN`, `...AUTH__SERVICE_TOKEN`, `...SECURITY__PUBLIC_DOCS`) و فعال‌سازی صریح `METRICS_ENDPOINT_ENABLED=true` تا مسیر `/metrics` بدون نیاز به توکن در محیط لوکال پاسخ‌گو باشد؛ در پایان متغیرهای فرآیندی `IMPORT_TO_SABT_*` که ممکن است از تلاش‌های قبلی باقی مانده باشند پاک‌سازی می‌شوند.
 7. **سرویس‌های داده:** تست درگاه‌های 6379/5432. اگر بسته باشند و Docker موجود باشد، کانتینرهای `sma-dev-redis-<RUN_ID>` و `sma-dev-postgres-<RUN_ID>` با `--restart unless-stopped` راه‌اندازی می‌شوند؛ در غیر این صورت `DEVMODE=1` برای استفاده از Fakeredis/SQLite تنظیم می‌شود.
-8. **اجرای برنامه و پروب‌ها:** اجرای `python -m uvicorn main:app --host 127.0.0.1 --port 8000 --factory`, سپس درخواست‌های `/readyz`→`/healthz`→`/health`, `/docs`, و `/metrics` (با و بدون توکن).
+8. **اجرای برنامه و پروب‌ها:** اجرای `python -m uvicorn main:app --host 127.0.0.1 --port 8000 --factory`, سپس درخواست‌های `/readyz`→`/healthz`→`/health`, `/docs`, و `/metrics` (در صورت فعال بودن `METRICS_ENDPOINT_ENABLED=true` و بدون نیاز به توکن).
 
 ## 4. نقشهٔ خطاهای تاریخی (reports/selfheal-run.json)
 
@@ -66,14 +66,14 @@ pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1
 | «missing/invalid signing keys» | مقادیر قبلی `IMPORT_TO_SABT_*` در محیط فرآیند باقی می‌ماند و گارد امضا را خراب می‌کرد | `Clear-StaleImportEnv` تمام متغیرهای فرآیند را پاک می‌کند تا فقط `.env` مرجع باشد؛ مقداردهی پیش‌فرض توکن/سرویس نیز انجام می‌شود |
 | `/health` → 401 | آدرس اشتباه استفاده می‌شد | حلقهٔ پروب ابتدا `/readyz`، سپس `/healthz` و در نهایت `/health` را بررسی می‌کند تا از کد 200 مطمئن شود |
 | `/docs` → 401 | `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS` تنظیم نشده بود | مقدار پیش‌فرض `true` تزریق می‌شود و اسکریپت وضعیت 200 را بررسی می‌کند |
-| `/metrics` بدون توکن | توکن نادرست یا غیرفعال | در بیلد محلی پاسخ 200 است؛ پس از بازگردانی امنیت، اسکریپت باید بدون توکن 403 و با `IMPORT_TO_SABT_AUTH__METRICS_TOKEN` وضعیت 200 گزارش کند |
+| `/metrics` غیرفعال است | متغیر `METRICS_ENDPOINT_ENABLED` تنظیم نشده | در بیلد محلی باید `METRICS_ENDPOINT_ENABLED=true` باشد تا مسیر فعال شود؛ در حالت تولید باید Auth بازگردانی شود |
 
 > اجرای مجدد اسکریپت باید فقط `[PASS]`‌ها را چاپ کند؛ اگر `[FIXED]` ظاهر شود یعنی مشکلی برطرف شده است و می‌توانید فرمان را دوباره برای اطمینان اجرا کنید.
 
 ## 5. پس از اجرا
 
 1. مرورگر را به `http://127.0.0.1:8000/docs` باز کنید (فقط اگر در `.env` مقدار `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` است).
-2. در بیلد محلی `/metrics` بدون هدر هم پاسخ می‌دهد؛ برای تست تولیدی باید از هدر `Authorization: Bearer <METRICS_TOKEN>` استفاده کنید که مقدار آن در `.env` ذخیره شده است.
+2. در بیلد محلی فقط زمانی `/metrics` پاسخ می‌دهد که `METRICS_ENDPOINT_ENABLED=true` باشد و بدون نیاز به هدر در دسترس است؛ برای تست تولیدی باید Guard احراز هویت را بازگردانی کرده و هدر `Authorization: Bearer <METRICS_TOKEN>` ارسال کنید.
 3. برای توقف برنامه، از همان پنجرهٔ PowerShell که اسکریپت را اجرا کرده‌اید استفاده کنید؛ اسکریپت uvicorn را در انتها متوقف می‌کند و فایل لاگ در `tmp\win-run\uvicorn.log` ذخیره می‌شود.
 
 ## 6. اشکال‌زدایی
@@ -91,12 +91,13 @@ pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1
 2. اسکریپت اصلی با حالت بدون‌تعامل اجرا می‌شود:
 
    ```powershell
-   pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1 -Ci -Port 8000 -MetricsToken dev-metrics-token -RunId $env:GITHUB_RUN_ID
-   ```
+  pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1 -Ci -Port 8000 -RunId $env:GITHUB_RUN_ID
+  ```
 
-   * در حالت `-Ci`، تایم‌اوت‌ها کوتاه‌تر می‌شوند، تمام مارکرها به صورت `reports/ci/installer.ndjson` ذخیره می‌شوند، نتیجهٔ پروب‌ها در `reports/ci/probes.json` ثبت شده و تخلیهٔ متغیرها در `reports/ci/env_dump.json` انجام می‌شود.
-   * هر سطر خروجی در CI با `[PASS] step::detail`، `[FIXED] step::detail`، `[SKIP] step::detail` یا `[FAIL] step::detail` شروع می‌شود. ابزار `tools/ci/parse_markers.py` خروجی را بررسی و در صورت مشاهدهٔ هر `[FAIL]` مرحلهٔ CI را متوقف می‌کند.
-   * سوئیچ جدید `-RunId` نام کانتینرهای Docker را به صورت `sma-dev-redis-<RUN_ID>` و `sma-dev-postgres-<RUN_ID>` می‌سازد؛ به این ترتیب اجرای هم‌زمان چند Job بدون تصادم ادامه می‌یابد و اجرای مجدد با همان مقدار فقط وضعیت فعلی را تأیید می‌کند.
+  * در حالت `-Ci`، تایم‌اوت‌ها کوتاه‌تر می‌شوند، تمام مارکرها به صورت `reports/ci/installer.ndjson` ذخیره می‌شوند، نتیجهٔ پروب‌ها در `reports/ci/probes.json` ثبت شده و تخلیهٔ متغیرها در `reports/ci/env_dump.json` انجام می‌شود.
+  * هر سطر خروجی در CI با `[PASS] step::detail`، `[FIXED] step::detail`، `[SKIP] step::detail` یا `[FAIL] step::detail` شروع می‌شود. ابزار `tools/ci/parse_markers.py` خروجی را بررسی و در صورت مشاهدهٔ هر `[FAIL]` مرحلهٔ CI را متوقف می‌کند.
+  * سوئیچ جدید `-RunId` نام کانتینرهای Docker را به صورت `sma-dev-redis-<RUN_ID>` و `sma-dev-postgres-<RUN_ID>` می‌سازد؛ به این ترتیب اجرای هم‌زمان چند Job بدون تصادم ادامه می‌یابد و اجرای مجدد با همان مقدار فقط وضعیت فعلی را تأیید می‌کند.
+  * برای فعال‌سازی `/metrics` در این سناریو، تنظیم `METRICS_ENDPOINT_ENABLED=true` کفایت می‌کند و نیاز به عبور توکن وجود ندارد؛ پارامتر اختیاری `-MetricsToken` صرفاً جهت سازگاری با اسکریپت‌های قدیمی باقی مانده است.
 
 3. پس از اتمام اسکریپت، گردش‌کار دو تست Pytest را اجرا می‌کند تا گاردهای دامنه‌ای سالم بمانند:
 
@@ -120,7 +121,7 @@ pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\win\install_and_run.ps1
    $runId = (Get-Date -Format 'yyyyMMddHHmmss')
    pwsh -NoLogo -ExecutionPolicy Bypass -File .\tools\win\clear_state.ps1 -Force -RunId $runId
    $log = .\reports\ci\installer.log
-   $output = & .\scripts\win\install_and_run.ps1 -Ci -Port 8000 -MetricsToken dev-metrics-token -RunId $runId 2>&1 | Tee-Object -FilePath $log
+  $output = & .\scripts\win\install_and_run.ps1 -Ci -Port 8000 -RunId $runId 2>&1 | Tee-Object -FilePath $log
    python .\tools\ci\parse_markers.py $log --json .\reports\ci\markers.json
    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/middleware/test_order.py
    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/excel/test_safe_export.py

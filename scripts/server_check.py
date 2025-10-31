@@ -6,8 +6,12 @@ import urllib.error
 import urllib.request
 
 BASE = os.getenv("BASE_URL", "http://127.0.0.1:8000")
-TOKEN = os.getenv("METRICS_TOKEN", "")
 REQUIRE_PUBLIC_DOCS = os.getenv("REQUIRE_PUBLIC_DOCS", "0") == "1"
+METRICS_ENABLED = os.getenv("METRICS_ENDPOINT_ENABLED", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 
 
 def _hit(path, expect_codes, headers=None, attempts=3, backoff=0.3):
@@ -47,14 +51,9 @@ def main():
     for path in ("/openapi.json", "/docs", "/redoc"):
         total += 1
         passed += _hit(path, doc_expected)
-    total += 1
-    passed += _hit("/metrics", [403])
-    total += 1
-    if TOKEN:
-        passed += _hit("/metrics", [200], headers={"Authorization": f"Bearer {TOKEN}"})
-    else:
-        print("⚠️ METRICS_TOKEN not set; treating authorized metrics check as N/A")
-        passed += 1
+    if METRICS_ENABLED:
+        total += 1
+        passed += _hit("/metrics", [200])
     print(f"\n📊 Result: {passed}/{total} passed")
     sys.exit(0 if passed == total else 1)
 

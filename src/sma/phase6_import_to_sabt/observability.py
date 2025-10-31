@@ -152,7 +152,7 @@ def profile_endpoint(*, threshold_ms: float) -> Callable[[Callable[..., Coroutin
     ) -> Callable[..., Coroutine[Any, Any, Any]]:
         signature = inspect.signature(func)
         try:
-            from fastapi import Request as FastAPIRequest  # type: ignore import-error
+            from fastapi import Request as FastAPIRequest  # type: ignore[import-not-found]
         except Exception:  # noqa: BLE001 - FastAPI is optional for non-HTTP call sites
             FastAPIRequest = None  # type: ignore[assignment]
         else:

@@ -121,6 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      PYTEST_PERF_METRICS_PATH: test-results/performance-metrics.json
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -139,5 +140,17 @@ jobs:
       - name: Reality Map
         run: python scripts/reality_map.py
 
-      - name: Enforce export performance budgets
-        run: pytest tests/performance/test_export_budget.py -q --warnings=error
+      - name: Run performance suite
+        run: PYTHONWARNINGS=error pytest tests/performance -q --maxfail=1
+
+      - name: Validate performance budgets
+        run: python tests/performance/validate_budgets.py
+
+      - name: Upload performance metrics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-budgets
+          path: |
+            test-results/performance-metrics.json
+            test-results/performance-budgets.json

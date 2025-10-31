@@ -35,6 +35,16 @@ def _atomic_path(target: Path) -> Iterator[Path]:
             tmp_path.unlink()
 
 
+@contextmanager
+def atomic_output_path(path: Path | str) -> Iterator[Path]:
+    """Yield a temporary path that is atomically promoted on context exit."""
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with _atomic_path(target) as tmp:
+        yield tmp
+
+
 def _fsync(path: Path) -> None:
     flags = os.O_RDONLY
     if path.is_dir():
@@ -106,4 +116,5 @@ __all__ = [
     "atomic_write_excel_safe_csv",
     "atomic_write_json",
     "atomic_write_text",
+    "atomic_output_path",
 ]

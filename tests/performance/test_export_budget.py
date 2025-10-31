@@ -1,22 +1,22 @@
 from __future__ import annotations
 
+import os
 import shutil
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
 
-from sma.export.excel_writer import ExportWriter
+from src.services import DEFAULT_CHUNK_SIZE, export_to_xlsx, stream_students
+from tests.fixtures.perf import persist_budget_summary
 
 if TYPE_CHECKING:  # pragma: no cover - typing aid only
     from .conftest import PerformanceMonitor
 
 
-DEFAULT_CHUNK_SIZE = 50_000
 P95_BUDGET_SECONDS = 15.0
 P99_BUDGET_SECONDS = 20.0
 MEMORY_BUDGET_MB = 150.0
@@ -40,13 +40,11 @@ class BudgetScenario:
     chunk_size: int = DEFAULT_CHUNK_SIZE
 
 
-@lru_cache(maxsize=4)
-def _build_rows(total: int) -> tuple[dict[str, str], ...]:
-    rows: list[dict[str, str]] = []
-    for index in range(total):
-        base = f"{index:010d}"
-        rows.append(
-            {
+def _rows_factory(total: int) -> Callable[[], Iterable[dict[str, str]]]:
+    def _builder() -> Iterable[dict[str, str]]:
+        for index in range(total):
+            base = f"{index:010d}"
+            yield {
                 "national_id": base,
                 "counter": f"{index:09d}",
                 "first_name": f"دانش‌آموز-{index}",
@@ -64,42 +62,30 @@ def _build_rows(total: int) -> tuple[dict[str, str], ...]:
                 "allocation_date": "1403-01-01",
                 "year_code": "1403",
             }
-        )
-    return tuple(rows)
+
+    return _builder
 
 
 def _measure_export(
     *,
     monitor: PerformanceMonitor,
-    rows: Iterable[dict[str, str]],
+    rows_factory: Callable[[], Iterable[dict[str, str]]],
     tmp_path: Path,
     scenario: BudgetScenario,
 ) -> ExportSampleStats:
-    tuple_rows = tuple(rows) if not isinstance(rows, tuple) else rows
-    actual_total = len(tuple_rows)
-    assert actual_total == scenario.expected_rows, (
-        "تعداد ردیف‌های نمونه با مقدار انتظار هم‌خوانی ندارد",
-    )
-    writer = ExportWriter(
-        sensitive_columns=(
-            "national_id",
-            "counter",
-            "mobile",
-            "mentor_id",
-            "mentor_mobile",
-        ),
-        chunk_size=scenario.chunk_size,
-    )
+    actual_total = scenario.expected_rows
 
     def _operation() -> None:
         target_dir = tmp_path / f"export-{uuid4().hex}"
         target_dir.mkdir(parents=True, exist_ok=True)
         try:
-            result = writer.write_xlsx(
-                tuple_rows,
-                path_factory=lambda _: target_dir / "export.xlsx",
+            manifest = export_to_xlsx(
+                students=stream_students(rows_factory()),
+                output_path=target_dir / "export.xlsx",
+                chunk_size=scenario.chunk_size,
+                clock=monitor.clock,
             )
-            assert result.total_rows == actual_total, (
+            assert manifest.row_count == actual_total, (
                 "تعداد ردیف‌های تولید‌شده کمتر از مقدار انتظار است",
                 monitor.debug(scenario.label),
             )
@@ -125,21 +111,23 @@ def _measure_export(
 
 @pytest.mark.performance
 @pytest.mark.benchmark
-def test_export_xlsx_budget_p95(
+def test_export_xlsx_100k_budget(
     performance_monitor: PerformanceMonitor,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ensure the XLSX exporter satisfies the AGENTS §8.1 budgets for 100k rows."""
+
     monkeypatch.setenv("SMA_PERF_FAST", "0")
-    total_rows = 100_000
-    rows = _build_rows(total_rows)
+    total_rows = int(os.getenv("SMA_PERF_SAMPLE_SIZE", "100000"))
+    rows = _rows_factory(total_rows)
     stats = _measure_export(
         monitor=performance_monitor,
-        rows=rows,
+        rows_factory=rows,
         tmp_path=tmp_path,
         scenario=BudgetScenario(
-            label="export_xlsx_budget_p95",
-            runs=2,
+            label="export_100k_budget",
+            runs=1,
             expected_rows=total_rows,
         ),
     )
@@ -148,36 +136,22 @@ def test_export_xlsx_budget_p95(
         "p95 فرایند تولید خروجی اکسل از بودجهٔ ۱۵ ثانیه فراتر رفت",
         context,
     )
-    assert stats.peak_mb <= MEMORY_BUDGET_MB, (
-        "مصرف حافظهٔ تولید خروجی اکسل بیش از بودجهٔ ۱۵۰ مگابایت است",
-        context,
-    )
-
-
-@pytest.mark.performance
-@pytest.mark.benchmark
-def test_export_xlsx_budget_p99(
-    performance_monitor: PerformanceMonitor,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("SMA_PERF_FAST", "0")
-    total_rows = 100_000
-    rows = _build_rows(total_rows)
-    stats = _measure_export(
-        monitor=performance_monitor,
-        rows=rows,
-        tmp_path=tmp_path,
-        scenario=BudgetScenario(
-            label="export_xlsx_budget_p99",
-            runs=3,
-            expected_rows=total_rows,
-        ),
-    )
-    context = performance_monitor.debug(stats.label)
     assert stats.p99 <= P99_BUDGET_SECONDS, (
         "p99 فرایند تولید خروجی اکسل از بودجهٔ ۲۰ ثانیه بیشتر است",
         context,
     )
-    # Provide visibility into steady-state latency for dashboards / evidence logs.
+    assert stats.peak_mb <= MEMORY_BUDGET_MB, (
+        "مصرف حافظهٔ تولید خروجی اکسل بیش از بودجهٔ ۱۵۰ مگابایت است",
+        context,
+    )
     assert stats.p50 <= stats.p95 <= stats.p99, context
+
+    summary = {
+        "label": stats.label,
+        "p95_seconds": stats.p95,
+        "p99_seconds": stats.p99,
+        "peak_memory_mb": stats.peak_mb,
+        "samples": stats.samples,
+    }
+    persist_budget_summary(summary)
+    performance_monitor.persist()

@@ -355,7 +355,9 @@ def get_env(name: str, default: str | None = None) -> str | None:
 
 
 def iter_metrics() -> Iterable[tuple[str, Counter | Gauge | Histogram]]:
-    return _metrics_registry.items()]
+    """Iterate over the registered Prometheus metrics."""
+
+    return _metrics_registry.items()
 
 # --- اضافه کردن یک قفل ترد ایمن برای استفاده در کلاس‌ها ---
 _logger_lock = threading.Lock()

@@ -12,18 +12,23 @@ import shutil
 import tempfile
 import unicodedata
 import uuid
+import warnings
 import weakref
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
-import time
 from zoneinfo import ZoneInfo
 
 import prometheus_client
 import prometheus_client.registry as prometheus_registry
 import pytest
+
+if os.getenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "0") == "1":
+    pytest_plugins: tuple[str, ...] = ("pytest_asyncio.plugin",)
+else:
+    pytest_plugins = ()
 
 try:  # pragma: no cover - optional dependency guard for anyio
     from anyio.streams import memory as _anyio_memory
@@ -32,8 +37,6 @@ try:  # pragma: no cover - optional dependency guard for anyio
     _anyio_memory.MemoryObjectSendStream.__del__ = lambda self: None  # type: ignore[attr-defined]
 except Exception:  # pragma: no cover - if anyio changes behaviour
     pass
-
-pytest_plugins = ("pytest_asyncio.plugin",)
 from click.testing import CliRunner
 from freezegun import freeze_time
 from prometheus_client import CollectorRegistry
@@ -154,29 +157,53 @@ def _scan_wall_clock(repo_root: pathlib.Path) -> tuple[list[tuple[str, str]], li
     return banned, scanned
 
 
-def _ensure_pytest_asyncio_loaded(config: pytest.Config) -> None:
-    if config.pluginmanager.hasplugin("pytest_asyncio") or config.pluginmanager.hasplugin(
-        "pytest_asyncio.plugin"
-    ):
-        return
-    try:
-        config.pluginmanager.import_plugin("pytest_asyncio")
-    except Exception as exc:  # pragma: no cover - defensive guard for local envs
-        pytest.skip(
-            f"pytest-asyncio not available: {exc}",
-            allow_module_level=True,
-        )
-
-
 def pytest_configure(config: pytest.Config) -> None:
-    _ensure_pytest_asyncio_loaded(config)
-
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     banned, scanned = _scan_wall_clock(repo_root)
     config._repo_wall_clock_guard = {  # type: ignore[attr-defined]
         "banned": banned,
         "scanned": scanned,
     }
+    pythonwarnings = config.getoption("pythonwarnings", default=())
+    actions: tuple[str, ...]
+    if isinstance(pythonwarnings, (list, tuple)):
+        actions = tuple(str(item) for item in pythonwarnings if str(item))
+    elif isinstance(pythonwarnings, str) and pythonwarnings:
+        actions = (pythonwarnings,)
+    else:
+        actions = ()
+    for action in actions:
+        warnings.simplefilter(action)
+        os.environ.setdefault("PYTHONWARNINGS", action)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _prepare_test_results_root() -> Iterator[Path]:
+    base = Path("test-results")
+    baseline = {
+        base / "junit.xml",
+        base / "pytest-summary.json",
+        base / "pytest.log",
+        base / "report.html",
+    }
+    base.mkdir(parents=True, exist_ok=True)
+    for path in list(base.iterdir()):
+        if path in baseline:
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
+    previous_metrics = os.environ.get("PYTEST_PERF_METRICS_PATH")
+    metrics_path = base / "performance-metrics.json"
+    os.environ["PYTEST_PERF_METRICS_PATH"] = str(metrics_path)
+    try:
+        yield base
+    finally:
+        if previous_metrics is None:
+            os.environ.pop("PYTEST_PERF_METRICS_PATH", None)
+        else:
+            os.environ["PYTEST_PERF_METRICS_PATH"] = previous_metrics
 
 
 @pytest.fixture(scope="session", autouse=True)

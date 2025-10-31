@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.abc
 import importlib.metadata as importlib_metadata
 import importlib.machinery
 import importlib.util
@@ -9,12 +10,24 @@ import os
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Iterable, Sequence
+from typing import Iterable, Protocol, Sequence, cast, runtime_checkable
 
 from importlib.resources.abc import Traversable
 from importlib.metadata import PackagePath
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+@runtime_checkable
+class _SupportsFspath(Protocol):
+    def __fspath__(self) -> str:  # pragma: no cover - protocol definition
+        ...
+
+
+def _resolve_traversable_path(resource: Traversable) -> str:
+    if isinstance(resource, _SupportsFspath):
+        return os.fspath(resource)
+    return str(resource)
 
 
 def _candidate_entries() -> Iterable[str]:
@@ -33,7 +46,9 @@ def _candidate_entries() -> Iterable[str]:
         yield str(path)
 
 
-def _load_from_spec(name: str, spec) -> ModuleType | None:
+def _load_from_spec(
+    name: str, spec: importlib.machinery.ModuleSpec | None
+) -> ModuleType | None:
     if spec is None or spec.loader is None:
         return None
     module = importlib.util.module_from_spec(spec)
@@ -52,19 +67,20 @@ def _load_from_traversable(
     *,
     package: bool,
 ) -> ModuleType | None:
+    loader: importlib.abc.Loader
     try:
-        loader = importlib.machinery.SourceFileLoader(name, os.fspath(resource))
+        loader = importlib.machinery.SourceFileLoader(name, _resolve_traversable_path(resource))
     except TypeError:
         # Fallback for Traversable objects without concrete fspath support.
-        class _TraversableLoader(importlib.machinery.SourceLoader):
-            def __init__(self, fullname: str, traversable: Traversable):
+        class _TraversableLoader(importlib.abc.SourceLoader):
+            def __init__(self, fullname: str, traversable: Traversable) -> None:
                 self._fullname = fullname
                 self._traversable = traversable
 
             def get_filename(self, fullname: str) -> str:  # pragma: no cover - trivial
                 if fullname != self._fullname:
                     raise ImportError(fullname)
-                return os.fspath(self._traversable)
+                return _resolve_traversable_path(self._traversable)
 
             def get_data(self, path: str) -> bytes:  # pragma: no cover - trivial
                 del path
@@ -75,16 +91,16 @@ def _load_from_traversable(
     spec = importlib.util.spec_from_loader(
         name,
         loader,
-        origin=os.fspath(resource),
+        origin=_resolve_traversable_path(resource),
         is_package=package,
     )
     if spec is None:
         return None
     if package:
-        try:
-            parent = resource.parent
-            spec.submodule_search_locations = [os.fspath(parent)]
-        except Exception:  # pragma: no cover - Traversable edge cases
+        parent = getattr(resource, "parent", None)
+        if parent is not None:
+            spec.submodule_search_locations = [_resolve_traversable_path(parent)]
+        else:  # pragma: no cover - Traversable edge cases
             spec.submodule_search_locations = []
     return _load_from_spec(name, spec)
 
@@ -108,7 +124,7 @@ def _metadata_candidates(name: str) -> Sequence[tuple[Traversable, bool]]:
                     traversable = dist.locate_file(relative)
                 except Exception:
                     continue
-                candidates.append((traversable, relative.name == "__init__.py"))
+                candidates.append((cast(Traversable, traversable), relative.name == "__init__.py"))
     except Exception:
         return ()
     return candidates

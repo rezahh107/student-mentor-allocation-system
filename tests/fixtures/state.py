@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,8 +51,12 @@ class CleanupFixtures:
 
 
 @pytest.fixture
-def cleanup_fixtures(tmp_path_factory: pytest.TempPathFactory) -> Iterator[CleanupFixtures]:
-    namespace = f"import-to-sabt-{uuid.uuid4().hex}"
+def cleanup_fixtures(
+    tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest
+) -> Iterator[CleanupFixtures]:
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+    digest = hashlib.blake2s(request.node.nodeid.encode("utf-8"), digest_size=6).hexdigest()
+    namespace = f"import-to-sabt-{worker}-{digest}-{uuid.uuid4().hex}"
     base_dir = tmp_path_factory.mktemp(namespace)
     fixtures = CleanupFixtures(
         redis=DeterministicRedis(),

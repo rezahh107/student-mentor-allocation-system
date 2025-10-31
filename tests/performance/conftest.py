@@ -62,6 +62,12 @@ class PerformanceMonitor:
     def key(self, suffix: str) -> str:
         return f"{self.namespace}:{suffix}"
 
+    @property
+    def clock(self) -> FrozenClock:
+        """Expose the deterministic clock for downstream exporters."""
+
+        return self._clock
+
     def debug(self, label: str) -> Dict[str, Any]:
         bucket = self._samples[label]
         return {
@@ -148,6 +154,7 @@ class PerformanceMonitor:
             summary[label] = {
                 "samples": len(durations),
                 "p95_seconds": self.percentile(label, 95),
+                "p99_seconds": self.percentile(label, 99),
                 "mean_seconds": statistics.mean(durations) if durations else 0.0,
                 "max_seconds": max(durations, default=0.0),
                 "peak_memory_bytes": max(peaks, default=0),

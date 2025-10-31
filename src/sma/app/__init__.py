@@ -1,3 +1,3 @@
 """Application-level helpers shared across entrypoints."""
 
-__all__ = []
+__all__: list[str] = []

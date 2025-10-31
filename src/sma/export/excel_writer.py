@@ -8,9 +8,9 @@ import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Iterator, Sequence, TextIO
 
-import xlsxwriter
+import xlsxwriter  # type: ignore[import]
 
 from sma.phase6_import_to_sabt.sanitization import guard_formula, sanitize_phone, sanitize_text
 
@@ -302,7 +302,7 @@ def _sha256_file(path: Path) -> str:
 
 
 @contextmanager
-def atomic_writer(path: Path, *, newline: str = "\n", encoding: str = "utf-8"):
+def atomic_writer(path: Path, *, newline: str = "\n", encoding: str = "utf-8") -> Iterator[TextIO]:
     temp_path = path.with_suffix(path.suffix + ".part")
     temp_path.parent.mkdir(parents=True, exist_ok=True)
     with open(temp_path, "w", encoding=encoding, newline=newline) as handle:

@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import numbers
 
 from sma.phase6_import_to_sabt.sanitization import sanitize_phone
-from sma.phase6_import_to_sabt.app.io_utils import write_atomic
 from sma.phase6_import_to_sabt.xlsx.constants import DEFAULT_CHUNK_SIZE, SENSITIVE_COLUMNS, SHEET_TEMPLATE
 from sma.phase6_import_to_sabt.xlsx.metrics import ImportExportMetrics
 from sma.phase6_import_to_sabt.xlsx.sanitize import (
@@ -20,6 +18,7 @@ from sma.phase6_import_to_sabt.xlsx.sanitize import (
     safe_cell,
 )
 from sma.phase6_import_to_sabt.xlsx.utils import cleanup_partials, iter_chunks, sha256_file
+from sma.utils.atomic_io import atomic_output_path
 
 EXPORT_COLUMNS: Sequence[str] = (
     "national_id",
@@ -59,7 +58,7 @@ class XLSXStreamWriter:
 
     def write(
         self,
-        rows: Iterable[dict[str, Any]],
+        rows: Iterable[Mapping[str, Any]],
         output_path: Path,
         *,
         on_retry: Callable[[int], None] | None = None,
@@ -73,14 +72,15 @@ class XLSXStreamWriter:
         if default_sheet is not None:
             workbook.remove(default_sheet)
         row_counts: dict[str, int] = {}
-        sorted_rows = sorted(rows, key=self._sort_key)
         excel_safety = {
             "normalized": True,
             "digit_folded": True,
             "formula_guard": True,
             "sensitive_text": list(SENSITIVE_COLUMNS),
         }
-        for index, chunk in enumerate(iter_chunks(sorted_rows, self._chunk_size), start=1):
+        iterator: Iterator[Mapping[str, Any]] = iter(rows)
+        wrote_any = False
+        for index, chunk in enumerate(iter_chunks(iterator, self._chunk_size), start=1):
             sheet = workbook.create_sheet(title=SHEET_TEMPLATE.format(index))
             sheet.append(list(EXPORT_COLUMNS))
             count = 0
@@ -99,9 +99,13 @@ class XLSXStreamWriter:
                 sheet.append(cells)
                 count += 1
             row_counts[sheet.title] = count
-        buffer = BytesIO()
-        workbook.save(buffer)
-        write_atomic(output_path, buffer.getvalue())
+            wrote_any = True
+        if not wrote_any:
+            sheet = workbook.create_sheet(title=SHEET_TEMPLATE.format(1))
+            sheet.append(list(EXPORT_COLUMNS))
+            row_counts[sheet.title] = 0
+        with atomic_output_path(output_path) as temp_path:
+            workbook.save(temp_path)
         sha256 = sha256_file(output_path)
         byte_size = output_path.stat().st_size
         return ExportArtifact(
@@ -113,14 +117,11 @@ class XLSXStreamWriter:
             excel_safety=excel_safety,
         )
 
-    def prepare_row(self, raw: dict[str, Any]) -> dict[str, str]:
+    def prepare_row(self, raw: Mapping[str, Any]) -> dict[str, str]:
         prepared: dict[str, str] = {}
         for column in EXPORT_COLUMNS:
             raw_value = raw.get(column, "")
-            if raw_value is None:
-                raw_text = ""
-            else:
-                raw_text = str(raw_value)
+            raw_text = "" if raw_value is None else str(raw_value)
             normalized = normalize_text(raw_text)
             if column == "school_code" and normalized:
                 try:
@@ -138,21 +139,5 @@ class XLSXStreamWriter:
                 prepared[column] = guarded
         return prepared
 
-    def _sort_key(self, row: dict[str, Any]) -> tuple[str, str, str, str, str]:
-        prepared = self.prepare_row(row)
-
-        def _school_key(value: str | None) -> str:
-            if value in (None, ""):
-                return "999999"
-            try:
-                return f"{int(value):06d}"
-            except (TypeError, ValueError):
-                return "999999"
-
-        return (
-            prepared.get("year_code", ""),
-            prepared.get("reg_center", ""),
-            prepared.get("group_code", ""),
-            _school_key(prepared.get("school_code")),
-            prepared.get("national_id", ""),
-        )
+    def _sort_key(self, row: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
+        raise NotImplementedError("Sorting is delegated to the database layer.")

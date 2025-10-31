@@ -10,7 +10,7 @@ class AuthError(Exception):
     reason: str
 
     def __str__(self) -> str:  # pragma: no cover - representational
-        return f"{self.code}: {self.message_fa}"  # type: ignore[str-format]
+        return f"{self.code}: {self.message_fa}"
 
 
 class ConfigError(AuthError):

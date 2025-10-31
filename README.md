@@ -6,7 +6,7 @@
 ### TL;DR
 - `./quick_start.bat` یا `pwsh -ExecutionPolicy Bypass -File ./Start-App.ps1`
 - `python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload`
-- Set `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` and `METRICS_TOKEN=<token>` in dev/CI before running server checks; **در نسخهٔ لوکال فعلی، تمام گاردهای امنیتی شامل RateLimit و Auth به‌طور کامل غیرفعال شده‌اند** و این متغیرها تنها برای آماده‌سازی محیط تولید ثبت شده‌اند.
+- Set `IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS=true` and `METRICS_ENDPOINT_ENABLED=true` in dev/CI before running server checks; **در نسخهٔ لوکال فعلی، تمام گاردهای امنیتی شامل RateLimit و Auth به‌طور کامل غیرفعال شده‌اند** و این متغیرها تنها برای آماده‌سازی محیط تولید ثبت شده‌اند.
 - Run `python setup.py` to install dependencies, set `PYTHONPATH`, configure VS Code, and generate `activate` scripts.
 - Use `activate.bat` (Windows) or `source ./activate.sh` (macOS/Linux) before working in a new shell.
 - Launch diagnostics with `python scripts/environment_doctor.py` to validate the environment and apply optional fixes.
@@ -69,7 +69,8 @@ IMPORT_TO_SABT_DATABASE__STATEMENT_TIMEOUT_MS=500
 IMPORT_TO_SABT_REDIS__DSN=redis://127.0.0.1:6379/0
 IMPORT_TO_SABT_REDIS__NAMESPACE=import_to_sabt_local
 IMPORT_TO_SABT_AUTH__SERVICE_TOKEN=dev-service-token
-IMPORT_TO_SABT_AUTH__METRICS_TOKEN=dev-metrics-token
+IMPORT_TO_SABT_AUTH__ALLOW_ALL=true
+METRICS_ENDPOINT_ENABLED=true
 IMPORT_TO_SABT_TIMEZONE=Asia/Tehran
 ```
 

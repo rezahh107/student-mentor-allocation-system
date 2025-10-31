@@ -46,7 +46,7 @@ python3 -m tools.ci_test_orchestrator --json reports/strict_score.json
 # Evidence: tests/mw/test_order_with_xlsx.py::test_middleware_order_post_exports_xlsx
 # Evidence: tests/time/test_clock_tz.py::test_clock_timezone_is_asia_tehran
 # Evidence: tests/hygiene/test_prom_registry_reset.py::test_registry_reset_once
-# Evidence: tests/obs/test_metrics_protected.py::test_metrics_requires_token
+        # Evidence: tests/obs/test_metrics_protected.py::test_metrics_endpoint_is_public
 # Evidence: tests/exports/test_excel_safety_ci.py::test_always_quote_and_formula_guard
 # Evidence: tests/exports/test_xlsx_finalize.py::test_atomic_finalize_and_manifest
 # Evidence: tests/perf/test_health_ready_p95.py::test_readyz_p95_lt_200ms

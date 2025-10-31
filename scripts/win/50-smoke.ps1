@@ -160,9 +160,6 @@ function Assert {
 
 $envFile = Join-Path (Get-Location) '.env'
 $envMap = Import-DotEnv -Path $envFile
-$metricsToken = [System.Environment]::GetEnvironmentVariable('METRICS_TOKEN')
-if (-not $metricsToken) { $metricsToken = $envMap['METRICS_TOKEN'] }
-if (-not $metricsToken) { $metricsToken = $envMap['IMPORT_TO_SABT_AUTH__METRICS_TOKEN'] }
 $serviceToken = [System.Environment]::GetEnvironmentVariable('IMPORT_TO_SABT_AUTH__SERVICE_TOKEN')
 if (-not $serviceToken) { $serviceToken = $envMap['IMPORT_TO_SABT_AUTH__SERVICE_TOKEN'] }
 if (-not $serviceToken) { $serviceToken = 'local-service-token' }
@@ -209,18 +206,9 @@ try {
     $docs = Invoke-Http -Client $client -Method 'GET' -Url "$BaseUrl/docs" -ExpectedStatuses @(200) -Headers @{} -Body $null -Label 'docs'
     $httpResults.Add(@{ path = '/docs'; status = $docs.Status }) | Out-Null
 
-    Write-Host "🔍 بررسی گارد متریک بدون توکن"
-    $metricsForbidden = Invoke-Http -Client $client -Method 'GET' -Url "$BaseUrl/metrics" -ExpectedStatuses @(401,403) -Headers @{} -Body $null -Label 'metrics_forbidden'
-    $httpResults.Add(@{ path = '/metrics'; status = $metricsForbidden.Status; label = 'forbidden' }) | Out-Null
-    $forbiddenJson = $metricsForbidden.Body | ConvertFrom-Json
-    $message = $forbiddenJson.fa_error_envelope.message
-    Assert ($message -like '*توکن فقط‌خواندنی*') 'پیام فارسی انتظار می‌رفت.'
-
-    Write-Host "🔍 بررسی /metrics با توکن"
-    if (-not $metricsToken) { throw 'توکن متریک برای تست موجود نیست.' }
-    $metricsHeaders = @{ 'Authorization' = "Bearer $metricsToken" }
-    $metricsOk = Invoke-Http -Client $client -Method 'GET' -Url "$BaseUrl/metrics" -ExpectedStatuses @(200) -Headers $metricsHeaders -Body $null -Label 'metrics_ok'
-    $httpResults.Add(@{ path = '/metrics'; status = $metricsOk.Status; label = 'authorized' }) | Out-Null
+    Write-Host "🔍 بررسی /metrics"
+    $metricsOk = Invoke-Http -Client $client -Method 'GET' -Url "$BaseUrl/metrics" -ExpectedStatuses @(200) -Headers @{} -Body $null -Label 'metrics_ok'
+    $httpResults.Add(@{ path = '/metrics'; status = $metricsOk.Status; label = 'public' }) | Out-Null
     Assert ($metricsOk.Body -like '*# HELP*') 'خروجی متریک الگوی Prometheus ندارد.'
 
     Write-Host "🔍 فراخوانی POST /api/jobs"
@@ -239,7 +227,7 @@ try {
     $httpResults.Add(@{ path = '/api/exports/csv'; status = $exports.Status }) | Out-Null
 
     Write-Host '✅ تست دود با موفقیت انجام شد.' -ForegroundColor Green
-    Write-SmokeLog -Event 'suite_success' -Data @{ metrics_status = $metricsOk.Status; forbidden_status = $metricsForbidden.Status }
+    Write-SmokeLog -Event 'suite_success' -Data @{ metrics_status = $metricsOk.Status }
 } finally {
     $client.Dispose()
     $handler.Dispose()

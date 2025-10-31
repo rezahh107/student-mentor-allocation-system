@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from importlib import resources
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.staticfiles import StaticFiles
@@ -277,9 +277,14 @@ def create_application(  # noqa: PLR0913, PLR0915
         export_logger=export_logger,
     )
 
-    docs_url = "/docs"
-    redoc_url = "/redoc"
-    openapi_url = "/openapi.json"
+    docs_enabled = os.getenv("IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    docs_url = "/docs" if docs_enabled else None
+    redoc_url = "/redoc" if docs_enabled else None
+    openapi_url = "/openapi.json" if docs_enabled else None
 
     rate_limit_store = rate_limit_store or InMemoryKeyValueStore(
         namespace=f"{config.ratelimit.namespace}:ratelimit",
@@ -296,7 +301,7 @@ def create_application(  # noqa: PLR0913, PLR0915
         redoc_url=redoc_url,
         openapi_url=openapi_url,
     )
-    app.state.public_docs_enabled = True
+    app.state.public_docs_enabled = docs_enabled
     static_root = _resolve_static_assets_root()
     if static_root.exists():
         app.mount("/static", StaticFiles(directory=str(static_root)), name="static")
@@ -372,22 +377,18 @@ def create_application(  # noqa: PLR0913, PLR0915
         }
         return JSONResponse(status_code=status_code, content=payload)
 
-    @app.get("/metrics")
-    async def metrics_endpoint(request: Request) -> PlainTextResponse:
-        header = request.headers.get("Authorization", "")
-        token = header.removeprefix("Bearer ").strip()
-        expected = container.config.auth.metrics_token
-        if expected and token != expected:
-            raise HTTPException(
-                status_code=401,
-                detail={
-                    "fa_error_envelope": {
-                        "code": "METRICS_TOKEN_INVALID",
-                        "message": "دسترسی به متریک بدون توکن معتبر مجاز نیست.",
-                    }
-                },
-            )
-        return PlainTextResponse(render_metrics(container.metrics).decode("utf-8"))
+    metrics_enabled = os.getenv("METRICS_ENDPOINT_ENABLED", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    app.state.metrics_endpoint_enabled = metrics_enabled
+
+    if metrics_enabled:
+
+        @app.get("/metrics")
+        async def metrics_endpoint() -> PlainTextResponse:
+            return PlainTextResponse(render_metrics(container.metrics).decode("utf-8"))
 
     if config.enable_diagnostics:
         @app.get("/__diag")

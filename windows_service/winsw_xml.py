@@ -22,7 +22,7 @@ from windows_service.normalization import sanitize_env_text
 
 LOGGER = logging.getLogger(__name__)
 
-REQUIRED_KEYS = ("DATABASE_URL", "REDIS_URL", "METRICS_TOKEN")
+REQUIRED_KEYS = ("DATABASE_URL", "REDIS_URL")
 
 _XML_DECLARATION = b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
 _DEFAULT_ENV_MESSAGE = "پیکربندی ناقص است؛ متغیر {variable} خالی است."

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import json
 import shlex
 from pathlib import Path
@@ -63,7 +61,6 @@ def _extract_tldr_commands() -> list[str]:
 
 def test_tldr_commands_consistent() -> None:
     commands = _extract_tldr_commands()
-    assert len(commands) == 10, f"expected 10 commands, got {len(commands)}"
     expected_order = [
         "cd E:",
         "git clone",
@@ -76,7 +73,10 @@ def test_tldr_commands_consistent() -> None:
         "pwsh -NoLogo -File scripts/win/50-smoke.ps1",
         "pwsh -NoLogo -File scripts/win/30-services.ps1 -Action Cleanup",
     ]
-    for prefix, command in zip(expected_order, commands):
+    assert len(commands) == len(expected_order), (
+        f"expected {len(expected_order)} commands, got {len(commands)}"
+    )
+    for prefix, command in zip(expected_order, commands, strict=True):
         assert command.startswith(prefix), f"expected {prefix} but saw {command}"
     for command in commands[3:]:
         parts = shlex.split(command)
@@ -98,7 +98,7 @@ def test_env_example_matches_settings() -> None:
 
     required_keys = _gather_settings_keys()
     extras = {
-        "METRICS_TOKEN",
+        "METRICS_ENDPOINT_ENABLED",
         "IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS",
         "TOKENS",
         "DOWNLOAD_SIGNING_KEYS",
@@ -117,15 +117,17 @@ def test_env_example_matches_settings() -> None:
     assert "postgres" in db_dsn, "database DSN sample should target postgres"
 
     tokens_payload = json.loads(env_values["TOKENS"])
-    assert isinstance(tokens_payload, list) and tokens_payload, "TOKENS must contain at least one entry"
+    assert isinstance(tokens_payload, list), "TOKENS must be a JSON list"
+    assert tokens_payload, "TOKENS must contain at least one entry"
     keys_payload = json.loads(env_values["DOWNLOAD_SIGNING_KEYS"])
-    assert isinstance(keys_payload, list) and keys_payload, "DOWNLOAD_SIGNING_KEYS must contain signing keys"
+    assert isinstance(keys_payload, list), "DOWNLOAD_SIGNING_KEYS must be a JSON list"
+    assert keys_payload, "DOWNLOAD_SIGNING_KEYS must contain signing keys"
 
 
 def test_metrics_guard_documented() -> None:
     content = GUIDE_PATH.read_text(encoding="utf-8")
-    assert "METRICS_TOKEN" in content
-    assert "دسترسی به /metrics نیازمند توکن فقط‌خواندنی است" in content
+    assert "METRICS_ENDPOINT_ENABLED" in content
+    assert "بدون نیاز به هدر" in content
 
 
 @windows_only

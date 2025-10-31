@@ -129,14 +129,13 @@ def _recommended_values() -> dict[str, str]:
         "IMPORT_TO_SABT_REDIS__DSN": "redis://localhost:6379/0",
         "IMPORT_TO_SABT_DATABASE__DSN": "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres",
         "IMPORT_TO_SABT_AUTH__SERVICE_TOKEN": tokens[0]["value"],
-        "IMPORT_TO_SABT_AUTH__METRICS_TOKEN": tokens[1]["value"],
         "IMPORT_TO_SABT_REDIS__NAMESPACE": "import_to_sabt",
         "IMPORT_TO_SABT_OBSERVABILITY__SERVICE_NAME": "import-to-sabt",
         "IMPORT_TO_SABT_OBSERVABILITY__METRICS_NAMESPACE": "import_to_sabt",
         "EXPORT_STORAGE_DIR": storage,
         "TOKENS": json.dumps(tokens, ensure_ascii=False),
         "DOWNLOAD_SIGNING_KEYS": json.dumps(keys, ensure_ascii=False),
-        "METRICS_TOKEN": tokens[1]["value"],
+        "METRICS_ENDPOINT_ENABLED": "true",
         "IMPORT_TO_SABT_SECURITY__PUBLIC_DOCS": "true",
     }
 

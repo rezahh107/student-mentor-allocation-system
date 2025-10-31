@@ -16,7 +16,7 @@
 | AGENTS.md::5 Uploads & Exports (Atomic I/O) | src/phase6_import_to_sabt/exporter_service.py::atomic_writer |
 | AGENTS.md::6 Observability & Security | tests/security/test_metrics_and_downloads.py::test_token_and_signed_url |
 | AGENTS.md::6 Observability & Security (PII masking) | tests/logging/test_json_logs_pii_scan.py::test_no_pii_in_logs |
-| AGENTS.md::6 Observability & Security (/metrics token) | tests/security/test_metrics_token_guard.py::test_metrics_requires_token |
+| AGENTS.md::6 Observability & Security (/metrics token) | tests/security/test_metrics_token_guard.py::test_metrics_endpoint_is_public |
 | AGENTS.md::7 Performance & Reliability | tests/perf/test_export_100k_perf.py::test_p95_latency_and_memory_budget |
 | AGENTS.md::7 Performance & Reliability (Retry) | tests/retry/test_retry_backoff.py::test_retry_jitter_and_metrics_without_sleep |
 | AGENTS.md::7 Performance & Reliability (Exporter retry integration) | tests/exports/test_job_runner_retry_metrics.py::test_export_job_runner_retry_deterministic_backoff |

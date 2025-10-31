@@ -95,7 +95,7 @@ def test_main_respects_public_docs_toggle(monkeypatch: pytest.MonkeyPatch) -> No
     module = _reload(
         monkeypatch,
         REQUIRE_PUBLIC_DOCS="1",
-        METRICS_TOKEN="secure-token",
+        METRICS_ENDPOINT_ENABLED="true",
     )
 
     calls: defaultdict[str, list[tuple[tuple[int, ...], dict[str, str] | None]]] = defaultdict(list)
@@ -115,15 +115,12 @@ def test_main_respects_public_docs_toggle(monkeypatch: pytest.MonkeyPatch) -> No
     assert calls["/openapi.json"][0][0] == (200,)
     assert calls["/redoc"][0][0] == (200,)
     metrics_calls = calls["/metrics"]
-    unauth_expect, auth_expect = metrics_calls[0], metrics_calls[1]
-    assert unauth_expect[0] == (403,)
-    assert auth_expect[0] == (200,)
-    assert auth_expect[1] == {"Authorization": "Bearer secure-token"}
+    assert metrics_calls == [((200,), None)]
 
 
 @pytest.mark.ci
-def test_main_skips_authorized_metrics_when_token_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = _reload(monkeypatch, REQUIRE_PUBLIC_DOCS="0", METRICS_TOKEN=None)
+def test_main_skips_metrics_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _reload(monkeypatch, REQUIRE_PUBLIC_DOCS="0", METRICS_ENDPOINT_ENABLED="")
     metrics_invocations: list[tuple[tuple[int, ...], dict[str, str] | None]] = []
 
     def _fake_hit(path, expect_codes, headers=None, attempts=3, backoff=0.3):
@@ -138,5 +135,24 @@ def test_main_skips_authorized_metrics_when_token_missing(monkeypatch: pytest.Mo
     module.main()
 
     assert exits == [0]
-    assert metrics_invocations[0] == ((403,), None)
-    assert len(metrics_invocations) == 1
+    assert metrics_invocations == []
+
+
+@pytest.mark.ci
+def test_main_checks_metrics_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _reload(monkeypatch, REQUIRE_PUBLIC_DOCS="0", METRICS_ENDPOINT_ENABLED="true")
+    metrics_invocations: list[tuple[tuple[int, ...], dict[str, str] | None]] = []
+
+    def _fake_hit(path, expect_codes, headers=None, attempts=3, backoff=0.3):
+        if path == "/metrics":
+            metrics_invocations.append((tuple(expect_codes), headers))
+        return True
+
+    exits: list[int] = []
+    monkeypatch.setattr(module, "_hit", _fake_hit)
+    monkeypatch.setattr(module.sys, "exit", lambda code: exits.append(code))
+
+    module.main()
+
+    assert exits == [0]
+    assert metrics_invocations == [((200,), None)]

@@ -35,11 +35,10 @@ def _prepare_repo(tmp_path: Path) -> Path:
     return repo_root
 
 
-def _write_env(path: Path, *, token: str) -> Path:
+def _write_env(path: Path) -> Path:
     payload = (
         "DATABASE_URL=postgresql://postgres‌:postgres@localhost:5432/postgres\n"
         "REDIS_URL=redis://localhost:6379/۰\n"
-        f"METRICS_TOKEN=\"{token}\"\n"
     )
     target = path / ".env.dev"
     target.write_text(payload, encoding="utf-8")
@@ -53,7 +52,7 @@ def _parse_xml(path: Path) -> ET.Element:
 
 def test_atomic_write_and_no_partials(tmp_path: Path, registry: CollectorRegistry):
     repo_root = _prepare_repo(tmp_path)
-    env_file = _write_env(repo_root, token="metrics-token-۱")
+    env_file = _write_env(repo_root)
     output_path = repo_root / "windows_service" / "StudentMentorService.xml"
 
     result_path = write_winsw_xml(
@@ -93,12 +92,11 @@ def test_atomic_write_and_no_partials(tmp_path: Path, registry: CollectorRegistr
     assert env_nodes["PYTHONPATH"] == str(PureWindowsPath(repo_root / "src"))
     assert env_nodes["DATABASE_URL"].startswith("postgresql://postgres:postgres")
     assert env_nodes["REDIS_URL"].endswith("/0"), env_nodes["REDIS_URL"]
-    assert env_nodes["METRICS_TOKEN"] == "metrics-token-1"
 
 
 def test_pretty_formatting_produces_multiline(tmp_path: Path, registry: CollectorRegistry):
     repo_root = _prepare_repo(tmp_path)
-    env_file = _write_env(repo_root, token="metrics-token-۱")
+    env_file = _write_env(repo_root)
     output_path = repo_root / "windows_service" / "StudentMentorService.xml"
 
     write_winsw_xml(
@@ -120,7 +118,7 @@ def test_missing_pwsh_raises_persian_error(
     tmp_path: Path, registry: CollectorRegistry, monkeypatch: pytest.MonkeyPatch
 ):
     repo_root = _prepare_repo(tmp_path)
-    env_file = _write_env(repo_root, token="metrics-token-۱")
+    env_file = _write_env(repo_root)
     monkeypatch.delenv("SMASM_PWSH", raising=False)
     monkeypatch.setattr("windows_service.winsw_xml.shutil.which", lambda _: None)
     with pytest.raises(ServiceError) as captured:
@@ -140,11 +138,9 @@ def test_concurrent_writes_leave_single_file(tmp_path: Path, registry: Collector
 
     def _worker(idx: int) -> None:
         env_file = repo_root / f".env.dev.{idx}"
-        token = f"metrics-{idx}"
         env_file.write_text(
             f"DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres\n"
             f"REDIS_URL=redis://localhost:6379/{idx}\n"
-            f"METRICS_TOKEN={token}\n",
             encoding="utf-8",
         )
         write_winsw_xml(
@@ -166,11 +162,15 @@ def test_concurrent_writes_leave_single_file(tmp_path: Path, registry: Collector
         "xml_path": str(xml_path)
     }
     parsed = _parse_xml(xml_path)
-    env_tokens = {
+    env_redis_values = {
         node.get("value")
         for node in parsed.findall("env")
-        if node.get("name") == "METRICS_TOKEN"
+        if node.get("name") == "REDIS_URL"
     }
-    assert env_tokens, {"xml": xml_path.read_text(encoding="utf-8")}
-    final_token = env_tokens.pop()
-    assert final_token in {"metrics-0", "metrics-1", "metrics-2"}
+    assert env_redis_values, {"xml": xml_path.read_text(encoding="utf-8")}
+    final_value = env_redis_values.pop()
+    assert final_value in {
+        "redis://localhost:6379/0",
+        "redis://localhost:6379/1",
+        "redis://localhost:6379/2",
+    }

@@ -1,5 +1,7 @@
 ## Phase 1 - 100% COMPLETE STATUS REPORT
 
+> ⚠️ **به‌روزرسانی:** این گزارش به وضعیت تولیدی اشاره دارد، اما در بیلد لوکال فعلی لایه‌های امنیتی (Auth، RateLimit، RBAC) غیرفعال شده‌اند و باید پیش از استقرار دوباره اعمال شوند.
+
 ### ✅ ARCHITECTURE & DESIGN (100%)
 - [x] DDD structure with bounded contexts
 - [x] Performance analysis with real numbers
@@ -29,7 +31,7 @@
 - [x] Backup & disaster recovery scripts
 
 ### ✅ SECURITY & COMPLIANCE (100%)
-- [x] Authentication & authorization (RBAC dependency)
+- [ ] Authentication & authorization (RBAC dependency) *(در بیلد لوکال حذف شده؛ پس از بازگردانی امنیت باید دوباره بررسی شود)*
 - [x] Input validation & sanitization
 - [x] Audit logging & compliance stubs
 - [x] Security scanning integration stubs

@@ -40,16 +40,26 @@ def minimal_config() -> AppConfig:
 def test_create_application_smoke(minimal_config: AppConfig) -> None:
     instant = dt.datetime.fromisoformat("2024-01-01T00:00:00+00:00")
     fixed_clock = FixedClock(instant=instant)
+    rate_store = InMemoryKeyValueStore("ratelimit-test", fixed_clock)
+    idem_store = InMemoryKeyValueStore("idempotency-test", fixed_clock)
     app = create_application(
         config=minimal_config,
         clock=fixed_clock,
         metrics=build_metrics("import_to_sabt_test"),
         timer=DeterministicTimer(),
-        rate_limit_store=InMemoryKeyValueStore("ratelimit-test", fixed_clock),
-        idempotency_store=InMemoryKeyValueStore("idempotency-test", fixed_clock),
+        rate_limit_store=rate_store,
+        idempotency_store=idem_store,
         readiness_probes={},
     )
     assert app.title == "ImportToSabt"
+    paths = set(app.openapi()["paths"].keys())
+    assert "/api/xlsx/uploads" in paths
+    middleware_chain = [mw.cls.__name__ for mw in app.user_middleware]
+    assert middleware_chain[:3] == [
+        "RateLimitMiddleware",
+        "IdempotencyMiddleware",
+        "AuthMiddleware",
+    ]
 
 
 @pytest.mark.parametrize(

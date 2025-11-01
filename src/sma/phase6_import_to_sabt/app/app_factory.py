@@ -202,18 +202,18 @@ def configure_middleware(
         diagnostics=lambda: getattr(app.state, "diagnostics", None),
     )
     app.add_middleware(
-        AuthMiddleware,
-        config=container.config.auth,
+        RateLimitMiddleware,
+        store=rate_limit_store,
+        config=container.config.ratelimit,
+        clock=container.clock,
     )
     app.add_middleware(
         IdempotencyMiddleware,
         store=idempotency_store,
     )
     app.add_middleware(
-        RateLimitMiddleware,
-        store=rate_limit_store,
-        config=container.config.ratelimit,
-        clock=container.clock,
+        AuthMiddleware,
+        config=container.config.auth,
     )
 
 

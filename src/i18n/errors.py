@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from typing import Final, Mapping
 
 from sma.phase6_import_to_sabt.errors import (
+    EXPORT_EMPTY_FA_MESSAGE,
     EXPORT_IO_FA_MESSAGE,
+    EXPORT_PROFILE_UNKNOWN_FA_MESSAGE,
     EXPORT_VALIDATION_FA_MESSAGE,
     RATE_LIMIT_FA_MESSAGE,
 )
@@ -29,6 +31,11 @@ _TRANSLATIONS: Final[dict[str, ErrorTranslation]] = {
     "EXPORT_VALIDATION_ERROR": ErrorTranslation(
         code="EXPORT_VALIDATION_ERROR",
         message=EXPORT_VALIDATION_FA_MESSAGE,
+    ),
+    "EXPORT_EMPTY": ErrorTranslation(code="EXPORT_EMPTY", message=EXPORT_EMPTY_FA_MESSAGE),
+    "EXPORT_PROFILE_UNKNOWN": ErrorTranslation(
+        code="EXPORT_PROFILE_UNKNOWN",
+        message=EXPORT_PROFILE_UNKNOWN_FA_MESSAGE,
     ),
     "EXPORT_RATE_LIMIT": ErrorTranslation(code="EXPORT_RATE_LIMIT", message=RATE_LIMIT_FA_MESSAGE),
 }

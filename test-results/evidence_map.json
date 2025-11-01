@@ -1,0 +1,18 @@
+{
+  "sections": {
+    "§1": "scripts/reality_map.py::RealityMap.run",
+    "§2": ".github/workflows/ci.yml::quality",
+    "§3": "tests/mw/test_order_post.py::test_middleware_order_post_exports_xlsx",
+    "§4": "pyproject.toml::tool.ruff",
+    "§5": "src/sma/export/excel_writer.py::ExportWriter.write_xlsx",
+    "§6": "tests/obs/test_metrics_mw.py::test_retry_exhaustion_metrics_present",
+    "§7": "tests/performance/test_export_budget.py::test_export_xlsx_100k_budget",
+    "§8": "tests/ci/test_state_hygiene.py::test_cleanup_and_registry_reset",
+    "§9": "pytest.ini::[pytest]",
+    "§10": "tests/i18n/test_errors_export.py::test_export_error_translations_cover_all_codes",
+    "§11": "AGENTS.md::11 Operational Mode — Debug-First (80/20)",
+    "§12": "RUNBOOK.md::Debugging Playbook",
+    "§13": "docs/evidence_map.md::AGENTS.md§13",
+    "§14": "docs/evidence_map.md::AGENTS.md§14"
+  }
+}

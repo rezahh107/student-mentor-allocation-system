@@ -5,6 +5,7 @@ on:
   pull_request:
 
 env:
+  PYTHONWARNINGS: "error"
   PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
   RUN_INTEGRATION: ${{ vars.RUN_INTEGRATION || '1' }}
 
@@ -20,6 +21,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11.9"
+
+      - name: Show Python version
+        run: python --version
 
       - name: Upgrade pip tooling
         run: python -m pip install --upgrade pip setuptools wheel
@@ -70,6 +74,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Show Python version
+        run: python --version
+
       - name: Upgrade pip tooling
         run: python -m pip install --upgrade pip setuptools wheel
 
@@ -103,6 +110,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Show Python version
+        run: python --version
+
       - name: Upgrade pip tooling
         run: python -m pip install --upgrade pip setuptools wheel
 
@@ -122,6 +132,9 @@ jobs:
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
       PYTEST_PERF_METRICS_PATH: test-results/performance-metrics.json
+      SMA_PERF_SAMPLE_SIZE: "100000"
+      SMA_PERF_ATTEMPTS: "5"
+      SMA_PERF_CHUNK: "5000"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -130,6 +143,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11.9"
+
+      - name: Show Python version
+        run: python --version
 
       - name: Upgrade pip tooling
         run: python -m pip install --upgrade pip setuptools wheel
@@ -144,7 +160,7 @@ jobs:
         run: PYTHONWARNINGS=error pytest tests/performance -q --maxfail=1
 
       - name: Validate performance budgets
-        run: python tests/performance/validate_budgets.py
+        run: python tests/performance/validate_budgets.py --baseline tests/performance/baseline.json --summary test-results/export_perf.json
 
       - name: Upload performance metrics
         if: ${{ always() }}
@@ -153,4 +169,5 @@ jobs:
           name: performance-budgets
           path: |
             test-results/performance-metrics.json
-            test-results/performance-budgets.json
+            test-results/export_perf.json
+            test-results/evidence_map.json

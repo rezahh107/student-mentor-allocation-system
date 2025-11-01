@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_METRICS_PATH = Path("test-results/performance-metrics.json")
-DEFAULT_BUDGETS_PATH = Path("test-results/performance-budgets.json")
+DEFAULT_BUDGETS_PATH = Path("test-results/export.json")
 
 
 def metrics_output_path() -> Path:

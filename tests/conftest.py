@@ -41,6 +41,11 @@ from click.testing import CliRunner
 from freezegun import freeze_time
 from prometheus_client import CollectorRegistry
 
+try:
+    import redis  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - optional dependency
+    redis = None  # type: ignore[assignment]
+
 from sma._local_fakeredis import FakeStrictRedis
 from sma.repo_doctor.clock import tehran_clock
 from sma.repo_doctor.metrics import DoctorMetrics
@@ -207,6 +212,33 @@ def _prepare_test_results_root() -> Iterator[Path]:
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _flush_external_redis() -> Iterator[None]:
+    url = os.environ.get("REDIS_URL")
+    if not url or redis is None:
+        yield
+        return
+
+    client = redis.from_url(url)
+    try:
+        client.flushdb()
+    except Exception:  # pragma: no cover - defensive cleanup
+        pass
+
+    try:
+        yield
+    finally:
+        try:
+            client.flushdb()
+        except Exception:  # pragma: no cover - defensive cleanup
+            pass
+        finally:
+            try:
+                client.close()
+            except Exception:  # pragma: no cover - defensive cleanup
+                pass
+
+
+@pytest.fixture(scope="session", autouse=True)
 def freeze_tehran_time() -> Iterator[object]:
     with freeze_time(FREEZE_INSTANT, tick=False) as frozen:
         yield frozen
@@ -234,7 +266,22 @@ def _close_tracked_event_loops() -> Iterator[None]:
 
 @pytest.fixture(scope="function", autouse=True)
 def fresh_metrics_registry(monkeypatch: pytest.MonkeyPatch) -> Iterator[CollectorRegistry]:
-    registry = CollectorRegistry()
+    default_registry = prometheus_client.REGISTRY
+    collectors: set[object] = set()
+    for attr in ("_collector_to_names", "_names_to_collectors"):
+        mapping = getattr(default_registry, attr, None)
+        if isinstance(mapping, dict):
+            if attr == "_collector_to_names":
+                collectors.update(mapping.keys())
+            else:
+                collectors.update(mapping.values())
+    for collector in collectors:
+        try:
+            default_registry.unregister(collector)
+        except Exception:  # pragma: no cover - defensive cleanup
+            pass
+
+    registry = CollectorRegistry(auto_describe=True)
     monkeypatch.setattr(prometheus_registry, "REGISTRY", registry, raising=False)
     monkeypatch.setattr(prometheus_client, "REGISTRY", registry, raising=False)
     yield registry
@@ -325,6 +372,7 @@ def fresh_state_namespaces(rid: str) -> Iterator[None]:
     namespace = get_test_namespace()
     correlation_id = rid
     redis_client = maybe_connect_redis(correlation_id=correlation_id)
+    flush_entire_db = bool(os.environ.get("REDIS_URL"))
 
     if redis_client is None:
         _emit_state_log(
@@ -336,7 +384,10 @@ def fresh_state_namespaces(rid: str) -> Iterator[None]:
 
     _flush_fake_redis_clients(correlation_id, namespace)
     if redis_client is not None:
-        _flush_real_redis_namespace(redis_client, namespace, correlation_id)
+        if flush_entire_db:
+            redis_client.flushdb()
+        else:
+            _flush_real_redis_namespace(redis_client, namespace, correlation_id)
 
     _reset_test_database(correlation_id, namespace)
 
@@ -344,7 +395,10 @@ def fresh_state_namespaces(rid: str) -> Iterator[None]:
 
     _flush_fake_redis_clients(correlation_id, namespace)
     if redis_client is not None:
-        _flush_real_redis_namespace(redis_client, namespace, correlation_id)
+        if flush_entire_db:
+            redis_client.flushdb()
+        else:
+            _flush_real_redis_namespace(redis_client, namespace, correlation_id)
 
     _reset_test_database(correlation_id, namespace)
 

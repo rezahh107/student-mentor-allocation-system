@@ -1,18 +1,27 @@
 """High-assurance CSV/XLSX writer enforcing Excel-safety semantics."""
-
 from __future__ import annotations
 
 import csv
+import hashlib
 import itertools
 import os
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Sequence, TextIO
+from typing import Any, BinaryIO, TextIO
 
-import xlsxwriter  # type: ignore[import]
+from openpyxl import Workbook  # type: ignore[import-untyped]
+from openpyxl.cell import WriteOnlyCell  # type: ignore[import-untyped]
+from openpyxl.styles import numbers  # type: ignore[import-untyped]
 
-from sma.phase6_import_to_sabt.sanitization import guard_formula, sanitize_phone, sanitize_text
+from sma.phase6_import_to_sabt.sanitization import (  # type: ignore[import-not-found]
+    guard_formula,
+    sanitize_phone,
+    sanitize_text,
+)
+
+from src.utils.atomic import write_atomic
 
 EXPORT_COLUMNS: tuple[str, ...] = (
     "national_id",
@@ -63,6 +72,8 @@ TEXT_COLUMNS: frozenset[str] = frozenset(
     }
 )
 
+_CHUNK_SIZE_ERROR = "chunk_size must be positive"
+
 
 @dataclass(frozen=True)
 class ExportedFile:
@@ -84,7 +95,7 @@ class ExportResult:
 class ExportWriter:
     """Stream CSV/XLSX rows with atomic writes, CRLF and Excel-safety rules."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         columns: Sequence[str] = EXPORT_COLUMNS,
@@ -97,9 +108,15 @@ class ExportWriter:
         sha256_factory: Callable[[Path], str] | None = None,
     ) -> None:
         if chunk_size <= 0:
-            raise ValueError("chunk_size must be positive")
+            raise ValueError(_CHUNK_SIZE_ERROR)
         self._columns = tuple(columns)
         self._sensitive = tuple(sensitive_columns)
+        self._sensitive_lookup = frozenset(self._sensitive)
+        self._sensitive_indexes = tuple(
+            index
+            for index, column in enumerate(self._columns)
+            if column in self._sensitive_lookup
+        )
         self._newline = newline
         self._include_bom = include_bom
         self._chunk_size = chunk_size
@@ -109,15 +126,19 @@ class ExportWriter:
 
     def write_csv(
         self,
-        rows: Iterable[dict[str, Any]],
+        rows: Iterable[Mapping[str, Any]],
         *,
         path_factory: Callable[[int], Path],
     ) -> ExportResult:
+        """Stream rows into chunked CSV files while enforcing Excel-safety guards."""
+
         files: list[ExportedFile] = []
         total_rows = 0
-        for index, chunk in enumerate(_prepared_chunks(rows, self._chunk_size, self._prepare_row), start=1):
+        for index, chunk in enumerate(
+            _chunk_iterable(rows, self._chunk_size), start=1
+        ):
             path = path_factory(index)
-            byte_size = self._write_csv_chunk(path, chunk)
+            byte_size, row_count = self._write_csv_chunk(path, chunk)
             digest = self._sha256(path)
             files.append(
                 ExportedFile(
@@ -125,10 +146,10 @@ class ExportWriter:
                     name=path.name,
                     sha256=digest,
                     byte_size=byte_size,
-                    row_count=len(chunk),
+                    row_count=row_count,
                 )
             )
-            total_rows += len(chunk)
+            total_rows += row_count
         safety = {
             "normalized": True,
             "digit_folded": True,
@@ -143,78 +164,55 @@ class ExportWriter:
 
     def write_xlsx(
         self,
-        rows: Iterable[dict[str, Any]],
+        rows: Iterable[Mapping[str, Any]],
         *,
         path_factory: Callable[[int], Path],
     ) -> ExportResult:
-        workbook_options = {
-            "constant_memory": True,
-            "strings_to_numbers": False,
-            "strings_to_formulas": False,
-        }
+        """Stream rows into an XLSX workbook without materialising large chunks."""
+
+        path = path_factory(1)
         row_counts: dict[str, int] = {}
         total_rows = 0
-        path = path_factory(1)
-        temp_path = path.with_suffix(path.suffix + ".part")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fast_mode = os.getenv("SMA_PERF_FAST", "0") == "1"
+        workbook = Workbook(write_only=True)
+        default_sheet = workbook.active
+        if default_sheet is not None:
+            workbook.remove(default_sheet)
+
         try:
-            with xlsxwriter.Workbook(temp_path.as_posix(), workbook_options) as workbook:
-                header_format = workbook.add_format({"bold": True})
-                text_format = workbook.add_format({"num_format": "@"})
-                column_formats = [text_format if column in self._sensitive else None for column in self._columns]
-                if fast_mode:
-                    sheet_name = self._sheet_template.format(index=1)
-                    worksheet = workbook.add_worksheet(sheet_name)
-                    worksheet.right_to_left()
-                    worksheet.write_row(0, 0, list(self._columns), header_format)
-                    for col_idx, fmt in enumerate(column_formats):
-                        if fmt is not None:
-                            worksheet.set_column(col_idx, col_idx, None, fmt)
-                    materialized = list(rows)
-                    for row_index, prepared in enumerate(
-                        (self._prepare_row(item) for item in materialized),
-                        start=1,
-                    ):
-                        worksheet.write_row(row_index, 0, prepared)
-                    row_counts[sheet_name] = len(materialized)
-                    total_rows = len(materialized)
-                else:
-                    for index, chunk in enumerate(
-                        _prepared_chunks(rows, self._chunk_size, self._prepare_row),
-                        start=1,
-                    ):
-                        sheet_name = self._sheet_template.format(index=index)
-                        worksheet = workbook.add_worksheet(sheet_name)
-                        worksheet.right_to_left()
-                        worksheet.write_row(0, 0, list(self._columns), header_format)
-                        for col_idx, fmt in enumerate(column_formats):
-                            if fmt is not None:
-                                worksheet.set_column(col_idx, col_idx, None, fmt)
-                        row_index = 1
-                        count = 0
-                        for prepared in chunk:
-                            worksheet.write_row(row_index, 0, prepared)
-                            row_index += 1
-                            count += 1
-                        row_counts[sheet_name] = count
-                        total_rows += count
-                    if not row_counts:
-                        sheet_name = self._sheet_template.format(index=1)
-                        worksheet = workbook.add_worksheet(sheet_name)
-                        worksheet.right_to_left()
-                        worksheet.write_row(0, 0, list(self._columns), header_format)
-                        for col_idx, fmt in enumerate(column_formats):
-                            if fmt is not None:
-                                worksheet.set_column(col_idx, col_idx, None, fmt)
-                        row_counts[sheet_name] = 0
-        except Exception:
-            if temp_path.exists():
-                temp_path.unlink(missing_ok=True)
-            raise
-        with open(temp_path, "rb") as handle:
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
+            for index, chunk in enumerate(
+                _chunk_iterable(rows, self._chunk_size), start=1
+            ):
+                sheet_name = self._sheet_template.format(index=index)
+                worksheet = workbook.create_sheet(title=sheet_name)
+                worksheet.sheet_view.rightToLeft = True
+                worksheet.append(list(self._columns))
+                count = 0
+                for prepared in (self._prepare_row(item) for item in chunk):
+                    cells: list[WriteOnlyCell] = []
+                    for column_index, value in enumerate(prepared):
+                        cell = WriteOnlyCell(worksheet, value=value)
+                        cell.data_type = "s"
+                        if column_index in self._sensitive_indexes:
+                            cell.number_format = numbers.FORMAT_TEXT
+                        cells.append(cell)
+                    worksheet.append(cells)
+                    count += 1
+                row_counts[sheet_name] = count
+                total_rows += count
+            if not row_counts:
+                sheet_name = self._sheet_template.format(index=1)
+                worksheet = workbook.create_sheet(title=sheet_name)
+                worksheet.sheet_view.rightToLeft = True
+                worksheet.append(list(self._columns))
+                row_counts[sheet_name] = 0
+
+            def _write(handle: BinaryIO) -> None:
+                workbook.save(handle)
+
+            write_atomic(path, _write)
+        finally:
+            workbook.close()
+
         byte_size = path.stat().st_size
         digest = self._sha256(path)
         sheets = tuple(sorted(row_counts.items()))
@@ -234,23 +232,38 @@ class ExportWriter:
             "formula_guard": self._formula_guard,
             "sensitive_text_columns": list(self._sensitive),
             "numeric_columns": list(NUMERIC_COLUMNS),
-            "backend": "xlsxwriter",
+            "backend": "openpyxl",
+            "write_only": True,
             "rtl": True,
         }
         return ExportResult(files=files, total_rows=total_rows, excel_safety=safety)
 
-    def _write_csv_chunk(self, path: Path, chunk: list[list[str]]) -> int:
+    def _write_csv_chunk(
+        self,
+        path: Path,
+        chunk: Iterable[Mapping[str, Any]],
+    ) -> tuple[int, int]:
+        """Persist a single CSV chunk and return its byte size and row count."""
+
         encoding = "utf-8"
+        row_count = 0
         with atomic_writer(path, newline="", encoding=encoding) as handle:
             if self._include_bom:
                 handle.write("\ufeff")
-            writer = csv.writer(handle, lineterminator=self._newline, quoting=csv.QUOTE_ALL)
+            writer = csv.writer(
+                handle,
+                lineterminator=self._newline,
+                quoting=csv.QUOTE_ALL,
+            )
             writer.writerow(self._columns)
-            for prepared in chunk:
+            for prepared in (self._prepare_row(row) for row in chunk):
                 writer.writerow(prepared)
-        return path.stat().st_size
+                row_count += 1
+        return path.stat().st_size, row_count
 
-    def _prepare_row(self, raw: dict[str, Any]) -> list[str]:
+    def _prepare_row(self, raw: Mapping[str, Any]) -> list[str]:
+        """Normalise a raw mapping into Excel-safe textual values."""
+
         prepared: list[str] = []
         for column in self._columns:
             value = raw.get(column)
@@ -278,22 +291,22 @@ class ExportWriter:
         return prepared
 
 
-def _prepared_chunks(
-    rows: Iterable[dict[str, Any]],
+def _chunk_iterable(
+    rows: Iterable[Mapping[str, Any]],
     size: int,
-    prepare: Callable[[dict[str, Any]], list[str]],
-) -> Iterable[list[list[str]]]:
+) -> Iterator[Iterator[Mapping[str, Any]]]:
+    """Yield iterators over `size` items without materialising the dataset."""
+
     iterator = iter(rows)
     while True:
-        batch = list(itertools.islice(iterator, size))
-        if not batch:
-            break
-        yield [prepare(item) for item in batch]
+        try:
+            first = next(iterator)
+        except StopIteration:
+            return
+        yield itertools.chain((first,), itertools.islice(iterator, size - 1))
 
 
 def _sha256_file(path: Path) -> str:
-    import hashlib
-
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for part in iter(lambda: handle.read(1024 * 1024), b""):
@@ -302,7 +315,12 @@ def _sha256_file(path: Path) -> str:
 
 
 @contextmanager
-def atomic_writer(path: Path, *, newline: str = "\n", encoding: str = "utf-8") -> Iterator[TextIO]:
+def atomic_writer(
+    path: Path,
+    *,
+    newline: str = "\n",
+    encoding: str = "utf-8",
+) -> Iterator[TextIO]:
     temp_path = path.with_suffix(path.suffix + ".part")
     temp_path.parent.mkdir(parents=True, exist_ok=True)
     with open(temp_path, "w", encoding=encoding, newline=newline) as handle:

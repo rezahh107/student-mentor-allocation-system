@@ -8,9 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sma.core.clock import Clock, SupportsNow, ensure_clock
-from sma.phase6_import_to_sabt.xlsx.metrics import ImportExportMetrics
-from sma.phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter
+from sma.core.clock import Clock, SupportsNow, ensure_clock  # type: ignore[import-not-found]
+from sma.phase6_import_to_sabt.xlsx.metrics import ImportExportMetrics  # type: ignore[import-not-found]
+from sma.phase6_import_to_sabt.xlsx.writer import XLSXStreamWriter  # type: ignore[import-not-found]
 
 DEFAULT_CHUNK_SIZE = 50_000
 

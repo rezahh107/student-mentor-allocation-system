@@ -46,6 +46,9 @@ jobs:
             **/requirements*.txt
             **/pyproject.toml
 
+      - name: Show Python version
+        run: python --version
+
       - name: Install (constraints-aware, retry)
         env:
           CI_CORRELATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}-linux

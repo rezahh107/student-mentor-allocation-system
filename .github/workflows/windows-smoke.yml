@@ -8,6 +8,9 @@ on:
 jobs:
   smoke:
     runs-on: windows-latest
+    env:
+      PYTHONWARNINGS: "error"
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
     strategy:
       fail-fast: false
     steps:
@@ -16,6 +19,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11.9'
+
+      - name: Show Python version
+        run: python --version
 
       - name: Clear cached state
         shell: pwsh

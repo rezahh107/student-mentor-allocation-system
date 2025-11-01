@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa
 """
 Reality Map v5.0 - Production-Grade Compliance Validator
 Enhanced with flexible discovery and comprehensive error handling
@@ -30,6 +31,24 @@ class CheckResult:
 
 class RealityMapError(Exception):
     pass
+
+
+EVIDENCE_POINTERS: Dict[str, str] = {
+    "§1": "scripts/reality_map.py::RealityMap.run",
+    "§2": ".github/workflows/ci.yml::quality",
+    "§3": "tests/mw/test_order_post.py::test_middleware_order_post_exports_xlsx",
+    "§4": "pyproject.toml::tool.ruff",
+    "§5": "src/sma/export/excel_writer.py::ExportWriter.write_xlsx",
+    "§6": "tests/obs/test_metrics_mw.py::test_retry_exhaustion_metrics_present",
+    "§7": "tests/performance/test_export_budget.py::test_export_xlsx_100k_budget",
+    "§8": "tests/ci/test_state_hygiene.py::test_cleanup_and_registry_reset",
+    "§9": "pytest.ini::[pytest]",
+    "§10": "tests/i18n/test_errors_export.py::test_export_error_translations_cover_all_codes",
+    "§11": "AGENTS.md::11 Operational Mode — Debug-First (80/20)",
+    "§12": "RUNBOOK.md::Debugging Playbook",
+    "§13": "docs/evidence_map.md::AGENTS.md§13",
+    "§14": "docs/evidence_map.md::AGENTS.md§14",
+}
 
 
 class RealityMap:
@@ -205,6 +224,8 @@ class RealityMap:
             print(f"{r.status.value} {r.name}: {r.message}")
             if r.details:
                 print(f"   → {r.details}")
+        self._write_evidence_map()
+        print("Evidence map: docs/evidence_map.md::AGENTS.md§1-§14 → test-results/evidence_map.json")
         print("\n" + "=" * 60)
         if failures > 0:
             print(f"❌ FAILED: {failures} critical issues found")
@@ -215,6 +236,16 @@ class RealityMap:
         else:
             print("✅ ALL CHECKS PASSED")
             return 0
+
+
+    def _write_evidence_map(self) -> None:
+        root = Path("test-results")
+        root.mkdir(parents=True, exist_ok=True)
+        payload = {"sections": EVIDENCE_POINTERS}
+        (root / "evidence_map.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":

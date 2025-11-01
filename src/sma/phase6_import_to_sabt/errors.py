@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 EXPORT_VALIDATION_FA_MESSAGE = "درخواست نامعتبر است؛ فرمت فایل/محدوده را بررسی کنید."
 EXPORT_IO_FA_MESSAGE = "خطا در تولید فایل؛ لطفاً دوباره تلاش کنید."
+EXPORT_EMPTY_FA_MESSAGE = "هیچ رکوردی برای خروجی یافت نشد."
+EXPORT_PROFILE_UNKNOWN_FA_MESSAGE = "پروفایل خروجی ناشناخته است؛ تنظیمات درخواست را بررسی کنید."
 RATE_LIMIT_FA_MESSAGE = "تعداد درخواست‌ها از حد مجاز عبور کرده است؛ بعداً تلاش کنید."
 
 
@@ -26,6 +28,8 @@ def make_error(code: str, message: str) -> ErrorEnvelope:
 __all__ = [
     "ErrorEnvelope",
     "EXPORT_IO_FA_MESSAGE",
+    "EXPORT_EMPTY_FA_MESSAGE",
+    "EXPORT_PROFILE_UNKNOWN_FA_MESSAGE",
     "EXPORT_VALIDATION_FA_MESSAGE",
     "RATE_LIMIT_FA_MESSAGE",
     "make_error",

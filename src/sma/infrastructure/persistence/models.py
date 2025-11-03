@@ -58,7 +58,7 @@ class StudentModel(Base):
         CheckConstraint(
             "\"شمارنده\" IS NULL OR ("
             "length(\"شمارنده\") = 9 AND "
-            "\"شمارنده\" GLOB '[0-9]*' AND "
+            "\"شمارنده\" ~ '^[0-9]+$' AND "
             "substr(\"شمارنده\", 3, 3) IN ('357','373')"
             ")",
             name="ck_counter_pattern",

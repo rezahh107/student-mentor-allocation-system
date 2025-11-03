@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -10,6 +9,7 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -36,6 +36,8 @@ class StudentModel(Base):
     national_id = Column("کد_ملی", String(10), primary_key=True)
     first_name = Column("نام", String, nullable=True)
     last_name = Column("نام_خانوادگی", String, nullable=True)
+    father_name = Column("نام_پدر", String, nullable=True)
+    birth_date = Column("تاریخ_تولد", Date, nullable=True)
     gender = Column("جنسیت", SmallInteger, nullable=False)
     edu_status = Column("وضعیت_تحصیلی", SmallInteger, nullable=False)  # 0=grad,1=student
     reg_center = Column("مرکز_ثبت_نام", SmallInteger, nullable=False)
@@ -49,6 +51,18 @@ class StudentModel(Base):
     assignments = relationship("AssignmentModel", back_populates="student")
 
     __table_args__ = (
+        CheckConstraint(
+            '"وضعیت_ثبت_نام" IN (0, 1, 3)',
+            name="ck_reg_status_domain",
+        ),
+        CheckConstraint(
+            "\"شمارنده\" IS NULL OR ("
+            "length(\"شمارنده\") = 9 AND "
+            "\"شمارنده\" GLOB '[0-9]*' AND "
+            "substr(\"شمارنده\", 3, 3) IN ('357','373')"
+            ")",
+            name="ck_counter_pattern",
+        ),
         Index("ix_دانش_آموزان_کد_گروه", "کد_گروه"),
     )
 

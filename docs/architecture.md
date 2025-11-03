@@ -176,6 +176,8 @@ class StudentModel(Base):
     national_id = Column("کد_ملی", String(10), primary_key=True)
     first_name  = Column("نام", String, nullable=True)
     last_name   = Column("نام_خانوادگی", String, nullable=True)
+    father_name = Column("نام_پدر", String, nullable=True)
+    birth_date  = Column("تاریخ_تولد", Date, nullable=True)
     gender      = Column("جنسیت", SmallInteger, nullable=False)
     edu_status  = Column("وضعیت_تحصیلی", SmallInteger, nullable=False)
     reg_center  = Column("مرکز_ثبت_نام", SmallInteger, nullable=False)
@@ -185,6 +187,19 @@ class StudentModel(Base):
     student_type= Column("نوع_دانش_آموز", SmallInteger, nullable=True)
     mobile      = Column("شماره_تلفن", String(11), nullable=True)
     counter     = Column("شمارنده", String(9), unique=True)
+
+    __table_args__ = (
+        CheckConstraint("\"وضعیت_ثبت_نام\" IN (0, 1, 3)", name="ck_reg_status_domain"),
+        CheckConstraint(
+            "\"شمارنده\" IS NULL OR ("
+            "length(\"شمارنده\") = 9 AND "
+            "\"شمارنده\" GLOB '[0-9]*' AND "
+            "substr(\"شمارنده\", 3, 3) IN ('357','373')"
+            ")",
+            name="ck_counter_pattern",
+        ),
+        Index("ix_دانش_آموزان_کد_گروه", "کد_گروه"),
+    )
 ```
 
 ## API Contracts (FastAPI)

@@ -77,16 +77,69 @@ class MentorModel(Base):
     capacity = Column("ظرفیت", Integer, nullable=False, default=60)
     current_load = Column("بار_فعلی", Integer, nullable=False, default=0)
     alias_code = Column("کد_مستعار", String, nullable=True)
-    manager_id = Column("شناسه_مدیر", Integer, nullable=True)
+    manager_id = Column(
+        "شناسه_مدیر",
+        Integer,
+        ForeignKey("managers.manager_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     is_active = Column("فعال", Boolean, nullable=False, default=True)
 
     assignments = relationship("AssignmentModel", back_populates="mentor")
+    manager = relationship("ManagerModel", back_populates="mentors")
 
     __table_args__ = (
         CheckConstraint("\"بار_فعلی\" >= 0"),
         CheckConstraint("\"ظرفیت\" >= 0"),
         Index("ix_منتورها_فیلتر", "جنسیت", "نوع", "فعال", "ظرفیت", "بار_فعلی"),
     )
+
+
+class ManagerModel(Base):
+    __tablename__ = "managers"
+
+    manager_id = Column("manager_id", Integer, primary_key=True)
+    full_name = Column("full_name", String, nullable=False)
+    email = Column("email", String, nullable=True)
+    phone = Column("phone", String(32), nullable=True)
+    is_active = Column("is_active", Boolean, nullable=False, server_default="true")
+    created_at = Column(
+        "created_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        "updated_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    mentors = relationship("MentorModel", back_populates="manager")
+    allowed_centers = relationship(
+        "ManagerAllowedCenterModel",
+        back_populates="manager",
+        cascade="all, delete-orphan",
+        collection_class=set,
+    )
+
+
+class ManagerAllowedCenterModel(Base):
+    __tablename__ = "manager_allowed_centers"
+
+    manager_id = Column(
+        "manager_id",
+        Integer,
+        ForeignKey("managers.manager_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    center_code = Column("center_code", SmallInteger, primary_key=True)
+
+    manager = relationship("ManagerModel", back_populates="allowed_centers")
+
+    __table_args__ = (Index("ix_mac_center", "center_code", "manager_id"),)
 
 
 class AssignmentModel(Base):

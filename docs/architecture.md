@@ -107,6 +107,19 @@ erDiagram
     INT شناسه_مدیر
     BOOLEAN فعال
   }
+  managers {
+    INT manager_id PK
+    TEXT full_name
+    TEXT email
+    TEXT phone
+    BOOLEAN is_active
+    TIMESTAMPTZ created_at
+    TIMESTAMPTZ updated_at
+  }
+  manager_allowed_centers {
+    INT manager_id PK
+    SMALLINT center_code PK
+  }
   "تخصیص_ها" {
     BIGINT شناسه_تخصیص PK
     VARCHAR کد_ملی FK
@@ -122,6 +135,8 @@ erDiagram
 
   "دانش_آموزان" ||--o{ "تخصیص_ها" : has
   "منتورها" ||--o{ "تخصیص_ها" : receives
+  managers ||--o{ "منتورها" : supervises
+  managers ||--o{ manager_allowed_centers : governs
 ```
 
 ## Module Specifications
@@ -478,7 +493,7 @@ Dashboards: Allocation Overview, Processing Time P95, Mentor Heatmap, Data Quali
   - Flip traffic; only then drop old columns/indexes in a later migration.
 - Index creation: for Postgres, create concurrently in maintenance windows or with `CREATE INDEX CONCURRENTLY` (for large tables) — modeled via raw SQL in `002_performance_indexes.py`.
 - Foreign keys: use `ON DELETE CASCADE` only where required; avoid cascading on high-cardinality relations to reduce lock scope.
-- Data migrations: guarded by env flag `RUN_TEST_SEED` in `004_test_data_seeding.py`; production backfills live in dedicated reversible migrations.
+- Data migrations: guarded by env flag `RUN_TEST_SEED` in `004_test_data_seeding.py`; production backfills live in dedicated reversible migrations. Seed now provisions a default `managers` row and wiring for `manager_allowed_centers` to exercise manager-gate logic locally.
 
 ## Backup & Disaster Recovery
 

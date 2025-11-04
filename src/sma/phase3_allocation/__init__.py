@@ -26,6 +26,8 @@ from .outbox import (
     SystemClock,
 )
 from .uow import SQLAlchemyUnitOfWork, UnitOfWorkFactory
+from .providers_db import DatabaseManagerCentersProvider
+from .factories import build_allocation_engine, build_allocation_policy
 
 __all__ = [
     "AllocationIdentifiers",
@@ -47,6 +49,9 @@ __all__ = [
     "OutboxMessage",
     "OutboxRepository",
     "SystemClock",
+    "DatabaseManagerCentersProvider",
+    "build_allocation_engine",
+    "build_allocation_policy",
     "SQLAlchemyUnitOfWork",
     "UnitOfWorkFactory",
 ]

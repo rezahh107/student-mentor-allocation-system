@@ -20,6 +20,10 @@ depends_on = None
 def upgrade() -> None:
     if os.environ.get("RUN_TEST_SEED") != "1":
         return
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    has_managers = inspector.has_table("managers")
+    has_manager_centers = inspector.has_table("manager_allowed_centers")
     # Seed a small dataset for local performance tests
     bind = op.get_bind()
     inspector = sa.inspect(bind)

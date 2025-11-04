@@ -92,6 +92,15 @@ def upgrade() -> None:
     )
 
     bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_mac_indexes = {index["name"] for index in inspector.get_indexes("manager_allowed_centers")}
+    if "ix_mac_center" not in existing_mac_indexes:
+        op.create_index(
+            "ix_mac_center",
+            "manager_allowed_centers",
+            ["center_code", "manager_id"],
+        )
+
     dialect_name = bind.dialect.name
     _seed_test_manager_data(bind, dialect_name)
     manager_ids = sorted(set(_iter_existing_manager_ids(bind)))
@@ -135,6 +144,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_mac_indexes = {index["name"] for index in inspector.get_indexes("manager_allowed_centers")}
+    if "ix_mac_center" in existing_mac_indexes:
+        op.drop_index("ix_mac_center", table_name="manager_allowed_centers")
     op.drop_constraint("fk_manager_centers_manager", "manager_allowed_centers", type_="foreignkey")
     op.drop_constraint("fk_mentors_manager", "منتورها", type_="foreignkey")
     op.drop_index("ix_mac_center", table_name="manager_allowed_centers")

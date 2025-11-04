@@ -99,8 +99,8 @@ class ManagerModel(Base):
     __tablename__ = "managers"
 
     manager_id = Column("manager_id", Integer, primary_key=True)
-    full_name = Column("full_name", String, nullable=False)
-    email = Column("email", String, nullable=True)
+    full_name = Column("full_name", String(128), nullable=False)
+    email = Column("email", String(254), nullable=True)
     phone = Column("phone", String(32), nullable=True)
     is_active = Column("is_active", Boolean, nullable=False, server_default="true")
     created_at = Column(

@@ -19,20 +19,15 @@ depends_on = None
 
 
 def _iter_existing_manager_ids(bind) -> Iterable[int]:
-    mentor_rows = bind.execute(
-        sa.text('SELECT DISTINCT "شناسه_مدیر" FROM "منتورها" WHERE "شناسه_مدیر" IS NOT NULL')
+    rows = bind.execute(
+        sa.text(
+            'SELECT "شناسه_مدیر" FROM "منتورها" WHERE "شناسه_مدیر" IS NOT NULL '
+            "UNION "
+            "SELECT manager_id FROM manager_allowed_centers WHERE manager_id IS NOT NULL"
+        )
     )
-    for row in mentor_rows:
-        value = row[0]
-        if value is not None:
-            yield int(value)
-    center_rows = bind.execute(
-        sa.text("SELECT DISTINCT manager_id FROM manager_allowed_centers")
-    )
-    for row in center_rows:
-        value = row[0]
-        if value is not None:
-            yield int(value)
+    for row in rows:
+        yield int(row[0])
 
 
 def upgrade() -> None:
@@ -64,6 +59,15 @@ def upgrade() -> None:
     )
 
     bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_mac_indexes = {index["name"] for index in inspector.get_indexes("manager_allowed_centers")}
+    if "ix_mac_center" not in existing_mac_indexes:
+        op.create_index(
+            "ix_mac_center",
+            "manager_allowed_centers",
+            ["center_code", "manager_id"],
+        )
+
     dialect_name = bind.dialect.name
     manager_ids = sorted(set(_iter_existing_manager_ids(bind)))
     if manager_ids:
@@ -106,6 +110,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_mac_indexes = {index["name"] for index in inspector.get_indexes("manager_allowed_centers")}
+    if "ix_mac_center" in existing_mac_indexes:
+        op.drop_index("ix_mac_center", table_name="manager_allowed_centers")
     op.drop_constraint("fk_manager_centers_manager", "manager_allowed_centers", type_="foreignkey")
     op.drop_constraint("fk_mentors_manager", "منتورها", type_="foreignkey")
     op.drop_index("ix_managers_active_name", table_name="managers")

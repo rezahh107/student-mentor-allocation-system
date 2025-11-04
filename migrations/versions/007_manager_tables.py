@@ -6,6 +6,7 @@ Create Date: 2025-09-18 00:30:00.000000
 """
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 
 from alembic import op
@@ -19,15 +20,42 @@ depends_on = None
 
 
 def _iter_existing_manager_ids(bind) -> Iterable[int]:
-    rows = bind.execute(
-        sa.text(
-            'SELECT "شناسه_مدیر" FROM "منتورها" WHERE "شناسه_مدیر" IS NOT NULL '
-            "UNION "
-            "SELECT manager_id FROM manager_allowed_centers WHERE manager_id IS NOT NULL"
-        )
+    query = sa.text(
+        'SELECT "شناسه_مدیر" FROM "منتورها" WHERE "شناسه_مدیر" IS NOT NULL '
+        "UNION "
+        "SELECT manager_id FROM manager_allowed_centers WHERE manager_id IS NOT NULL"
     )
+    rows = bind.execute(query)
     for row in rows:
         yield int(row[0])
+
+
+def _seed_test_manager_data(bind, dialect_name: str) -> None:
+    if os.environ.get("RUN_TEST_SEED") != "1":
+        return
+
+    if dialect_name == "sqlite":
+        manager_stmt = sa.text(
+            "INSERT OR IGNORE INTO managers (manager_id, full_name, is_active) "
+            "VALUES (1, 'مدیر پیش‌فرض', 1)"
+        )
+        centers_stmt = sa.text(
+            "INSERT OR IGNORE INTO manager_allowed_centers (manager_id, center_code) "
+            "VALUES (1, 0)"
+        )
+    else:
+        manager_stmt = sa.text(
+            "INSERT INTO managers (manager_id, full_name, is_active) "
+            "VALUES (1, 'مدیر پیش‌فرض', true) "
+            "ON CONFLICT (manager_id) DO NOTHING"
+        )
+        centers_stmt = sa.text(
+            "INSERT INTO manager_allowed_centers (manager_id, center_code) "
+            "VALUES (1, 0) ON CONFLICT DO NOTHING"
+        )
+
+    bind.execute(manager_stmt)
+    bind.execute(centers_stmt)
 
 
 def upgrade() -> None:
@@ -57,6 +85,11 @@ def upgrade() -> None:
         "managers",
         ["is_active", "full_name"],
     )
+    op.create_index(
+        "ix_mac_center",
+        "manager_allowed_centers",
+        ["center_code", "manager_id"],
+    )
 
     bind = op.get_bind()
     inspector = sa.inspect(bind)
@@ -69,6 +102,7 @@ def upgrade() -> None:
         )
 
     dialect_name = bind.dialect.name
+    _seed_test_manager_data(bind, dialect_name)
     manager_ids = sorted(set(_iter_existing_manager_ids(bind)))
     if manager_ids:
         if dialect_name == "sqlite":
@@ -117,5 +151,6 @@ def downgrade() -> None:
         op.drop_index("ix_mac_center", table_name="manager_allowed_centers")
     op.drop_constraint("fk_manager_centers_manager", "manager_allowed_centers", type_="foreignkey")
     op.drop_constraint("fk_mentors_manager", "منتورها", type_="foreignkey")
+    op.drop_index("ix_mac_center", table_name="manager_allowed_centers")
     op.drop_index("ix_managers_active_name", table_name="managers")
     op.drop_table("managers")

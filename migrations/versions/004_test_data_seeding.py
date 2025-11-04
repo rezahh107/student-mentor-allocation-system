@@ -25,7 +25,10 @@ def upgrade() -> None:
     has_managers = inspector.has_table("managers")
     has_manager_centers = inspector.has_table("manager_allowed_centers")
     # Seed a small dataset for local performance tests
-    if has_managers:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+
+    if inspector.has_table("managers"):
         op.execute(
             "INSERT INTO managers (manager_id, full_name, is_active) "
             "VALUES (1,'مدیر پیش‌فرض',true) ON CONFLICT (manager_id) DO NOTHING;"
@@ -39,9 +42,10 @@ def upgrade() -> None:
         "VALUES (2,'B',1,'مدرسه',60,0,1,true) ON CONFLICT DO NOTHING;"
     )
     op.execute("INSERT INTO mentor_allowed_groups(mentor_id, group_code) VALUES (1,101) ON CONFLICT DO NOTHING;")
-    if has_managers and has_manager_centers:
+    if inspector.has_table("manager_allowed_centers"):
         op.execute(
-            "INSERT INTO manager_allowed_centers(manager_id, center_code) VALUES (1,0) ON CONFLICT DO NOTHING;"
+            "INSERT INTO manager_allowed_centers(manager_id, center_code) "
+            "VALUES (1,0) ON CONFLICT DO NOTHING;"
         )
     op.execute("INSERT INTO mentor_schools(mentor_id, school_code) VALUES (2,123) ON CONFLICT DO NOTHING;")
 
@@ -51,14 +55,12 @@ def downgrade() -> None:
         return
     bind = op.get_bind()
     inspector = sa.inspect(bind)
-    has_managers = inspector.has_table("managers")
-    has_manager_centers = inspector.has_table("manager_allowed_centers")
     op.execute('DELETE FROM "دانش_آموزان";')
     op.execute('DELETE FROM mentor_allowed_groups;')
-    if has_manager_centers:
+    if inspector.has_table("manager_allowed_centers"):
         op.execute('DELETE FROM manager_allowed_centers;')
     op.execute('DELETE FROM mentor_schools;')
     op.execute('DELETE FROM "منتورها";')
-    if has_managers:
+    if inspector.has_table("managers"):
         op.execute('DELETE FROM managers;')
 

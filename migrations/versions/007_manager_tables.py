@@ -56,11 +56,6 @@ def upgrade() -> None:
         "managers",
         ["is_active", "full_name"],
     )
-    op.create_index(
-        "ix_mac_center",
-        "manager_allowed_centers",
-        ["center_code", "manager_id"],
-    )
 
     bind = op.get_bind()
     dialect_name = bind.dialect.name
@@ -107,6 +102,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_constraint("fk_manager_centers_manager", "manager_allowed_centers", type_="foreignkey")
     op.drop_constraint("fk_mentors_manager", "منتورها", type_="foreignkey")
-    op.drop_index("ix_mac_center", table_name="manager_allowed_centers")
     op.drop_index("ix_managers_active_name", table_name="managers")
     op.drop_table("managers")

@@ -57,6 +57,10 @@ def upgrade() -> None:
         ["is_active", "full_name"],
     )
 
+    # Note: The manager_allowed_centers composite index (ix_mac_center) is created in
+    # migration 002_performance_indexes and intentionally not recreated here to avoid
+    # duplicate-index errors when running the migration sequence on a fresh database.
+
     bind = op.get_bind()
     dialect_name = bind.dialect.name
     manager_ids = sorted(set(_iter_existing_manager_ids(bind)))

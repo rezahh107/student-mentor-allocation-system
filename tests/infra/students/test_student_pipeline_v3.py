@@ -271,7 +271,7 @@ def test_student_pipeline_v3_edge_conflicts_include_rows_and_messages() -> None:
         "student.group.education_mismatch",
         "student.graduation.invalid",
     }
-    assert expected_codes.issubset(codes)
+    assert codes == expected_codes
     assert all(issue.severity == "P1" for issue in result.qa_issues)
     assert result.can_continue is True
 

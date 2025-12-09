@@ -162,8 +162,15 @@ def test_integration_group_code_complex_matrix_and_conflicts() -> None:
 
     codes = {issue.code for issue in result.qa_issues}
     assert "student.group.grade_mismatch" in codes
-    assert "student.gender.invalid" in codes
-    assert any(issue.code == "student.gender.invalid" and issue.severity == "P0" for issue in result.qa_issues)
+    assert "student.gender.unknown_token" in codes
+    assert "student.gender.missing" in codes
+    assert any(
+        issue.code == "student.gender.unknown_token" and issue.severity == "P1"
+        for issue in result.qa_issues
+    )
+    assert any(
+        issue.code == "student.gender.missing" and issue.severity == "P0" for issue in result.qa_issues
+    )
     assert any(issue.code == "student.group.grade_mismatch" and issue.row is not None for issue in result.qa_issues)
     assert result.can_continue is False
 

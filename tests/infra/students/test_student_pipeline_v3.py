@@ -264,9 +264,16 @@ def test_student_pipeline_v3_edge_conflicts_include_rows_and_messages() -> None:
     assert grade_mismatch
     assert all(issue.row is not None for issue in grade_mismatch)
     assert any("conflicts" in issue.message for issue in grade_mismatch)
-    assert any(issue.code == "student.graduation.invalid" for issue in result.qa_issues)
-    assert any(issue.severity == "P0" for issue in result.qa_issues)
-    assert result.can_continue is False
+
+    codes = {issue.code for issue in result.qa_issues}
+    expected_codes = {
+        "student.group.grade_mismatch",
+        "student.group.education_mismatch",
+        "student.graduation.invalid",
+    }
+    assert expected_codes.issubset(codes)
+    assert all(issue.severity == "P1" for issue in result.qa_issues)
+    assert result.can_continue is True
 
     assert_qa_payload_schema(result.qa_payload())
 

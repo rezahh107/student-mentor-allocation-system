@@ -2,7 +2,7 @@
 <#!
     Self-healing installer/runner for ImportToSabt on Windows 10/11.
     Execute block-by-block in PowerShell 7+; CI can pass switches for headless mode.
-!>
+#>
 
 [CmdletBinding()]
 param(
